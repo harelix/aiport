@@ -1,0 +1,21 @@
+# Build output
+/bin/
+/aiport
+/aiport.exe
+/dist-release/
+/.tools/
+/.cache/
+node_modules
+
+# Local Aiport state: config, credentials, request history, tasks
+/aiport.yaml
+.env
+*.env
+*.db
+*.db-shm
+*.db-wal
+*.tasks.json
+
+# Machine and editor files
+.DS_Store
+.claude/

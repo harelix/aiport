@@ -1,0 +1,46 @@
+.PHONY: build web-build test check release check-offline dev
+
+VERSION ?= 0.0.0-dev
+# Pure-Go build: no C toolchain or system libraries needed, on any platform.
+export CGO_ENABLED = 0
+# Never download during builds: everything comes from vendor/.
+export GOFLAGS = -mod=vendor
+LDFLAGS = -s -w -X main.version=$(VERSION)
+PLATFORMS = darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64
+
+# Live development: Go rebuild/restart on save + Vite dashboard with live reload.
+dev:
+	./scripts/dev.sh
+
+web-build:
+	pnpm --dir web build
+
+build:
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/aiport ./cmd/aiport
+
+test:
+	go test ./...
+
+check:
+	go vet ./...
+
+# Proves a fresh clone builds with no network: vendored Go deps + committed UI.
+check-offline:
+	GOPROXY=off go build -trimpath -o /dev/null ./cmd/aiport
+	@test -f internal/dashboard/dist/index.html || (echo "dashboard dist missing: run make web-build and commit it" && exit 1)
+
+# Self-contained downloads: one executable per platform (UI embedded), archived
+# with README and licenses, plus SHA-256 checksums.
+release: check-offline
+	rm -rf dist-release && mkdir -p dist-release
+	@for p in $(PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; ext=""; [ $$os = windows ] && ext=".exe"; \
+		name=aiport-$(VERSION)-$$os-$$arch; dir=dist-release/$$name; mkdir -p $$dir; \
+		echo "building $$name"; \
+		GOOS=$$os GOARCH=$$arch GOPROXY=off go build -trimpath -ldflags "$(LDFLAGS)" -o $$dir/aiport$$ext ./cmd/aiport || exit 1; \
+		cp README.md LICENSE NOTICE TRADEMARKS.md THIRD_PARTY.md aiport.example.yaml $$dir/; cp -R licenses $$dir/licenses; \
+		if [ $$os = windows ]; then (cd dist-release && zip -qr $$name.zip $$name); \
+		else tar -C dist-release -czf dist-release/$$name.tar.gz $$name; fi; \
+		rm -rf $$dir; \
+	done
+	cd dist-release && shasum -a 256 aiport-* > SHA256SUMS && cat SHA256SUMS

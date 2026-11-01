@@ -1,0 +1,13 @@
+version: 1
+listen: 127.0.0.1:8787
+auth:
+  token_env: AIPORT_LOCAL_TOKEN
+targets:
+  - id: ollama-local
+    provider: ollama
+    protocol: openai
+    base_url: http://127.0.0.1:11434/v1
+defaults:
+  openai_target: ollama-local
+telemetry:
+  enabled: false
