@@ -78,8 +78,9 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 		}
 		hours = v
 	}
-	from := time.Now().Add(-time.Duration(hours) * time.Hour).UnixMilli()
-	until := time.Now().UnixMilli()
+	now := h.clock()
+	from := now.Add(-time.Duration(hours) * time.Hour).UnixMilli()
+	until := now.UnixMilli()
 	if q.Get("from_ms") != "" || q.Get("to_ms") != "" {
 		a, e1 := strconv.ParseInt(q.Get("from_ms"), 10, 64)
 		b, e2 := strconv.ParseInt(q.Get("to_ms"), 10, 64)
@@ -90,29 +91,14 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 		from = a
 		until = b
 	}
-	if value := q.Get("outcome"); value != "" {
-		valid := false
-		for _, allowed := range []string{"success", "upstream_error", "gateway_error", "incomplete", "timeout", "cancelled", "rejected"} {
-			if value == allowed {
-				valid = true
-			}
-		}
-		if !valid {
-			fail(400, "invalid_filter", "Unknown outcome")
-			return true
-		}
+	if value := q.Get("outcome"); value != "" && !telemetry.ValidOutcome(value) {
+		fail(400, "invalid_filter", "Unknown outcome")
+		return true
 	}
 	rows := []telemetry.Event{}
 	if h.collector != nil {
-		rows = h.collector.List(from, q.Get("origin"), q.Get("target"), q.Get("provider"), q.Get("outcome"))
+		rows = h.collector.Find(telemetry.Query{From: from, To: until, Origin: q.Get("origin"), Target: q.Get("target"), Provider: q.Get("provider"), Outcome: q.Get("outcome")})
 	}
-	bounded := rows[:0]
-	for _, row := range rows {
-		if row.StartedAt <= until {
-			bounded = append(bounded, row)
-		}
-	}
-	rows = bounded
 	if r.URL.Path == "/api/v1/stats" {
 		writeJSON(w, 200, map[string]any{"summary": telemetry.Summary(rows), "telemetry": h.telemetryHealth()})
 		return true

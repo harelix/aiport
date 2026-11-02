@@ -92,15 +92,22 @@ func (c *Collector) prune(now time.Time) {
 	}
 }
 
-// query reads persisted rows matching the filters, newest first.
-func (c *Collector) query(from int64, origin, target, provider, outcome string) ([]Event, error) {
+// query reads persisted rows matching q, newest first, bounded by listLimit.
+func (c *Collector) query(q Query) ([]Event, error) {
 	where := []string{"started_at_ms >= ?"}
-	args := []any{from}
-	for _, f := range []struct{ col, val string }{{"origin_id", origin}, {"target_id", target}, {"provider", provider}, {"outcome", outcome}} {
+	args := []any{q.From}
+	if q.To > 0 {
+		where = append(where, "started_at_ms <= ?")
+		args = append(args, q.To)
+	}
+	for _, f := range []struct{ col, val string }{{"origin_id", q.Origin}, {"target_id", q.Target}, {"provider", q.Provider}, {"outcome", q.Outcome}} {
 		if f.val != "" {
 			where = append(where, f.col+" = ?")
 			args = append(args, f.val)
 		}
+	}
+	if q.InferenceOnly {
+		where = append(where, "route IN ('/v1/chat/completions','/v1/responses','/v1/messages')")
 	}
 	args = append(args, listLimit)
 	return c.read(`SELECT `+columns+` FROM requests WHERE `+strings.Join(where, " AND ")+` ORDER BY started_at_ms DESC, id DESC LIMIT ?`, args...)

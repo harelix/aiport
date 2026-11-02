@@ -50,7 +50,9 @@ per method combination:
 
 - **Not enough data:** fewer than 20 requests on either side.
 - **Possible harm:** feedback is more than 0.1 lower, or the error rate is more
-  than 5 points higher, than uncompressed traffic.
+  than 5 points higher, than uncompressed traffic. Errors are counted the same
+  way as on Overview: upstream, gateway, incomplete and timed-out requests;
+  cancellations and requests aiport refused are not errors.
 - **No harm seen:** neither of those.
 
 Token savings are estimated from bytes (÷4) until provider-reported usage is

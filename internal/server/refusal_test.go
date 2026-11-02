@@ -38,7 +38,7 @@ func TestRefusalOutcomesReachHistory(t *testing.T) {
 	}
 	collector.Close(time.Second)
 	outcomes := map[string]string{}
-	for _, e := range collector.List(0, "", "", "", "") {
+	for _, e := range collector.Find(telemetry.Query{}) {
 		outcomes[e.Route] = e.Outcome
 	}
 	if outcomes["/v1/messages"] != "rejected" || outcomes["/v1/chat/completions"] != "timeout" {

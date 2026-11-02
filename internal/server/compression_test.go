@@ -52,7 +52,7 @@ func TestCompressionRecordedAndReported(t *testing.T) {
 	id := w.Header().Get("X-Aiport-Request-Id")
 	send("POST", "/v1/chat/completions", body, nil) // uncompressed baseline
 	deadline := time.Now().Add(2 * time.Second)
-	for len(collector.List(0, "", "", "", "")) < 2 && time.Now().Before(deadline) {
+	for len(collector.Find(telemetry.Query{})) < 2 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if f := send("POST", "/v1/aiport/feedback", `{"request_id":"`+id+`","score":0.9}`, nil); f.Code != 200 {

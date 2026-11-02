@@ -37,6 +37,7 @@ type Handler struct {
 	keyMu            sync.Mutex
 	keySource        map[string]string
 	tasks            *tasks.Store
+	now              func() time.Time // nil = time.Now; tests set a fixed clock
 	assets           http.Handler
 	auth             *localauth.Manager
 }
@@ -45,6 +46,13 @@ func New(c config.Config, s config.Secrets) http.Handler {
 	h := &Handler{auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, authority: c.Listen, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
 	h.initKeySources(c, s)
 	return h
+}
+
+func (h *Handler) clock() time.Time {
+	if h.now != nil {
+		return h.now()
+	}
+	return time.Now()
 }
 
 // snapshot returns a copy of the live configuration safe to read without locks.

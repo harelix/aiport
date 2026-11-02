@@ -169,18 +169,20 @@ func (c *Collector) Health() map[string]any {
 	}
 	return h
 }
-func (c *Collector) List(from int64, origin, target, provider, outcome string) []Event {
+
+// Find returns matching requests, newest first: unsaved ones from memory
+// merged with saved history when persisting (bounded, filtered in SQLite).
+func (c *Collector) Find(q Query) []Event {
 	c.mu.RLock()
 	rows := []Event{}
 	for _, e := range c.rows {
-		if e.StartedAt < from || origin != "" && e.Origin != origin || target != "" && e.Target != target || provider != "" && e.Provider != provider || outcome != "" && e.Outcome != outcome {
-			continue
+		if q.match(e) {
+			rows = append(rows, e)
 		}
-		rows = append(rows, e)
 	}
 	c.mu.RUnlock()
 	if c.persisting() {
-		if saved, err := c.query(from, origin, target, provider, outcome); err == nil {
+		if saved, err := c.query(q); err == nil {
 			return merge(saved, rows)
 		}
 	}
@@ -216,19 +218,19 @@ func Summary(rows []Event) map[string]any {
 	origins := map[string]int{}
 	traffic := map[int64]int{}
 	for _, e := range rows {
-		switch e.Outcome {
-		case "upstream_error", "gateway_error", "incomplete", "timeout":
+		switch {
+		case IsError(e.Outcome):
 			errors++
-		case "cancelled":
+		case e.Outcome == "cancelled":
 			cancelled++
-		case "rejected":
+		case !Admitted(e.Outcome):
 			rejected++
 		}
 		sum += e.LatencyMS
 		latencies = append(latencies, e.LatencyMS)
 		providers[e.Provider]++
 		origins[e.Origin]++
-		traffic[(e.StartedAt/3600000)*3600000]++
+		traffic[BucketStart(e.StartedAt, 3600000)]++
 	}
 	var avg, p95 any
 	rate := 0.0

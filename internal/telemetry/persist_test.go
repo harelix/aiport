@@ -39,14 +39,14 @@ func TestHistorySurvivesRestart(t *testing.T) {
 
 	again := NewPersistent(true, 16, openDB(t, path))
 	defer again.Close(time.Second)
-	rows := again.List(0, "codex", "", "", "")
+	rows := again.Find(Query{Origin: "codex"})
 	if len(rows) != 600 || rows[0].ID != fmt.Sprintf("%036d", 599) {
 		t.Fatalf("restart lost history: %d rows", len(rows))
 	}
 	if rows[0].TTFBMS == nil || *rows[0].TTFBMS != 5 || rows[0].RequestedModel == nil || rows[0].Compression != "json" || rows[0].BytesAfter != 80 {
 		t.Fatalf("columns not round-tripped: %+v", rows[0])
 	}
-	if len(again.List(0, "other", "", "", "")) != 0 {
+	if len(again.Find(Query{Origin: "other"})) != 0 {
 		t.Fatal("origin filter ignored in SQLite")
 	}
 	if e, ok := again.Get(fmt.Sprintf("%036d", 3)); !ok || e.StartedAt != now-597 {
@@ -62,7 +62,7 @@ func TestFeedbackBeforeAndAfterFlush(t *testing.T) {
 	c := NewPersistent(true, 16, s)
 	c.Offer(event(1, time.Now().UnixMilli()))
 	deadline := time.Now().Add(time.Second)
-	for len(c.List(0, "", "", "", "")) == 0 && time.Now().Before(deadline) {
+	for len(c.Find(Query{Origin: ""})) == 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	if !c.SetFeedback(event(1, 0).ID, "codex", 0.75) || c.SetFeedback(event(1, 0).ID, "someone-else", 0.1) {
@@ -94,7 +94,7 @@ func TestRetentionPrunesOldRows(t *testing.T) {
 
 	again := NewPersistent(true, 16, openDB(t, path)) // prunes on start
 	again.Close(time.Second)
-	saved, err := again.query(0, "", "", "", "")
+	saved, err := again.query(Query{})
 	if err != nil || len(saved) != 1 || saved[0].ID != event(2, 0).ID {
 		t.Fatalf("retention: %v %d", err, len(saved))
 	}

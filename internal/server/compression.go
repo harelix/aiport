@@ -60,10 +60,10 @@ func (h *Handler) compressionReport(w http.ResponseWriter, r *http.Request, fail
 	if hours > 48 {
 		bucket = 24 * time.Hour
 	}
-	from := time.Now().Add(-time.Duration(hours) * time.Hour).UnixMilli()
+	from := h.clock().Add(-time.Duration(hours) * time.Hour).UnixMilli()
 	var rows []telemetry.Event
 	if h.collector != nil {
-		rows = h.collector.List(from, "", "", "", "")
+		rows = h.collector.Find(telemetry.Query{From: from, InferenceOnly: true})
 	}
 	report := telemetry.CompressionReport(rows, from, bucket)
 	report["methods"] = compress.Methods

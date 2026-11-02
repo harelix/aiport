@@ -41,7 +41,7 @@ const (
 
 func (g *Group) add(e Event) {
 	g.Requests++
-	if e.Outcome != "success" {
+	if IsError(e.Outcome) {
 		g.Errors++
 	}
 	g.latencyTotal += e.LatencyMS
@@ -103,7 +103,7 @@ func CompressionReport(rows []Event, from int64, bucket time.Duration) map[strin
 	for _, e := range rows {
 		// Requests aiport itself rejected never reached a model, so they say
 		// nothing about response quality.
-		if e.StartedAt < from || e.Outcome == "rejected" || (e.Route != "/v1/chat/completions" && e.Route != "/v1/responses" && e.Route != "/v1/messages") {
+		if e.StartedAt < from || !Admitted(e.Outcome) || !IsInference(e.Route) {
 			continue
 		}
 		key := e.Compression
@@ -114,7 +114,7 @@ func CompressionReport(rows []Event, from int64, bucket time.Duration) map[strin
 			groups[key] = &Group{Key: key}
 		}
 		groups[key].add(e)
-		start := e.StartedAt - e.StartedAt%size
+		start := BucketStart(e.StartedAt, size)
 		b := buckets[start]
 		if b == nil {
 			b = &Bucket{Start: start, Compressed: &Group{Key: "compressed"}, Baseline: &Group{Key: "none"}}
