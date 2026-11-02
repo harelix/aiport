@@ -448,7 +448,7 @@ func (q *Queue) index(id string) int {
 // its own; for every Application a shared Alias or the protocol default.
 func change(c config.Config, it Item, p Proposal, scope Scope) (config.Edit, string, error) {
 	if it.Informational {
-		return nil, "", Invalid{"this Suggestion has nothing to apply: pair the Application in the Applications panel, then dismiss it"}
+		return nil, "", Invalid{"this Suggestion has nothing to apply: pair the Application on the Integrate page, then dismiss it"}
 	}
 	if scope != ScopeApplication && scope != ScopeEvery {
 		return nil, "", Invalid{"scope must be application or every_application"}
@@ -742,7 +742,7 @@ func unknownTokens(c config.Config, f FailedAuth, at time.Time) []Item {
 	ev := Evidence{Count: n, FromMS: first, ToMS: last, WindowMinutes: th.WindowMinutes}
 	return []Item{{
 		Source: FromSuggestion, Kind: KindPairApplication, Subject: "unknown_token", Scope: ScopeApplication,
-		Need:          "Requests without a valid token were refused " + strconv.Itoa(n) + " times in the last " + strconv.Itoa(th.WindowMinutes) + " minutes: an Application may be trying to connect without being paired. Pair it in the Applications panel.",
+		Need:          "Requests without a valid token were refused " + strconv.Itoa(n) + " times in the last " + strconv.Itoa(th.WindowMinutes) + " minutes: an Application may be trying to connect without being paired. Pair it on the Integrate page.",
 		Evidence:      &ev,
 		Informational: true, Opens: OpensApplications,
 	}}

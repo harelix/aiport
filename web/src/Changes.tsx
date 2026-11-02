@@ -119,7 +119,7 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
       </div>
     </form>}
     {item.informational && <div className="actions">
-      {item.opens === 'applications' && onOpenApplications && <button type="button" className="primary" onClick={onOpenApplications}>Open Applications to pair it <ArrowUpRight size={14} aria-hidden/></button>}
+      {item.opens === 'applications' && onOpenApplications && <button type="button" className="primary" onClick={onOpenApplications}>Open Integrate to pair it <ArrowUpRight size={14} aria-hidden/></button>}
       <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
     </div>}
   </div>;
