@@ -151,6 +151,9 @@ type Issue struct {
 	// Explanation is the root cause in words, written on the Owner's click
 	// (Queue.Explain); nil until then.
 	Explanation *Explanation `json:"explanation,omitempty"`
+	// BranchFix is the latest Fix it run's branch and diff summary
+	// (Queue.RecordBranch); nil until Fix it ran.
+	BranchFix *BranchFix `json:"branch_fix,omitempty"`
 	// ResolvingBy is the fix aiport waits to see working while resolving.
 	ResolvingBy How         `json:"resolving_by,omitempty"`
 	Resolution  *Resolution `json:"resolution,omitempty"`
@@ -304,7 +307,7 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 // messages, keys or tokens.
 //
 // A saved explanation comes right after the first paragraph, saying who
-// wrote it.
+// wrote it; a branch fix the Owner kept comes before it.
 func ApplicationFix(is Issue) string {
 	r, ok := causes[is.Cause]
 	if !ok {
@@ -314,6 +317,10 @@ func ApplicationFix(is Issue) string {
 	if e := is.Explanation; e != nil && e.Text != "" {
 		head, rest, _ := strings.Cut(s, "\n\n")
 		s = head + "\n\n" + explanationText(*e) + "\n\n" + rest
+	}
+	if b := is.BranchFix; b != nil && b.State == BranchKept {
+		head, rest, _ := strings.Cut(s, "\n\n")
+		s = head + "\n\n" + branchText(*b) + "\n\n" + rest
 	}
 	return s
 }

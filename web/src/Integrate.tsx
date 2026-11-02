@@ -1,7 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, Plus, Terminal} from 'lucide-react';
 import {forgetRejected, MayRequestToggle, Origin, Pairing, PairingList, Rejected, Target, usePairings, useRejected} from './Applications';
-import {ApplicationFix, type ExplainStatus, explainOf, type Issue, IssueExplanation, issueAnchor} from './Changes';
+import {ApplicationFix, type ExplainStatus, explainOf, type FixStatus, type Issue, IssueExplanation, IssueFix, issueAnchor} from './Changes';
 import {Inline} from './markdown';
 import {AgentSettings, agentConnected, agentName, type CodingAgents, effectiveAgent, useCodingAgents} from './CodingAgents';
 
@@ -78,7 +78,7 @@ function useIssues(tick: number): {issues: Record<string, Issue[]>; explain: Exp
   useEffect(() => {
     const controller = new AbortController();
     fetch('/api/v1/issues', {credentials: 'same-origin', signal: controller.signal}).then(r => r.ok ? r.json() : {issues: []})
-      .then((d: {issues?: Issue[]; explain?: ExplainStatus; explain_by?: Record<string, ExplainStatus>}) => {
+      .then((d: {issues?: Issue[]; explain?: ExplainStatus; explain_by?: Record<string, ExplainStatus>; fix_by?: Record<string, FixStatus>}) => {
         const by: Record<string, Issue[]> = {};
         for (const i of d.issues || []) (by[i.application] ||= []).push(i);
         setIssues(by); setExplain(explainOf(d));
@@ -101,6 +101,7 @@ function AppIssues({issues, explain, onOpen, onExplained}: {issues: Issue[]; exp
       <button type="button" className="text-button" onClick={() => onOpen(i)} aria-label={'Open the Issue ' + shortCause(i) + ' in Changes'}>Open in Changes <ArrowUpRight size={14} aria-hidden/></button>
     </div>
     <IssueExplanation issue={i} explain={explain} onExplained={onExplained}/>
+    <IssueFix issue={i} explain={explain} onChanged={onExplained}/>
     <ApplicationFix issue={i}/>
   </li>)}</ul>;
 }

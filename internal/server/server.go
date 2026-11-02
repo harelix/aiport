@@ -59,6 +59,9 @@ type Handler struct {
 	runTokenMu       sync.Mutex
 	runTokens        map[[32]byte]bool // digests of the live run credentials (guarded by runTokenMu)
 	explainLimit     time.Duration     // 0 = agent_runs.explain_minutes; tests set a short one
+	fixLimit         time.Duration     // 0 = agent_runs.fix_minutes; tests set a short one
+	worktrees        string            // where Fix it makes its worktrees: next to the configuration; "" = the temporary directory
+	fixMu            sync.Mutex        // one Fix it start or end at a time
 	// requesters are the Applications that may request changes right now
 	// (none while adapting is off), rebuilt on every config change so the
 	// forwarding path checks a set instead of copying the configuration.

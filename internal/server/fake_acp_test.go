@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -49,7 +50,12 @@ type acpStep struct {
 type acpAsk struct {
 	Kind  string `json:"kind"`
 	Title string `json:"title"`
-	Path  string `json:"path,omitempty"`
+	// Path is the one location of the tool call; CWD in it stands for the
+	// agent's working directory.
+	Path string `json:"path,omitempty"`
+	// Write, when set, is written to Path once the request is allowed (an
+	// edit the agent makes itself, as agents do).
+	Write string `json:"write,omitempty"`
 	// Options are the option kinds offered (default allow_once,
 	// allow_always, reject_once, reject_always).
 	Options []string `json:"options,omitempty"`
@@ -111,10 +117,10 @@ func fakeACPAgent(script string) int {
 			case st.Think != "":
 				update(map[string]any{"sessionUpdate": "agent_thought_chunk", "content": map[string]any{"type": "text", "text": st.Think}})
 			case st.Tool != "":
-				update(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "t" + string(rune('0'+i)), "title": st.Tool, "kind": "read", "status": "completed"})
+				update(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "t" + strconv.Itoa(i), "title": st.Tool, "kind": "read", "status": "completed"})
 			case st.Ask != nil:
 				nextAsk++
-				askID := "ask-" + string(rune('0'+nextAsk))
+				askID := "ask-" + strconv.Itoa(nextAsk)
 				ch := make(chan json.RawMessage, 1)
 				ansMu.Lock()
 				answers[`"`+askID+`"`] = ch
@@ -128,8 +134,9 @@ func fakeACPAgent(script string) int {
 					opts = append(opts, map[string]any{"optionId": "opt-" + k, "name": k, "kind": k})
 				}
 				tc := map[string]any{"toolCallId": "tc-" + askID, "title": st.Ask.Title, "kind": st.Ask.Kind, "status": "pending"}
-				if st.Ask.Path != "" {
-					tc["locations"] = []map[string]any{{"path": st.Ask.Path}}
+				path := strings.ReplaceAll(st.Ask.Path, "CWD", cwd)
+				if path != "" {
+					tc["locations"] = []map[string]any{{"path": path}}
 				}
 				send(map[string]any{"jsonrpc": "2.0", "id": askID, "method": "session/request_permission", "params": map[string]any{"sessionId": session, "toolCall": tc, "options": opts}})
 				var res struct {
@@ -140,6 +147,10 @@ func fakeACPAgent(script string) int {
 				}
 				_ = json.Unmarshal(<-ch, &res)
 				record("permission", map[string]any{"title": st.Ask.Title, "outcome": res.Outcome.Outcome, "option": res.Outcome.OptionID})
+				if st.Ask.Write != "" && res.Outcome.OptionID == "opt-allow_once" && path != "" {
+					_ = os.MkdirAll(filepath.Dir(path), 0o755)
+					_ = os.WriteFile(path, []byte(st.Ask.Write), 0o644)
+				}
 			case st.Wait != "":
 				for {
 					if _, err := os.Stat(filepath.Join(dir, st.Wait)); err == nil {

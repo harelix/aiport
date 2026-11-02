@@ -32,6 +32,20 @@ type AgentRuns struct {
 	Model string `yaml:"model,omitempty" json:"model,omitempty"`
 	// ExplainMinutes is the time limit of an Explain run (default 10).
 	ExplainMinutes int `yaml:"explain_minutes,omitempty" json:"explain_minutes,omitempty"`
+	// FixMinutes is the time limit of a Fix it run (default 30).
+	FixMinutes int `yaml:"fix_minutes,omitempty" json:"fix_minutes,omitempty"`
+}
+
+// DefaultFixMinutes is the time limit of a Fix it run when
+// agent_runs.fix_minutes says nothing.
+const DefaultFixMinutes = 30
+
+// FixLimit is the time limit of a Fix it run.
+func (a AgentRuns) FixLimit() time.Duration {
+	if a.FixMinutes > 0 {
+		return time.Duration(a.FixMinutes) * time.Minute
+	}
+	return DefaultFixMinutes * time.Minute
 }
 
 // DefaultExplainMinutes is the time limit of an Explain run when
@@ -84,6 +98,9 @@ func (a AgentRuns) validate(origins []Origin, targets map[string]Target) error {
 	}
 	if a.ExplainMinutes < 0 || a.ExplainMinutes > 24*60 {
 		return errors.New("agent_runs.explain_minutes must be 1–1440")
+	}
+	if a.FixMinutes < 0 || a.FixMinutes > 24*60 {
+		return errors.New("agent_runs.fix_minutes must be 1–1440")
 	}
 	if a.DefaultAgent != "" && !slices.Contains(CodingAgents, a.DefaultAgent) {
 		return fmt.Errorf("agent_runs.default_agent must be one of %s", strings.Join(CodingAgents, ", "))

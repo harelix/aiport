@@ -37,7 +37,15 @@ export type Issue = {
   resolving_by?: string; resolution?: {how: string; at_ms: number; change_id?: string}; reopened?: number;
   /** The saved root cause (decide.Explanation); also at the start of application_fix. */
   explanation?: Explanation;
+  /** The latest Fix it run's branch and diff summary (decide.BranchFix). */
+  branch_fix?: BranchFix;
 };
+
+/** What a Fix it run left: its branch, diff summary and, once kept, the commit aiport made on that branch. */
+export type BranchFix = {branch: string; base: string; worktree?: string; agent: string; run: string;
+  state: 'running' | 'ready' | 'empty' | 'kept' | 'discarded' | 'stopped'; summary?: string; files?: string[]; commit?: string; note?: string; started_at_ms: number; at_ms: number};
+/** Whether Fix it is available for an Application (fix_by in GET /api/v1/issues): which agent, or a hint why not. */
+export type FixStatus = {available: boolean; hint?: string; agent?: string; agent_name?: string; model_calls?: ModelCalls; limit_ms?: number};
 
 /** An Issue's explanation and who wrote it: a Connection and model the Owner chose, or a Coding agent. */
 export type Explanation = {text: string; source: 'connection' | 'coding_agent'; connection?: string; model?: string; agent?: string; at_ms?: number};
@@ -45,7 +53,9 @@ export type Explanation = {text: string; source: 'connection' | 'coding_agent'; 
 /** Whether Explain is available (the "explain" field of GET /api/v1/issues): who writes, or a hint why not. */
 export type ExplainStatus = {available: boolean; hint?: string; source?: string; connection?: string; model?: string; agent?: string; agent_name?: string; model_calls?: ModelCalls; limit_ms?: number;
   /** Per Application with a connected Coding agent: the agent explains its Issues instead (explain_by). */
-  by?: Record<string, ExplainStatus>};
+  by?: Record<string, ExplainStatus>;
+  /** Per Application: whether Fix it is available (fix_by). */
+  fix?: Record<string, FixStatus>};
 /** Where an Agent run's model calls go. */
 export type ModelCalls = {through_aiport: boolean; connection?: string; model?: string; note?: string};
 /** An Agent run, as the runner describes it ("run" event, GET /api/v1/runs). */
@@ -53,9 +63,9 @@ export type AgentRun = {id: string; application: string; issue: string; mode: st
 /** One step of a run besides its words: a thought, a tool call, a plan, a permission aiport answered. */
 type RunStep = {kind: string; text: string; tool?: string; status?: string; verdict?: string; reason?: string};
 
-/** Explain status from GET /api/v1/issues: explain (the chosen Connection) with explain_by (Coding agents) as by. */
-export const explainOf = (d: {explain?: ExplainStatus; explain_by?: Record<string, ExplainStatus>}): ExplainStatus | null =>
-  d.explain ? {...d.explain, by: d.explain_by} : null;
+/** Explain status from GET /api/v1/issues: explain (the chosen Connection) with explain_by (Coding agents) as by, and fix_by as fix. */
+export const explainOf = (d: {explain?: ExplainStatus; explain_by?: Record<string, ExplainStatus>; fix_by?: Record<string, FixStatus>}): ExplainStatus | null =>
+  d.explain ? {...d.explain, by: d.explain_by, fix: d.fix_by} : null;
 
 const AGENTS: Record<string, string> = {claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI'};
 const writer = (e: {source?: string; connection?: string; model?: string; agent?: string; agent_name?: string}) =>
@@ -66,7 +76,7 @@ const callsLine = (c?: ModelCalls) => !c ? '' : c.through_aiport
   : c.note || 'The agent uses its own login.';
 
 /** The run panel: which agent reads the code (read-only), where its calls go, its steps, and Stop. */
-function RunPanel({run, steps, busy}: {run: AgentRun; steps: RunStep[]; busy: boolean}) {
+function RunPanel({run, steps, busy, branch}: {run: AgentRun; steps: RunStep[]; busy: boolean; branch?: string}) {
   const [stopping, setStopping] = useState(false), [error, setError] = useState('');
   const stop = async () => {
     setStopping(true); setError('');
@@ -76,7 +86,7 @@ function RunPanel({run, steps, busy}: {run: AgentRun; steps: RunStep[]; busy: bo
   const shown = steps.slice(-30);
   return <div className="run-panel" aria-label={'Agent run of ' + run.agent_name}>
     <div className="run-head">
-      <strong>{run.agent_name}</strong> <span className="caption">reads the code, read-only · stops after {Math.round(run.limit_ms / 60000)} min</span>
+      <strong>{run.agent_name}</strong> <span className="caption">{run.mode === 'fix' ? 'changes the code in its own worktree' + (branch ? ' on ' + branch : '') + ' · commands denied' : 'reads the code, read-only'} · stops after {Math.round(run.limit_ms / 60000)} min</span>
       {busy && <button type="button" className="secondary small" disabled={stopping} onClick={stop}>{stopping ? 'Stopping…' : 'Stop'}</button>}
     </div>
     <p className={'caption' + (run.model_calls.through_aiport ? '' : ' run-own-login')}>{callsLine(run.model_calls)}</p>
@@ -146,6 +156,85 @@ export function IssueExplanation({issue, explain: all, onExplained}: {issue: Iss
       </button>
       {explain && !explain.available && explain.hint && <span className="caption">{explain.hint}</span>}
     </div>
+  </div>;
+}
+
+/** A diff shown as plain text, one line each, added and removed lines marked. The text is the agent's code: never markup. */
+function DiffView({diff, truncated}: {diff: string; truncated: boolean}) {
+  const lines = diff.split('\n');
+  return <pre className="diff" aria-label="Diff">{lines.map((l, i) => <span key={i} className={l.startsWith('+++') || l.startsWith('---') ? 'diff-file' : l.startsWith('+') ? 'diff-add' : l.startsWith('-') ? 'diff-del' : l.startsWith('@@') ? 'diff-hunk' : undefined}>{l + '\n'}</span>)}
+    {truncated && <span className="diff-hunk">… the diff is longer than aiport shows; read the rest on the branch.</span>}</pre>;
+}
+
+/**
+ * Fix it: the Application's Coding agent changes the code in its own git worktree, on a new branch named for the
+ * Issue, and ends with a diff the Owner reviews. Keep commits it on that branch (as aiport) and leaves the branch;
+ * Discard removes the worktree and the branch. aiport never commits to the Owner's branch, merges or pushes.
+ * Without a Coding agent or repository path, only a one-line hint shows.
+ */
+export function IssueFix({issue, explain, onChanged}: {issue: Issue; explain: ExplainStatus | null; onChanged: () => void}) {
+  const status = explain?.fix?.[issue.application], b = issue.branch_fix;
+  const [busy, setBusy] = useState(''), [error, setError] = useState('');
+  const [run, setRun] = useState<AgentRun | null>(null), [steps, setSteps] = useState<RunStep[]>([]);
+  const [diff, setDiff] = useState<{diff: string; truncated: boolean} | null>(null);
+  const running = b?.state === 'running', ready = b?.state === 'ready';
+  // While the run goes, follow its log; once it has ended, reload the Issue for its diff.
+  useEffect(() => {
+    if (!running) return;
+    let stop = false;
+    const follow = async () => {
+      while (!stop) {
+        const d = await fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/run', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (stop) return;
+        if (d?.run) { setRun(d.run); setSteps((d.log || []).filter((u: RunStep) => u.kind !== 'status')); }
+        if (d?.run && d.run.state !== 'running') { onChanged(); }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    };
+    follow();
+    return () => { stop = true; };
+  }, [issue.id, running]);
+  useEffect(() => {
+    setDiff(null);
+    if (!b || (b.state !== 'ready' && b.state !== 'kept')) return;
+    fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/fix', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null)
+      .then(d => d && setDiff({diff: d.diff || '', truncated: !!d.truncated})).catch(() => {});
+  }, [issue.id, b?.state, b?.run]);
+  const act = async (what: 'fix' | 'fix/keep' | 'fix/discard') => {
+    setBusy(what); setError('');
+    try {
+      await send('POST', 'issues/' + encodeURIComponent(issue.id) + '/' + what);
+      setRun(null); setSteps([]);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+  const canStart = status?.available && issue.state === 'open' && !running && !ready;
+  if (!b && !status?.available) return status?.hint ? <p className="caption fix-hint">{status.hint}</p> : null;
+  return <div className="branch-fix">
+    {running && run && <RunPanel run={run} steps={steps} busy branch={b?.branch}/>}
+    {running && !run && <p className="caption" role="status">Starting {status?.agent_name || b?.agent} in a worktree on {b?.branch}…</p>}
+    {ready && <div className="fix-review">
+      <p><strong>Review the change</strong> on branch <code>{b!.branch}</code>: {b!.summary}. Nothing is committed yet; your branch and working copy are untouched.</p>
+      {diff && <DiffView diff={diff.diff} truncated={diff.truncated}/>}
+      <div className="actions">
+        <button type="button" className="primary" disabled={!!busy} onClick={() => act('fix/keep')}>{busy === 'fix/keep' ? 'Keeping…' : 'Keep the branch'}</button>
+        <button type="button" className="secondary" disabled={!!busy} onClick={() => act('fix/discard')}>{busy === 'fix/discard' ? 'Discarding…' : 'Discard'}</button>
+        <span className="caption">Keep commits it on {b!.branch} as aiport; merging is yours. Discard deletes the worktree and the branch.</span>
+      </div>
+    </div>}
+    {b?.state === 'kept' && <p className="caption">Kept on branch <code>{b.branch}</code>{b.commit ? ' (commit ' + b.commit.slice(0, 12) + ')' : ''}: {b.summary}. aiport never merges or pushes: merge it when you are ready; the Issue resolves when {issue.application}’s calls succeed.</p>}
+    {b && (b.state === 'discarded' || b.state === 'stopped' || b.state === 'empty') && <p className="caption">Last Fix it run: {b.state === 'discarded' ? 'discarded; the worktree and the branch were removed.' : b.note}</p>}
+    {error && <div className="notice error" role="alert">{error}</div>}
+    {canStart && <div className="actions">
+      <button type="button" className="secondary" disabled={!!busy} onClick={() => act('fix')} title={'Fix it with ' + (status?.agent_name || status?.agent) + ' in its own worktree; stops after ' + Math.round((status?.limit_ms || 0) / 60000) + ' min'}>
+        {busy === 'fix' ? 'Starting…' : b ? 'Fix it again' : 'Fix it'}
+      </button>
+      <span className="caption">{status?.agent_name} edits a new branch in its own worktree; commands are denied; you review the diff.</span>
+    </div>}
   </div>;
 }
 
@@ -220,6 +309,7 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
       <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
     </div>}
     <IssueExplanation issue={issue} explain={explain} onExplained={onExplained}/>
+    <IssueFix issue={issue} explain={explain} onChanged={onExplained}/>
     <ApplicationFix issue={issue}/>
   </div>;
 }

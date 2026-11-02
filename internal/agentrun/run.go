@@ -107,8 +107,10 @@ type Spec struct {
 	Limit      time.Duration
 	// Policy answers the agent's permission requests; nil denies all.
 	Policy Policy
-	// OnEnd, when set, runs once the agent has exited, before Done is
-	// closed (a Fix run collects its diff there).
+	// OnEnd, when set, runs once the agent has exited (or could not start)
+	// and the run's end is recorded (Info().State, Err), before the
+	// Application is free again and Done is closed (a Fix run collects its
+	// diff or removes its worktree there).
 	OnEnd func(*Run)
 }
 
@@ -449,9 +451,6 @@ func (run *Run) loop(ctx context.Context) {
 		}
 		kill()
 		<-exited
-		if run.spec.OnEnd != nil {
-			run.spec.OnEnd(run)
-		}
 	}()
 
 	c := newConn(stdin)
@@ -569,9 +568,13 @@ func (run *Run) end(ctx context.Context, err error, stopReason string) {
 		run.info.Error = err.Error()
 	}
 	run.info.EndedAt = run.r.now().UnixMilli()
+	state := run.info.State
 	run.mu.Unlock()
-	run.add(Update{Kind: "status", Text: string(run.info.State), Status: string(run.info.State)})
 	run.stop()
+	if run.spec.OnEnd != nil {
+		run.spec.OnEnd(run)
+	}
+	run.add(Update{Kind: "status", Text: string(state), Status: string(state)})
 	run.r.mu.Lock()
 	if run.r.active[run.spec.Application] == run {
 		delete(run.r.active, run.spec.Application)

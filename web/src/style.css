@@ -709,3 +709,12 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .run-step small{color:var(--text-2)}
 .run-thought{color:var(--text-2)}
 .run-denied{color:var(--bad)}
+/* Fix it: the branch, the diff to review, Keep and Discard (harelix/aiport#25). */
+.branch-fix{display:grid;gap:6px;margin:8px 0}
+.branch-fix .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fix-review{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:13px}
+.fix-review p{margin:0}
+.diff{margin:0;max-height:360px;overflow:auto;padding:8px 10px;border-radius:var(--radius-sm);background:var(--inset);font-size:12px;line-height:1.45;white-space:pre}
+.diff-add{color:var(--good)}
+.diff-del{color:var(--bad)}
+.diff-hunk,.diff-file{color:var(--text-2)}
