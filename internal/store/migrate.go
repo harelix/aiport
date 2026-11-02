@@ -167,25 +167,66 @@ var migrations = []string{
 		body           TEXT NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS decisions_subject ON decisions(source, kind, application, subject);`,
+
+	// 5: rejected pairing requests, so the Owner still sees an Application
+	// they rejected after it collected its answer or aiport restarted: what
+	// the Application said about itself and when, never its poll secret or
+	// any token. The writer keeps only the newest 100.
+	`CREATE TABLE rejected_pairings (
+		id             TEXT PRIMARY KEY,
+		code           TEXT NOT NULL,
+		name           TEXT NOT NULL,
+		description    TEXT NOT NULL DEFAULT '',
+		rejected_at_ms INTEGER NOT NULL
+	);
+	CREATE INDEX rejected_pairings_time ON rejected_pairings(rejected_at_ms DESC);`,
 }
 
 // preRelease maps the schema version of a database written by a pre-release
-// build to this one. Those builds added the changes table as migration 4 and
-// the decisions table as migration 5; both are migration 4 now. A version-5
-// database has both tables, so it is at 4; a version-4 one may lack
-// decisions, so migration 4 (idempotent) runs again. Remove this, and think
-// again, before adding a migration 5.
+// build to the released one. Those builds added the changes table as
+// migration 4 and the decisions table as migration 5; both are migration 4
+// now. Released databases are told apart by their tables, not the number:
+//
+//   - version 5 with rejected_pairings is a released version 5: as it is.
+//   - version 5 without it is pre-release (changes and decisions): at 4.
+//   - version 4 without decisions is pre-release (changes only): at 3, so
+//     migration 4 (idempotent) runs again.
+//
+// A database an earlier build already moved to 4 is a released version-4
+// database and simply gains migration 5. Later migrations need no change
+// here: only versions 4 and 5 are ever looked at.
 func preRelease(db *sql.DB, current int) (int, error) {
-	if len(migrations) != 4 || current < 4 || current > 5 {
+	if current != 4 && current != 5 {
 		return current, nil
 	}
-	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'decisions'`).Scan(&n); err != nil {
-		return current, errors.New("cannot read database tables")
+	has := func(table string) (bool, error) {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n); err != nil {
+			return false, errors.New("cannot read database tables")
+		}
+		return n > 0, nil
 	}
-	to := 4
-	if n == 0 {
-		to = 3
+	to := current
+	if current == 5 {
+		released, err := has("rejected_pairings")
+		if err != nil {
+			return current, err
+		}
+		if !released {
+			to = 4
+		}
+	}
+	if to == 4 {
+		decisions, err := has("decisions")
+		if err != nil {
+			return current, err
+		}
+		if !decisions {
+			to = 3
+		}
+	}
+	if to == current {
+		return current, nil
 	}
 	if _, err := db.Exec(`UPDATE schema_version SET version = ?`, to); err != nil {
 		return current, errors.New("cannot update database version")

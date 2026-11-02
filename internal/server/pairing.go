@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"log"
 	"math/big"
 	"net/http"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"aiport/internal/config"
+	"aiport/internal/store"
 )
 
 // Pairing lets an application on this machine ask for its own token. The
@@ -23,6 +25,8 @@ import (
 //	POST /v1/aiport/pair            {name, description?}         public on loopback
 //	GET  /v1/aiport/pair/{secret}   status; the token once approved
 //	GET  /api/v1/pairings           pending requests             management
+//	GET  /api/v1/pairings?status=rejected  rejected applications  management
+//	DELETE /api/v1/pairings/rejected/{id}  forget one              management
 //	POST /api/v1/pairings/{code}/approve  {id?, target?, may_request_changes?}  management
 //	POST /api/v1/pairings/{code}/reject                          management
 const (
@@ -32,7 +36,19 @@ const (
 	pairPerMinute  = 30 // new requests per minute, all applications together
 	pairPollEvery  = 3  // seconds a client should wait between polls
 	pairDoneRetain = 10 * time.Minute
+	pairRejectKeep = 100 // rejected applications remembered
 )
+
+// rejectedPairing is a rejected Application as the Owner lists it: what it
+// said about itself and when, never its poll secret or a token.
+type rejectedPairing struct {
+	ID          string `json:"id"`
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Status      string `json:"status"`
+	RejectedAt  int64  `json:"rejected_at_ms"`
+}
 
 type pairing struct {
 	Code        string `json:"code"`
@@ -51,6 +67,58 @@ type pairings struct {
 	mu     sync.Mutex
 	byCode map[string]*pairing
 	recent []int64 // request times, for the rate limit
+	// rejected is where rejections are kept without a database (this
+	// session only), newest last.
+	rejected []store.Rejection
+}
+
+// rememberRejection keeps a rejected request: in the database when there is
+// one, otherwise for this session. Called with h.pair.mu held.
+func (h *Handler) rememberRejection(r store.Rejection) {
+	if h.changesDB != nil {
+		err := store.Rejections{DB: h.changesDB}.Add(r, pairRejectKeep)
+		if err == nil {
+			return
+		}
+		log.Printf("aiport: %v; this rejection is kept for this session only", err)
+	}
+	h.pair.rejected = append(h.pair.rejected, r)
+	if n := len(h.pair.rejected) - pairRejectKeep; n > 0 {
+		h.pair.rejected = append([]store.Rejection{}, h.pair.rejected[n:]...)
+	}
+}
+
+// rejections lists the kept rejections, newest first. Called with h.pair.mu held.
+func (h *Handler) rejections() ([]store.Rejection, error) {
+	var kept []store.Rejection
+	if h.changesDB != nil {
+		var err error
+		if kept, err = (store.Rejections{DB: h.changesDB}).List(); err != nil {
+			return nil, err
+		}
+	}
+	for i := len(h.pair.rejected) - 1; i >= 0; i-- {
+		kept = append(kept, h.pair.rejected[i])
+	}
+	sort.SliceStable(kept, func(i, j int) bool { return kept[i].RejectedAt > kept[j].RejectedAt })
+	if len(kept) > pairRejectKeep {
+		kept = kept[:pairRejectKeep]
+	}
+	return kept, nil
+}
+
+// forgetRejection drops one kept rejection. Called with h.pair.mu held.
+func (h *Handler) forgetRejection(id string) (bool, error) {
+	for i, r := range h.pair.rejected {
+		if r.ID == id {
+			h.pair.rejected = append(h.pair.rejected[:i:i], h.pair.rejected[i+1:]...)
+			return true, nil
+		}
+	}
+	if h.changesDB == nil {
+		return false, nil
+	}
+	return store.Rejections{DB: h.changesDB}.Forget(id)
 }
 
 func (p *pairings) init() {
@@ -234,6 +302,26 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 			fail(405, "method_not_allowed", "Use GET")
 			return true
 		}
+		switch r.URL.Query().Get("status") {
+		case "", "pending":
+		case "rejected":
+			h.pair.mu.Lock()
+			kept, err := h.rejections()
+			h.pair.mu.Unlock()
+			if err != nil {
+				fail(500, "rejections_unreadable", "Could not read rejected applications")
+				return true
+			}
+			list := []rejectedPairing{}
+			for _, x := range kept {
+				list = append(list, rejectedPairing{ID: x.ID, Code: x.Code, Name: x.Name, Description: x.Description, Status: "rejected", RejectedAt: x.RejectedAt})
+			}
+			writeJSON(w, 200, map[string]any{"pairings": list})
+			return true
+		default:
+			fail(400, "invalid_status", "status must be pending or rejected")
+			return true
+		}
 		h.pair.mu.Lock()
 		h.pair.init()
 		h.pair.expire(now)
@@ -246,6 +334,30 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 		h.pair.mu.Unlock()
 		sort.Slice(list, func(i, j int) bool { return list[i].RequestedAt < list[j].RequestedAt })
 		writeJSON(w, 200, map[string]any{"pairings": list})
+		return true
+	}
+	if id, ok := strings.CutPrefix(rest, "rejected/"); ok && id != "" && !strings.Contains(id, "/") {
+		if r.Method != http.MethodDelete {
+			w.Header().Set("Allow", "DELETE")
+			fail(405, "method_not_allowed", "Use DELETE")
+			return true
+		}
+		if r.Header.Get("X-Aiport-CSRF") != "1" {
+			fail(403, "csrf_required", "Use the same-origin dashboard to forget applications")
+			return true
+		}
+		h.pair.mu.Lock()
+		found, err := h.forgetRejection(id)
+		h.pair.mu.Unlock()
+		if err != nil {
+			fail(500, "rejections_unwritable", "Could not forget the rejected application")
+			return true
+		}
+		if !found {
+			fail(404, "rejection_not_found", "No rejected application with this id")
+			return true
+		}
+		writeJSON(w, 200, map[string]any{"forgotten": id})
 		return true
 	}
 	code, action, ok := strings.Cut(rest, "/")
@@ -282,6 +394,7 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 	}
 	if action == "reject" {
 		x.Status, x.doneAt = "rejected", now
+		h.rememberRejection(store.Rejection{ID: randomString(9), Code: x.Code, Name: x.Name, Description: x.Description, RejectedAt: now})
 		writeJSON(w, 200, map[string]any{"status": "rejected"})
 		return true
 	}

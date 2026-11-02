@@ -90,9 +90,9 @@ func TestADatabaseFromBeforeTheMigrationsWereFoldedStillOpens(t *testing.T) {
 	}
 }
 
-func TestANewDatabaseHasChangesAndDecisionsFromOneMigration(t *testing.T) {
-	if SchemaVersion() != 4 {
-		t.Fatalf("want 4 migrations, have %d", SchemaVersion())
+func TestANewDatabaseHasEveryTable(t *testing.T) {
+	if SchemaVersion() != 5 {
+		t.Fatalf("want 5 migrations, have %d", SchemaVersion())
 	}
 	db, err := Open(filepath.Join(t.TempDir(), "aiport.yaml.db"))
 	if err != nil {
@@ -101,4 +101,79 @@ func TestANewDatabaseHasChangesAndDecisionsFromOneMigration(t *testing.T) {
 	defer db.Close()
 	count(t, db, "changes")
 	count(t, db, "decisions")
+	count(t, db, "rejected_pairings")
+}
+
+// atVersion writes a database the way this or an earlier release left it:
+// the first n migrations applied, at schema version n.
+func atVersion(t *testing.T, n int, statements ...string) string {
+	t.Helper()
+	path := preReleaseDB(t, n, append(append([]string{}, migrations[3:n]...), statements...)...)
+	return path
+}
+
+// A database a released build left at version 4 (also one the pre-release
+// shim moved there) gains the rejected pairings table and keeps its rows.
+func TestAVersion4DatabaseUpgrades(t *testing.T) {
+	path := atVersion(t, 4,
+		`INSERT INTO changes VALUES ('c', 1, 'w', 'Owner', '', '', 0, x'00', x'00')`,
+		`INSERT INTO decisions VALUES ('d', 'request', 'k', 'a', 's', 'pending', 1, 1, '{}')`)
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if count(t, db, "changes") != 1 || count(t, db, "decisions") != 1 || count(t, db, "rejected_pairings") != 0 {
+		t.Fatal("rows lost or table missing")
+	}
+}
+
+// A database already at version 5 is not mistaken for a pre-release one.
+func TestAVersion5DatabaseOpensAsItIs(t *testing.T) {
+	path := atVersion(t, 5,
+		`INSERT INTO changes VALUES ('c', 1, 'w', 'Owner', '', '', 0, x'00', x'00')`,
+		`INSERT INTO rejected_pairings (id, code, name, description, rejected_at_ms) VALUES ('r', 'ABC-DEF', 'n', '', 1)`)
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if count(t, db, "changes") != 1 || count(t, db, "rejected_pairings") != 1 {
+		t.Fatal("rows lost")
+	}
+	var v int
+	if err := db.QueryRow(`SELECT version FROM schema_version`).Scan(&v); err != nil || v != 5 {
+		t.Fatalf("schema version %d (%v)", v, err)
+	}
+}
+
+func TestRejectionsKeepTheNewestAndCanBeForgotten(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "aiport.yaml.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	r := Rejections{DB: db}
+	for i := 0; i < 5; i++ {
+		id := string(rune('a' + i))
+		if err := r.Add(Rejection{ID: id, Code: "ABC-DE" + id, Name: "App " + id, Description: "d", RejectedAt: int64(i)}, 3); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := r.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 3 || list[0].ID != "e" || list[2].ID != "c" || list[0].Name != "App e" || list[0].Code != "ABC-DEe" || list[0].RejectedAt != 4 {
+		t.Fatalf("kept %+v", list)
+	}
+	if ok, err := r.Forget("d"); !ok || err != nil {
+		t.Fatalf("forget: %v %v", ok, err)
+	}
+	if ok, _ := r.Forget("d"); ok {
+		t.Fatal("forgot twice")
+	}
+	if list, _ := r.List(); len(list) != 2 {
+		t.Fatalf("after forget %+v", list)
+	}
 }
