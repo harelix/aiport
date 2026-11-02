@@ -663,12 +663,21 @@ docs-bot").
   settings. The agent starts as for Explain: by absolute path, with the
   minimal environment, only on your click.
 - **Approving commands**: when the agent asks to run a command (tests, a
-  build), the Issue shows the command exactly as the agent wrote it (as
-  plain text: it is the agent's, not aiport's) with three answers:
+  build), the Issue shows the whole command exactly as the agent sent it
+  (as plain text: it is the agent's, not aiport's), never cut: a long one
+  scrolls. Characters that would not show as themselves (control
+  characters, invisible and direction-changing characters such as
+  `‮`, unusual spaces) are written as such escapes, so what you read
+  is what runs; a list of arguments is shown shell-quoted (`echo 'a b'`).
+  A command longer than 16 KiB is denied without asking, never shown in
+  part. There are three answers:
   - **Allow once**: this one time.
-  - **Allow this command for this run**: this time and every time the run
-    asks for the exact same command again; another command, or the same
-    one in a later run, asks again.
+  - **Allow until the next edit**: this time and every time the run asks
+    for the exact same command again (the same list of arguments, or the
+    same string, in the same directory: `echo 'a b'` is not `echo a b`),
+    until the agent changes a file, whether it asked to or not: an edit
+    can change what the command does, so it asks again after one. Another
+    command, or the same one in a later run, asks again.
   - **Deny**: the agent is told no and goes on without it.
 
   The agent runs an allowed command itself, in its own process, in the
@@ -738,7 +747,7 @@ available, with which agent and time limit, or the hint; each Issue
 carries its `branch_fix`. Commands waiting for you: `GET /api/v1/approvals`
 (each with `id`, `run`, `application`, `issue`, `command`, `expires_at_ms`);
 answer with `POST /api/v1/approvals/{id}` and `{"answer": "allow_once"}`,
-`"allow_run"` or `"deny"` (`404 approval_not_found` once answered or its run
+`"allow_run"` (allow until the next edit) or `"deny"` (`404 approval_not_found` once answered or its run
 ended). `GET /api/v1/runs` gives each run's `waiting` count, and
 `GET /api/v1/issues/{id}/run` the Issue's waiting `approvals`. These are
 management routes, never open to an Application token; answering needs

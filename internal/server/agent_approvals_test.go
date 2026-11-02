@@ -250,3 +250,101 @@ func TestARunLeftGoingByARestartIsMarkedStopped(t *testing.T) {
 	}
 	old.Close()
 }
+
+// run is a command request for argv (a list of arguments) in the worktree.
+func run(title string, argv ...any) acpStep {
+	return acpStep{Ask: &acpAsk{Kind: "execute", Title: title, Input: map[string]any{"command": argv, "cwd": "CWD"}}}
+}
+
+// "Allow until the next edit" lets the same command run again without
+// asking only until the agent changes a file, asked or not: an edit may
+// change what the command does.
+func TestAllowUntilTheNextEdit(t *testing.T) {
+	f, _ := newFixFixture(t, acpScript{Steps: []acpStep{
+		pytest("pytest -q", "r1"),
+		pytest("pytest -q", "r2"),
+		{Edit: &acpEdit{Path: "CWD/tests/conftest.py", Text: "import os\n"}},
+		pytest("pytest -q", "r3"),
+		pytest("pytest -q", "r4"),
+		editConfig.Steps[0],
+		pytest("pytest -q", "r5"),
+		{Say: "Done."},
+	}})
+	if code, out := f.fix(t); code != 202 {
+		t.Fatalf("fix: %d %v", code, out)
+	}
+	f.answer(t, f.waitApproval(t)["id"].(string), "allow_run") // r1
+	f.answer(t, f.waitApproval(t)["id"].(string), "allow_run") // r3: after the unasked edit
+	f.answer(t, f.waitApproval(t)["id"].(string), "deny")      // r5: after the allowed edit
+	f.fixEnded(t)
+	want := "Run pytest -q=allow_once|Run pytest -q=allow_once|Run pytest -q=allow_once|Run pytest -q=allow_once|Edit config.py=allow_once|Run pytest -q=reject_once"
+	if got := answers(t, f.agentDir); got != want {
+		t.Fatalf("answers:\n%s\nwant\n%s", got, want)
+	}
+}
+
+// An allowance matches the exact command the agent sent: the same list of
+// arguments (or the same string), never one that only looks the same when
+// joined with spaces.
+func TestAnAllowanceMatchesTheExactArguments(t *testing.T) {
+	f, _ := newFixFixture(t, acpScript{Steps: []acpStep{
+		run("one argument", "echo", "a b"),
+		run("two arguments", "echo", "a", "b"),
+		{Ask: &acpAsk{Kind: "execute", Title: "a string", Input: map[string]any{"command": "echo a b", "cwd": "CWD"}}},
+		run("one argument again", "echo", "a b"),
+		{Say: "Done."},
+	}})
+	if code, out := f.fix(t); code != 202 {
+		t.Fatalf("fix: %d %v", code, out)
+	}
+	a := f.waitApproval(t)
+	if a["command"] != "echo 'a b'" {
+		t.Fatalf("shown: %q", a["command"])
+	}
+	f.answer(t, a["id"].(string), "allow_run")
+	b := f.waitApproval(t)
+	if b["command"] != "echo a b" || b["title"] != "two arguments" {
+		t.Fatalf("second: %v", b)
+	}
+	f.answer(t, b["id"].(string), "deny")
+	c := f.waitApproval(t)
+	if c["command"] != "echo a b" || c["title"] != "a string" {
+		t.Fatalf("third: %v", c)
+	}
+	f.answer(t, c["id"].(string), "deny")
+	f.fixEnded(t)
+	want := "one argument=allow_once|two arguments=reject_once|a string=reject_once|one argument again=allow_once"
+	if got := answers(t, f.agentDir); got != want {
+		t.Fatalf("answers:\n%s\nwant\n%s", got, want)
+	}
+}
+
+// The Owner approves exactly what runs: the whole command, however long,
+// with invisible and direction-changing characters shown as escapes. A
+// command too long to show whole is denied without asking.
+func TestTheOwnerSeesTheWholeCommand(t *testing.T) {
+	long := "pytest " + strings.Repeat("tests/test_models.py ", 300)
+	f, _ := newFixFixture(t, acpScript{Steps: []acpStep{
+		{Ask: &acpAsk{Kind: "execute", Title: "Run tricky", Input: map[string]any{"command": "echo safe\u202e;rm -rf .\u200b\x1b[2K", "cwd": "CWD"}}},
+		{Ask: &acpAsk{Kind: "execute", Title: "Run long", Input: map[string]any{"command": long, "cwd": "CWD"}}},
+		{Ask: &acpAsk{Kind: "execute", Title: "Run huge", Input: map[string]any{"command": strings.Repeat("x", 64<<10), "cwd": "CWD"}}},
+		{Say: "Done."},
+	}})
+	if code, out := f.fix(t); code != 202 {
+		t.Fatalf("fix: %d %v", code, out)
+	}
+	a := f.waitApproval(t)
+	if want := "echo safe\\u202e;rm -rf .\\u200b\\u001b[2K"; a["command"] != want {
+		t.Fatalf("shown: %q want %q", a["command"], want)
+	}
+	f.answer(t, a["id"].(string), "deny")
+	b := f.waitApproval(t)
+	if b["command"] != long {
+		t.Fatalf("the long command was cut: %d bytes of %d", len(b["command"].(string)), len(long))
+	}
+	f.answer(t, b["id"].(string), "deny")
+	f.fixEnded(t)
+	if got := answers(t, f.agentDir); got != "Run tricky=reject_once|Run long=reject_once|Run huge=reject_once" {
+		t.Fatalf("answers: %s", got)
+	}
+}

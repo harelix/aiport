@@ -3,21 +3,24 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"aiport/internal/agentrun"
 )
 
 // Approving commands during Fix it (harelix/aiport#26). A command the agent
 // asks to run inside its worktree waits on the dashboard for the Owner's
-// answer: Allow once, Allow this command for this run (the exact same
-// command, in that run only), or Deny. The agent runs an allowed command
+// answer: Allow once, Allow until the next edit (the exact same command,
+// in that run, until the agent changes a file), or Deny. The agent runs an allowed command
 // itself, in its own process and its worktree's directory: aiport only
 // answers the permission. Anything outside the worktree is denied without
 // asking (fixRules). A request left unanswered for ApprovalWait stops the
@@ -31,7 +34,7 @@ const ApprovalWait = 5 * time.Minute
 // The Owner's answers to a command request.
 const (
 	AllowOnce = "allow_once"
-	AllowRun  = "allow_run"
+	AllowRun  = "allow_run" // allow until the next edit: the same command, in this run, until the agent changes a file
 	Deny      = "deny"
 )
 
@@ -41,8 +44,9 @@ type approval struct {
 	Run         string `json:"run"`
 	Application string `json:"application"`
 	Issue       string `json:"issue"`
-	// Command is the command line as the agent sent it (the agent's text:
-	// untrusted, shown escaped), with control characters made visible.
+	// Command is the whole command as the agent sent it (the agent's text:
+	// untrusted, shown as plain text), every invisible character written
+	// as an escape (visible); a list of arguments is shell-quoted.
 	Command   string   `json:"command"`
 	Title     string   `json:"title"`
 	AskedAt   int64    `json:"asked_at_ms"`
@@ -78,76 +82,135 @@ func (h *Handler) waiting(issue string) []approval {
 	return out
 }
 
-// commandOf is the command line of command request p: rawInput's command, a
-// string or a list of arguments; "" when the agent did not say.
-func commandOf(p agentrun.Permission) string {
+// MaxCommand bounds the command a request may ask to run, as the Owner sees
+// it: a longer one is denied without asking, never shown cut.
+const MaxCommand = 16 << 10
+
+// command is what a command request asks to run: Key matches it exactly
+// (the list of arguments, or the string, as the agent sent it, and the
+// directory), Shown is how the Owner sees it.
+type command struct {
+	Key   string
+	Shown string
+}
+
+// commandOf is the command request p asks to run: rawInput's command, a
+// string or a list of arguments; false when the agent did not say.
+func commandOf(p agentrun.Permission) (command, bool) {
 	var in struct {
 		Command json.RawMessage `json:"command"`
+		Cwd     string          `json:"cwd"`
 	}
 	if json.Unmarshal(p.Input, &in) != nil || len(in.Command) == 0 {
-		return ""
+		return command{}, false
 	}
+	cwd, _ := json.Marshal(in.Cwd)
 	var s string
-	if json.Unmarshal(in.Command, &s) == nil {
-		return strings.TrimSpace(s)
+	if json.Unmarshal(in.Command, &s) == nil && strings.TrimSpace(s) != "" {
+		key, _ := json.Marshal(s)
+		return command{Key: string(key) + " in " + string(cwd), Shown: visible(s)}, true
 	}
 	var args []string
-	if json.Unmarshal(in.Command, &args) == nil {
-		return strings.TrimSpace(strings.Join(args, " "))
-	}
-	return ""
-}
-
-// cwdOf is the directory command request p says it runs in, "" when none.
-func cwdOf(p agentrun.Permission) string {
-	var in struct {
-		Cwd string `json:"cwd"`
-	}
-	_ = json.Unmarshal(p.Input, &in)
-	return in.Cwd
-}
-
-// shown is command as the dashboard shows it: control characters visible,
-// at most 4000 bytes.
-func shown(command string) string {
-	s := strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) && r != '\t' {
-			return '�'
+	if json.Unmarshal(in.Command, &args) == nil && len(args) > 0 {
+		key, _ := json.Marshal(args)
+		quoted := make([]string, len(args))
+		for i, a := range args {
+			quoted[i] = shellQuote(a)
 		}
-		return r
-	}, command)
-	if len(s) > 4000 {
-		s = strings.ToValidUTF8(s[:4000], "") + "…"
+		return command{Key: string(key) + " in " + string(cwd), Shown: visible(strings.Join(quoted, " "))}, true
 	}
-	return s
+	return command{}, false
+}
+
+// shellQuote is argument a as a POSIX shell would read it back as one
+// argument, quoted only when it needs to be.
+func shellQuote(a string) string {
+	if a != "" && strings.IndexFunc(a, func(r rune) bool {
+		return !(r == '-' || r == '_' || r == '.' || r == '/' || r == ':' || r == '=' || r == '+' || r == '@' || r == ',' || r == '%' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
+	}) < 0 {
+		return a
+	}
+	return "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+}
+
+// visible is s (the agent's text) as the dashboard shows it: every
+// character that does not show as itself (control, format and
+// direction-changing characters, line and paragraph separators, unusual
+// spaces, private use, invalid UTF-8) written as an escape such as \u202e;
+// tabs and line breaks stay. Never cut.
+func visible(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		switch {
+		case r == utf8.RuneError && !strings.HasPrefix(s[i:], "�"):
+			fmt.Fprintf(&b, `\x%02x`, s[i])
+		case r == '\t' || r == '\n' || r == ' ':
+			b.WriteRune(r)
+		case r == '\\' && i+1 < len(s) && (s[i+1] == 'u' || s[i+1] == 'x' || s[i+1] == 'U'):
+			b.WriteString(`\\`) // so a written "\u202e" cannot pass for an escape
+		case unicode.In(r, unicode.Cc, unicode.Cf, unicode.Co, unicode.Cs, unicode.Zl, unicode.Zp, unicode.Zs), unicode.Is(unicode.Noncharacter_Code_Point, r), r == 0x115F, r == 0x1160, r == 0x3164, r == 0xFFA0:
+			if r > 0xFFFF {
+				fmt.Fprintf(&b, `\U%08x`, r)
+			} else {
+				fmt.Fprintf(&b, `\u%04x`, r)
+			}
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// allowances are the commands the Owner allowed "until the next edit" in
+// one run: any file edit by the agent (asked or not) clears them.
+type allowances struct {
+	mu sync.Mutex
+	m  map[string]bool
+}
+
+func (a *allowances) allow(key string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.m == nil {
+		a.m = map[string]bool{}
+	}
+	a.m[key] = true
+}
+
+func (a *allowances) has(key string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.m[key]
+}
+
+// clear forgets every allowance: the agent edited a file.
+func (a *allowances) clear() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.m = nil
 }
 
 // commandRule asks the Owner about each command a Fix it run of Application
 // app for Issue issue wants to run inside its worktree (fixRules has denied
 // anything outside it). It blocks until the Owner answers, the run ends, or
-// ApprovalWait passes; then it stops the run. "Allow this command for this
-// run" is remembered by this rule, made for one run.
-func (h *Handler) commandRule(app, issue string) agentrun.Policy {
-	var mu sync.Mutex
-	allowed := map[string]bool{}
+// ApprovalWait passes; then it stops the run (by the id the request
+// carries). "Allow until the next edit" is remembered in allowed, made for
+// one run and cleared by every edit.
+func (h *Handler) commandRule(app, issue string, allowed *allowances) agentrun.Policy {
 	return func(ctx context.Context, p agentrun.Permission) agentrun.Verdict {
-		command := commandOf(p)
-		if command == "" {
+		cmd, ok := commandOf(p)
+		switch {
+		case !ok:
 			return agentrun.Verdict{Reason: "the agent did not say which command it runs"}
-		}
-		mu.Lock()
-		again := allowed[command]
-		mu.Unlock()
-		if again {
-			return agentrun.Verdict{Allow: true, Reason: "allowed by the Owner for this run"}
-		}
-		run := ""
-		if r, ok := h.runner().Active(app); ok && r.Info().Issue == issue {
-			run = r.Info().ID
+		case len(cmd.Shown) > MaxCommand:
+			return agentrun.Verdict{Reason: "the command is longer than aiport shows whole (" + strconv.Itoa(MaxCommand>>10) + " KiB), so it is denied without asking"}
+		case allowed.has(cmd.Key):
+			return agentrun.Verdict{Allow: true, Reason: "allowed by the Owner until the next edit"}
 		}
 		wait := h.approvalTimeout()
 		now := h.clock()
-		a := &approval{ID: randomString(12), Run: run, Application: app, Issue: issue, Command: shown(command), Title: shown(p.Title),
+		a := &approval{ID: randomString(12), Run: p.Run, Application: app, Issue: issue, Command: cmd.Shown, Title: visible(p.Title),
 			AskedAt: now.UnixMilli(), ExpiresAt: now.Add(wait).UnixMilli(), Answers: []string{AllowOnce, AllowRun, Deny}, answer: make(chan string, 1)}
 		h.approvalMu.Lock()
 		if h.approvals == nil {
@@ -168,10 +231,8 @@ func (h *Handler) commandRule(app, issue string) agentrun.Policy {
 			case AllowOnce:
 				return agentrun.Verdict{Allow: true, Reason: "allowed once by the Owner"}
 			case AllowRun:
-				mu.Lock()
-				allowed[command] = true
-				mu.Unlock()
-				return agentrun.Verdict{Allow: true, Reason: "allowed by the Owner for this run"}
+				allowed.allow(cmd.Key)
+				return agentrun.Verdict{Allow: true, Reason: "allowed by the Owner until the next edit"}
 			}
 			return agentrun.Verdict{Reason: "denied by the Owner"}
 		case <-ctx.Done():
@@ -181,9 +242,9 @@ func (h *Handler) commandRule(app, issue string) agentrun.Policy {
 			if h.unanswered == nil {
 				h.unanswered = map[string]bool{}
 			}
-			h.unanswered[run] = true
+			h.unanswered[p.Run] = true
 			h.approvalMu.Unlock()
-			h.runner().Stop(run)
+			h.runner().Stop(p.Run)
 			return agentrun.Verdict{Reason: "unanswered for " + wait.String() + ": aiport stopped the run"}
 		}
 	}
