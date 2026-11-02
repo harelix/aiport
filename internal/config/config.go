@@ -85,6 +85,9 @@ type Origin struct {
 	// aliases. Each maps a model name the client sends to a connection and
 	// the model to use there.
 	Aliases []OriginAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+	// MayRequestChanges lets this Application file Change requests. Off by
+	// default: pairing alone never opens a channel into the Owner's queue.
+	MayRequestChanges bool `yaml:"may_request_changes,omitempty" json:"may_request_changes"`
 }
 
 type OriginAlias struct {

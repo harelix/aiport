@@ -23,7 +23,7 @@ import (
 //	POST /v1/aiport/pair            {name, description?}         public on loopback
 //	GET  /v1/aiport/pair/{secret}   status; the token once approved
 //	GET  /api/v1/pairings           pending requests             management
-//	POST /api/v1/pairings/{code}/approve  {id?, target?}         management
+//	POST /api/v1/pairings/{code}/approve  {id?, target?, may_request_changes?}  management
 //	POST /api/v1/pairings/{code}/reject                          management
 const (
 	PairPath       = "/v1/aiport/pair"
@@ -263,11 +263,12 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 		return true
 	}
 	var in struct {
-		ID     string `json:"id"`
-		Target string `json:"target"`
+		ID                string `json:"id"`
+		Target            string `json:"target"`
+		MayRequestChanges bool   `json:"may_request_changes"`
 	}
 	if r.ContentLength != 0 && decodeJSON(w, r, &in) != nil {
-		fail(400, "invalid_request", "Send JSON with optional id and target")
+		fail(400, "invalid_request", "Send JSON with optional id, target and may_request_changes")
 		return true
 	}
 	h.pair.mu.Lock()
@@ -312,7 +313,7 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 		fail(500, "token_save_failed", "Could not save the application's token")
 		return true
 	}
-	if _, _, err := h.live.Change("pair application "+id, config.AddOrigin(config.Origin{ID: id, Name: x.Name, TokenEnv: ref, Target: strings.TrimSpace(in.Target)})); err != nil {
+	if _, _, err := h.live.Change("pair application "+id, config.AddOrigin(config.Origin{ID: id, Name: x.Name, TokenEnv: ref, Target: strings.TrimSpace(in.Target), MayRequestChanges: in.MayRequestChanges})); err != nil {
 		_ = config.SetCredential(h.keys.File, ref, "")
 		fail(400, "invalid_client", err.Error())
 		return true
