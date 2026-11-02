@@ -12,7 +12,8 @@ gateway publishes it, without authentication, at:
 The document reflects the live gateway: base URL, which native protocols are
 configured, whether authentication is required, request/response headers,
 error codes and features. It never contains secrets, target URLs, key names or
-model lists. Host/Origin protections still apply.
+model lists (an Application reads its own model names from its Catalog, below).
+Host/Origin protections still apply.
 
 Addresses in the document (`base_url`, `docs`, `agent_prompt`, briefs and
 snippets) use the gateway's advertised address: the first entry of
@@ -38,6 +39,39 @@ delivered exactly once. Unapproved requests expire after 10 minutes. The token
 lives in the private credential file as `AIPORT_APP_<ID>_TOKEN`. The source of truth is
 `internal/connect/connect.go`; bump `Version` on incompatible changes.
 
+## The Catalog
+
+An Application's Catalog is what it can use through aiport: its task names
+(its own Aliases, then the shared Aliases of the Connections it reaches) and
+the models those Connections list, with a version. The document describes it
+as the `catalog` feature, the `X-Aiport-Catalog` response header and a
+`GET /v1/models` endpoint under each protocol:
+
+- `GET /v1/models` with the Application's own token: the model names it can
+  use on that protocol, in the OpenAI list shape, or the Anthropic one when the
+  request carries `anthropic-version`. Task names come first (`owned_by:
+  "aiport"`, or "(aiport task name)" in `display_name`), then the models of
+  the Connections it reaches; a Connection whose list cannot be read adds
+  nothing.
+- `X-Aiport-Catalog: <version>` on every answer to a request with an
+  Application token, forwarded calls and errors included. The version changes
+  only when the Application's task names or their targets, its binding or the
+  protocol defaults it follows change.
+- `GET /v1/aiport/catalog` (MCP tool `aiport_catalog`): `{catalog, changes}`,
+  the Catalog and its recent Catalog changes, newest first, each with
+  `change_id`, `at_ms`, `revert_of`, `before`/`after` versions, `removed`,
+  `added`, `moved`, `routing`, `connections_removed` and `connections_added`.
+  The management token gets `403 application_token_required`.
+- `GET /v1/aiport/capabilities` carries `catalog: {version, changed_at_ms}`.
+- A Change that takes away something the Application had (a task name, or the
+  binding or a protocol default it follows) opens an Issue of cause
+  `catalog_changed` with `catalog_change`; a failing call that sent a removed
+  task name carries an `X-Aiport-Hint` naming it.
+
+All of it answers about the calling Application only and holds Application
+ids, task names, model names and Connection ids, never keys or URLs. It works
+with adapting off; only the `catalog_changed` Issues follow the switch.
+
 ## The two briefs
 
 Both briefs are generated from the live gateway: its real listen address and
@@ -53,13 +87,17 @@ configured) and `code`. The dashboard's Integrate page renders the same data.
 - The **Application brief** covers pairing for the Application's own token,
   `AIPORT_BASE_URL` and `AIPORT_APP_TOKEN`, SDK base URLs with snippets for the
   OpenAI and Anthropic SDKs in Python and TypeScript plus curl, removing
-  provider keys, model names and Aliases, errors and retries,
-  `X-Aiport-Request-Id`, and verification.
+  provider keys, model names (read `GET /v1/models`, prefer task names; the
+  `models` snippet), watching `X-Aiport-Catalog`, errors and retries,
+  `X-Aiport-Request-Id`, Issues (including `catalog_changed`), and
+  verification.
 - The **coding-agent brief** covers the project MCP entry, the `AGENTS.md`
-  line, the tools `aiport_capabilities`, `aiport_request_change`,
-  `aiport_my_requests`, `aiport_my_issues` and `aiport_issue_fixed` and their
-  HTTP equivalents, checking the Application's Issues at the start of a
-  session and saying when one is fixed on its side, how to write a Change
+  line, the tools `aiport_capabilities`, `aiport_catalog`,
+  `aiport_request_change`, `aiport_my_requests`, `aiport_my_issues` and
+  `aiport_issue_fixed` and their HTTP equivalents, checking the Catalog (and
+  re-reading it when `X-Aiport-Catalog` changes) and the Application's Issues
+  at the start of a session and saying when one is fixed on its side (the
+  `catalog` snippet), how to write a Change
   request (`kind`, `need`, `details`, `why`, `scope`, `scope_case`, and the
   optional `alias`, `prefer_connection` and `prefer_model`), naming tasks
   rather than providers (the Owner decides which provider serves an
@@ -70,7 +108,8 @@ configured) and `code`. The dashboard's Integrate page renders the same data.
 When the Owner turns adapting off (`adapting.disabled: true`), the document
 marks `change_requests`, `issues` and `X-Aiport-Hint` with status `off`, the `mcp`
 feature says the change tools are off, `adapting` is `false`, and the
-coding-agent brief opens with the same one-line reason.
+coding-agent brief opens with the same one-line reason. The `catalog` feature
+and `X-Aiport-Catalog` stay `available`.
 
 ## Hints and the coding-agent brief
 

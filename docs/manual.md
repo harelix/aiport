@@ -5,8 +5,8 @@ decides what it does. It walks through the dashboard page by page. For exact
 configuration keys see [configuration](configuration.md); for the protocol
 Applications use see [Connect](connect.md); for policies and guardrails see
 [Extensions](extensions.md). Words with a capital letter (Application,
-Connection, Alias, Change request, Suggestion, Issue, Change, Scope,
-Extension) are
+Connection, Alias, Catalog, Change request, Suggestion, Issue, Change,
+Scope, Extension) are
 defined in the [glossary](../GLOSSARY.md).
 
 ## What aiport does
@@ -174,7 +174,9 @@ Below the list the dialog names the Applications whose Catalog the removal
 changes (task names removed or moved, a binding or a protocol default they
 follow), and updates as you change a picker. Confirming applies all the
 re-pointing and the removal as **one Change**: one revert in **Changes**
-restores the Connection and everything that used it.
+restores the Connection and everything that used it. Each affected
+Application is told through its Catalog, and an Application the removal
+took something from gets a Catalog-change Issue (see The Catalog).
 
 Without the dialog (a `DELETE /api/v1/targets/{id}` with no plan), aiport
 still refuses to remove a Connection something uses, and the message names
@@ -290,9 +292,11 @@ a tile to see its steps and snippets, each with its own **Copy**.
   the coding agent changing an application so its LLM calls go through
   aiport. It covers pairing, configuration (`AIPORT_BASE_URL`,
   `AIPORT_APP_TOKEN`), pointing the OpenAI or Anthropic SDK at aiport,
-  removing provider keys from the application, model names and Aliases,
-  errors and retries, logging `X-Aiport-Request-Id`, Issues (what they
-  are, that the Coding agent reads them with `aiport_my_issues`, and that
+  removing provider keys from the application, model names (read
+  `GET /v1/models` and prefer task names), watching the `X-Aiport-Catalog`
+  header, errors and retries, logging `X-Aiport-Request-Id`, Issues (what
+  they are, that the Coding agent reads them with `aiport_my_issues`, that a
+  Change that takes something away opens a `catalog_changed` one, and that
   aiport may fix routing itself as a revertable Change), and how to verify. Its
   **Python / TypeScript / curl** picker switches the SDK snippets. Snippets
   for a protocol this gateway has not configured are marked "not
@@ -301,11 +305,14 @@ a tile to see its steps and snippets, each with its own **Copy**.
   agents working in that application's repository later. It covers the
   project MCP entry (which reads the token from `${AIPORT_APP_TOKEN}`, never
   the value), the line for the repository's `AGENTS.md` (which tells later
-  sessions to check `aiport_my_issues` at the start), the tools
-  `aiport_capabilities`, `aiport_request_change`, `aiport_my_requests`,
-  `aiport_my_issues` and `aiport_issue_fixed` and their HTTP equivalents,
-  how to write a good Change request, waiting for your decision, the
-  permission, and hints.
+  sessions to check `aiport_catalog` and `aiport_my_issues` at the start),
+  the tools `aiport_capabilities`, `aiport_catalog`,
+  `aiport_request_change`, `aiport_my_requests`, `aiport_my_issues` and
+  `aiport_issue_fixed` and their HTTP equivalents, checking the Catalog
+  (and re-reading it when `X-Aiport-Catalog` changes) and Issues at the
+  start of a session, naming tasks rather than providers, how to write a
+  good Change request, waiting for your decision, the permission, and
+  hints.
 
 `/_connect?format=handover` returns both, one after the other.
 
@@ -416,48 +423,89 @@ You can write Aliases in the configuration file, or let them arrive as
 Changes: approving a Suggestion or Change request of kind
 `application_alias` adds one, for that Application or, if you grant
 **every Application** as the Scope, as a shared Alias. An Application can
-list its own Aliases with `GET /v1/aiport/capabilities`.
+list its own Aliases with `GET /v1/aiport/capabilities`, and every task name
+it can use with `GET /v1/models` (see The Catalog).
 
-### The Catalog: which model names an Application can use
+## The Catalog
 
-An Application's Catalog is what it can use through aiport: its task names
-(its own Aliases, then the shared Aliases of the Connections it reaches) and
-the models those Connections list. Its SDK or Coding agent reads it where it
-already looks for models:
+An Application's **Catalog** is what it can use through aiport: its task
+names (its own Aliases, then the shared Aliases of the Connections it
+reaches) and the models those Connections list, with a short **version**.
+You decide what is in it; aiport tells the Application, so it never has to
+guess a model name or learn from a provider's `404` that something changed.
+For example, docs-bot has its own Alias `summarize` and shared Alias
+`review-code`, both on the local Connection it is bound to, which also serves
+`llama3:8b`: its
+Catalog lists `summarize`, `review-code` and `llama3:8b`.
 
-- `GET /v1/models` with the Application's token answers in the OpenAI list
-  shape, or in the Anthropic shape when the request carries
-  `anthropic-version` (Anthropic SDKs may send the token in `X-Api-Key`).
-  Only names usable on that protocol are listed. Task names come first,
-  marked as aiport's (`owned_by: "aiport"`, or "(aiport task name)" in the
-  display name); then the models of the Connection it is bound to, or of the
+The briefs tell every Application and its coding agent how to use it (see **The instructions**
+under the Integrate page): read `GET /v1/models` for the names,
+watch the `X-Aiport-Catalog` header, and check `aiport_catalog` and
+`aiport_my_issues` at the start of each session.
+
+### What an Application reads
+
+All of these answer only about the Application whose token is sent: each
+Application sees only its own Catalog, and keys, addresses, prompts and
+tokens never appear.
+
+- **`GET /v1/models`**, where OpenAI and Anthropic SDKs and coding agents
+  already look for models, answers in the OpenAI list shape, or in the
+  Anthropic shape when the request carries `anthropic-version` (Anthropic
+  SDKs may send the token in `X-Api-Key`). Only names usable on that
+  protocol are listed. Task names come first, marked as aiport's
+  (`owned_by: "aiport"`, or "(aiport task name)" in the display name); then
+  the models of the Connection the Application is bound to, or of the
   protocol defaults. A Connection whose model list cannot be read adds
-  nothing. Each Application sees only its own Catalog; keys and addresses
-  never appear.
-- Every answer to a request with an Application token carries
-  `X-Aiport-Catalog: <version>`, forwarded calls and errors included (the
-  provider's answer is otherwise unchanged). The version changes when the
-  Application's task names or where they go, its binding, or the protocol
-  defaults it follows change, and only then: an Application that sees a new
-  version should read `/v1/models` again.
-- `GET /v1/aiport/catalog` (or the MCP tool `aiport_catalog`, same answer)
-  returns the calling Application's Catalog and its recent Catalog changes,
-  newest first. aiport records a Catalog change for every Application a
-  configuration Change affects (approving or reverting an Alias, binding an
-  Application, changing a protocol default, removing a Connection; a revert
-  is a Catalog change too, with `revert_of`): task names removed, added or
-  moved (`from` → `to`), the binding or protocol defaults that changed
-  (`routing`), and the Connections it no longer or newly reaches, each with
-  the Change id and time. An Application the Change did not affect gets
-  nothing. Catalog changes are kept as long as request history
-  (`telemetry.retention_days`) and survive a restart. They hold Application
-  ids, task names, model names and Connection ids only, never keys,
-  addresses, prompts, responses or tokens.
-- The capabilities answer (`GET /v1/aiport/capabilities`) carries
-  `catalog: {version, changed_at_ms}`: the version and the time of the newest
-  kept Catalog change (`null` when none is kept).
+  nothing (lists are the same free, cached ones **Show models** uses).
+- **`X-Aiport-Catalog: <version>`** is on every answer to a request with an
+  Application token, forwarded calls and errors included; the provider's
+  answer is otherwise unchanged. The version changes when the Application's
+  task names or where they go, its binding, or the protocol defaults it
+  follows change, and only then (a provider adding or retiring a model does
+  not change it). An Application that sees a new version reads
+  `/v1/models` again.
+- **`GET /v1/aiport/catalog`** (or the MCP tool `aiport_catalog`, same
+  answer) returns `catalog` (task names with their Connection and model,
+  the binding or the protocol defaults followed, the Connections reached,
+  their models and the version) and `changes`, its recent Catalog changes,
+  newest first (see below). Your management token gets `403
+  application_token_required`.
+- **The capabilities answer** (`GET /v1/aiport/capabilities`) carries
+  `catalog: {version, changed_at_ms}`: the version and the time of the
+  newest kept Catalog change (`null` when none is kept).
 
-All of this works with adapting turned off: it is information, not a Change.
+### The change log
+
+Every configuration Change goes through one place, and on each one aiport
+works out what it changed in every Application's Catalog: approving or
+reverting an Alias, binding an Application, changing a protocol default,
+removing a Connection. A revert is a Catalog change too (with `revert_of`
+naming the Change it undid). Each **Catalog change** records the Change id
+and time, the version before and after, task names `removed`, `added` or
+`moved` (`from` → `to`), the binding or protocol defaults that changed
+(`routing`), and the Connections the Application no longer or newly reaches
+(`connections_removed`, `connections_added`). An Application the Change did
+not affect gets nothing.
+
+Catalog changes are kept as long as request history
+(`telemetry.retention_days`) and survive a restart. They hold Application
+ids, task names, model names and Connection ids only, never keys,
+addresses, prompts, responses or tokens.
+
+### When a Change takes something away
+
+Removing a task name an Application had, or moving its binding or a
+protocol default it follows, does more than change the version: aiport
+opens a **Catalog-change Issue** (cause `catalog_changed`) for that
+Application, saying what changed and what it can still use. It needs no
+decision from you and resolves itself; see
+**A Catalog change** under Issues. Before a removal, the
+removal dialog shows which Applications it will affect (see
+**Removing a Connection** under Connections and keys).
+
+All of the Catalog works with adapting turned off: it is information, not a
+Change. Only the Catalog-change Issues follow the adapting switch.
 
 ## Activity and history
 
@@ -588,8 +636,9 @@ with the fix offered again.
 
 #### A Catalog change
 
-When a Change takes something away from an Application's Catalog (a task
-name it had, or the binding or a protocol default it follows moves; for
+When a Change takes something away from an Application's Catalog (see The
+Catalog: a task name it had, or the binding or a protocol default it
+follows moves; for
 example you remove a Connection and leave docs-bot's Alias `summarize`
 without one), aiport opens one Issue of cause `catalog_changed` for that
 Application, one per Change. Applications the Change took nothing from get
@@ -606,8 +655,9 @@ none: that Issue already says so.
   `X-Aiport-Hint` on a failing call that sent a removed task name.
 - **Resolution**: it resolves itself when the Application's calls succeed
   after the change (and after its last failing call with a removed name),
-  when its Coding agent reports it fixed (`aiport_issue_fixed`), or when you
-  revert the Change. You can also dismiss it.
+  at once when its Coding agent reports it fixed (`aiport_issue_fixed`:
+  there is nothing in aiport to confirm), or when you revert the Change.
+  You can also dismiss it.
 
 None are opened while adapting is off; the Catalog itself is still disclosed.
 
@@ -986,12 +1036,13 @@ management token gets `403`):
   `X-Aiport-Hint` header naming that Issue, so the Application's own logs
   point the agent to it: for an unknown model, a provider `404` for the
   same model; for a failing Connection, a `5xx`, timeout or connection
-  error from that Connection. Other failing calls, and aiport's own
+  error from that Connection; for a Catalog change, a failing call that
+  sent a removed task name. Other failing calls, and aiport's own
   refusals that are not the Issue's cause, name no Issue. Issue hints are
   sent whether or not the Application may request changes: telling it about
   its Issues is not a Change request.
 - The `AGENTS.md` line from the Coding agent brief tells later sessions to
-  check `aiport_my_issues` at the start.
+  check `aiport_catalog` and `aiport_my_issues` at the start.
 
 When the agent has fixed the Application's code, it says so with `aiport_issue_fixed` (or
 `POST /v1/aiport/issues/{id}/fixed`). The Issue becomes **resolving** by the
@@ -1095,7 +1146,10 @@ shows nothing new,
 Change requests and `/v1/aiport/issues` answer `409 adapting_off`, the
 Issue tools are not offered over MCP, capabilities carry no `open_issues`,
 no hints are sent, Explain is unavailable, and `/_connect` and both briefs mark change requests,
-Issues, their MCP tools and `X-Aiport-Hint` as off with the reason. Forwarding is unchanged, and Revert
+Issues, their MCP tools and `X-Aiport-Hint` as off with the reason. The
+Catalog is still disclosed (`/v1/models`, `X-Aiport-Catalog`,
+`/v1/aiport/catalog`, `aiport_catalog`) and Catalog changes are still
+recorded, but no Catalog-change Issues are opened. Forwarding is unchanged, and Revert
 still works on earlier Changes. See [configuration](configuration.md) for
 the detector thresholds and the check interval.
 
@@ -1169,7 +1223,7 @@ reasons, and where each is fixed:
 | Cannot reach the provider: connecting timed out / the connection was closed | `502 upstream_unavailable`, `timeout` / `connection_reset` | Check the network and the base URL; retry. |
 | Timed out: the provider did not answer in time | `504 upstream_timeout` | Retry; for slow local models raise `proxy.response_header_timeout_ms`. |
 | Provider error: the key was rejected | provider `401`/`403` (`authentication_error`, `invalid_api_key`, `permission_error`) | Replace the key on Providers, then **Check connection**. |
-| Provider error: unknown model | provider `404` (`not_found_error`, `model_not_found`) | Use a model the provider lists, or add an Alias. When it keeps happening aiport opens an Issue in Changes that says which Connection serves the model. |
+| Provider error: unknown model | provider `404` (`not_found_error`, `model_not_found`) | Use a model the provider lists (the Application sees them with `GET /v1/models`), or add an Alias. When it keeps happening aiport opens an Issue in Changes that says which Connection serves the model. |
 | Provider error: rate-limited | provider `429` (`rate_limit_error`) | Wait, or ask the provider for a higher limit. |
 | Provider error: out of quota or credit | `insufficient_quota`, `billing_error` | Check the plan and billing with the provider. |
 | Provider error: the request was not accepted | provider `400` (`invalid_request_error`) | Check the model name and parameters the Application sends. |

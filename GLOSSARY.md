@@ -39,8 +39,14 @@ shared ones.
 **Catalog**
 What one Application can use through aiport: its task names (its own Aliases
 and the shared ones) and the models listed by the Connections it reaches, with
-a version. A **Catalog change** is the difference one Change made to one
-Application's Catalog.
+a version. The Application reads it at `GET /v1/models` and sees the version
+on every answer.
+_Avoid_: model list (that is one Connection's).
+
+**Catalog change**
+The difference one Change made to one Application's Catalog: task names
+removed, added or moved, and routing that changed. One that takes something
+away is told to the Application as an Issue.
 
 ## Adapting aiport
 

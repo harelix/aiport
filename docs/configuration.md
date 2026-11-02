@@ -76,7 +76,7 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `defaults` | Optional `openai_target` and `anthropic_target`; matching target protocols required |
 | `aliases` | List of `target`, `alias`, `model`; unique alias per target; model strings 1–256 bytes |
 | `telemetry.enabled` | true; request metadata is saved to `<config>.db` (SQLite) |
-| `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests, and resolved or dismissed Issues, are kept (dismissed ones at least 7 days, the quiet period); Changes themselves are never pruned |
+| `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests, and resolved or dismissed Issues, are kept (dismissed ones at least 7 days, the quiet period), and how long Catalog changes are kept; Changes themselves are never pruned |
 | `telemetry.queue_capacity` | 4096; range 1–65536 |
 | `telemetry.batch_size` | 100; range 1–queue capacity |
 | `telemetry.flush_interval_ms` | 250; range 1–60000 |
@@ -216,6 +216,29 @@ state, models, listed_at_ms}` (model ids only; `listed: false` means unknown);
 that protocol, where `answer` is `one`, `none`, `several` or `unknown` (a
 Connection whose listing failed is in `unknown`). Lists are kept in memory
 for two minutes; a failed listing is not kept.
+
+Catalog (Application token; works with `adapting.disabled`): `GET /v1/models`
+lists the calling Application's task names, then the models its reached
+Connections list, from the same cached lists (OpenAI list shape; Anthropic
+shape with `anthropic-version`). Every answer to an Application token carries
+`X-Aiport-Catalog: <version>` (12 hex characters of SHA-256 over its binding,
+followed protocol defaults, task names and their targets; model lists do not
+change it). `GET /v1/aiport/catalog` returns `{catalog, changes}`. Catalog
+changes are worked out from every configuration Change and revert and kept in
+the `catalog_changes` table of `<config>.db` for `telemetry.retention_days`.
+
+Removing a Connection (management access): `GET /api/v1/targets/{id}/dependents`
+(or `POST` with `X-Aiport-CSRF: 1` and a draft plan) returns `{connection, dependents, applications,
+problem?}`, each dependent with its suggested replacement and `applications`
+the Applications whose Catalog the plan changes; `DELETE /api/v1/targets/{id}`
+with `{"plan": {"<dependent id>": "<Connection id or empty>"}}` re-points every
+dependent and removes the Connection as one Change (`{ok, change_id,
+applications}`). Dependent ids are `default:<protocol>`, `binding:<app>`,
+`alias:<name>`, `application_alias:<app>:<name>`, `explain`, `agent_runs` and
+`evaluation`; an empty Connection leaves the item without one (default unset,
+binding or Alias removed, the feature turned off). Without a plan, a
+Connection something uses is refused (`400 invalid_connection`, naming what
+uses it).
 
 The public local root serves embedded login assets under a restrictive same-origin
 CSP. The UI sends its in-memory management token as bearer auth; no localStorage,

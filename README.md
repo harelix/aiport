@@ -43,6 +43,12 @@ llama.cpp) yourself.
   agent. It can also ask your installed coding agent to **Explain** the root
   cause or **Fix it** in a separate worktree, ending in a diff you keep or
   discard.
+- **Applications know what they can use.** `GET /v1/models` lists the task
+  names and models each Application can use (its **Catalog**), an
+  `X-Aiport-Catalog` header on every answer tells it when you change them,
+  and a change that takes something away reaches its coding agent as an
+  Issue. You can remove any Connection: aiport re-points what used it as one
+  revertable Change.
 - **Local and private.** It listens on loopback only, refuses cross-site
   requests, and records request metadata, never prompts or responses.
 
