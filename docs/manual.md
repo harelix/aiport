@@ -563,6 +563,13 @@ Connection from Settings explains, as above.
   own working copy) is denied. aiport only ever answers "once", so nothing
   is remembered in the agent's own settings. A permission request that
   names a session aiport did not open is denied.
+- **Which paths count**: every path a request names counts, not only its
+  locations: the paths in its raw input (`path`, `file_path`, `cwd`, a
+  move's `destination`, the files of a patch, and the base of a search
+  pattern such as `/etc/**` or `../*.py`), at any depth. One path outside
+  (or in your home directory, `~`) denies the request, and a read or
+  search that names no path at all is denied too. This holds for Explain
+  and Fix it alike.
 - **Session modes**: when the agent offers modes (Claude Code's adapter
   offers, for example, `default`, `acceptEdits`, `plan` and
   `bypassPermissions`), aiport switches the session to the most
@@ -642,8 +649,13 @@ docs-bot").
 - **What the agent may do**: aiport answers every permission request
   itself. Reading, searching and editing, creating, deleting or moving
   files inside the worktree are allowed (symbolic links are followed, so a
-  link pointing out of the worktree is outside; the worktree's `.git` is
-  not the agent's to change). A command inside the worktree waits for
+  link pointing out of the worktree is outside). Never allowed, at any
+  level of the worktree and whatever their case: the agents' own
+  configuration (`.claude/`, `.codex/`, `.gemini/`, `.mcp.json`,
+  `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `GEMINI.md`) and git's
+  (`.git/`, git hooks in `.husky/` or `.githooks/`, `.gitattributes`,
+  `.gitmodules`), so a kept branch cannot change how your agents or git
+  behave. A command inside the worktree waits for
   your answer (see Approving commands below). Anything outside the
   worktree, including your own copy of the repository and a command that
   says it runs elsewhere, is denied without asking. aiport only ever

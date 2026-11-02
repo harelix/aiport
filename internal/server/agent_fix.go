@@ -88,51 +88,6 @@ func (h *Handler) worktreeRoot() string {
 	return filepath.Join(os.TempDir(), "aiport-worktrees")
 }
 
-// fixRules is Fix it's permission rule inside the worktree root: reading
-// and searching inside it, and editing, deleting or moving files inside it
-// (never its .git), are allowed; a command goes to command; everything
-// else, and any path outside root, is denied.
-func fixRules(root string, command agentrun.Policy) agentrun.Policy {
-	return func(ctx context.Context, p agentrun.Permission) agentrun.Verdict {
-		switch p.Kind {
-		case "think":
-			return agentrun.Verdict{Allow: true, Reason: "thinking"}
-		case "read", "search":
-			for _, path := range p.Paths {
-				if !inside(root, path) {
-					return agentrun.Verdict{Reason: "outside the run's worktree"}
-				}
-			}
-			return agentrun.Verdict{Allow: true, Reason: "reading inside the run's worktree"}
-		case "edit", "delete", "move":
-			if len(p.Paths) == 0 {
-				return agentrun.Verdict{Reason: "the agent did not say which file it changes"}
-			}
-			for _, path := range p.Paths {
-				rel, ok := within(root, path)
-				if !ok {
-					return agentrun.Verdict{Reason: "outside the run's worktree"}
-				}
-				if first, _, _ := strings.Cut(rel, string(filepath.Separator)); first == ".git" {
-					return agentrun.Verdict{Reason: "the worktree's git data is not the agent's to change"}
-				}
-			}
-			return agentrun.Verdict{Allow: true, Reason: "editing inside the run's worktree"}
-		case "execute":
-			for _, path := range p.Paths {
-				if !inside(root, path) {
-					return agentrun.Verdict{Reason: "a command outside the run's worktree"}
-				}
-			}
-			if cwd := cwdOf(p); cwd != "" && !inside(root, cwd) {
-				return agentrun.Verdict{Reason: "a command outside the run's worktree"}
-			}
-			return command(ctx, p)
-		}
-		return agentrun.Verdict{Reason: "Fix it allows only reading and editing files inside the run's worktree"}
-	}
-}
-
 // fixPrompt is what an agent fixing is is told: aiport's evidence
 // (explain.Prompt: never tokens, keys or anything an Application wrote),
 // the saved explanation if any, and the task.

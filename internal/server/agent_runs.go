@@ -8,7 +8,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -122,70 +121,6 @@ func (h *Handler) runEnv(agent string, calls agentrun.ModelCalls) (env []string,
 	return env, token, revoke
 }
 
-// readOnly is Explain's permission rule: reading and searching inside root
-// is allowed; every edit, command and anything outside root is denied.
-func readOnly(root string) agentrun.Policy {
-	return func(_ context.Context, p agentrun.Permission) agentrun.Verdict {
-		switch p.Kind {
-		case "read", "search", "think":
-			for _, path := range p.Paths {
-				if !inside(root, path) {
-					return agentrun.Verdict{Reason: "outside the repository"}
-				}
-			}
-			return agentrun.Verdict{Allow: true, Reason: "reading inside the repository"}
-		}
-		return agentrun.Verdict{Reason: "Explain is read-only: aiport denies every edit and command"}
-	}
-}
-
-// inside reports whether path is root or below it, with symbolic links
-// resolved (within).
-func inside(root, path string) bool {
-	_, ok := within(root, path)
-	return ok
-}
-
-// within is path relative to root, and whether it is root or below it. A
-// relative path is relative to root. Symbolic links are resolved in the
-// longest part of path that exists, so a file not created yet in a linked
-// directory is where the link points; a link that cannot be resolved is
-// never inside.
-func within(root, path string) (string, bool) {
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
-	}
-	real, ok := resolve(filepath.Clean(path))
-	if !ok {
-		return "", false
-	}
-	rel, err := filepath.Rel(root, real)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", false
-	}
-	return rel, true
-}
-
-// resolve resolves the symbolic links of the longest existing part of the
-// clean absolute path p and appends the rest as it is.
-func resolve(p string) (string, bool) {
-	rest := ""
-	for {
-		if real, err := filepath.EvalSymlinks(p); err == nil {
-			return filepath.Join(real, rest), true
-		}
-		if _, err := os.Lstat(p); err == nil {
-			return "", false // exists but cannot be resolved
-		}
-		parent := filepath.Dir(p)
-		if parent == p {
-			return "", false
-		}
-		rest = filepath.Join(filepath.Base(p), rest)
-		p = parent
-	}
-}
-
 // explainPrompt is what an agent explaining is is told: aiport's evidence
 // (explain.Prompt: never tokens, keys or anything an Application wrote) and
 // the task.
@@ -284,7 +219,6 @@ func (h *Handler) removeTree(t worktree.Tree) {
 		log.Printf("aiport: left %s alone: it is not in aiport's worktrees directory %s", t.Dir, t.Root)
 	}
 }
-
 
 // explainBy says, for each Application whose Issues a Coding agent would
 // explain, which agent and where its model calls go (GET /api/v1/issues).
