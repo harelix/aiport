@@ -208,8 +208,13 @@ narrow screen the strip moves below).
   and **Reject**.
 - The list shows each approved Application: name, client id, Connection (or
   the protocol default), the **May request changes** toggle, its last call
-  (in the last 7 days, when activity recording is on) and its onboarding
-  progress, such as `3/5`.
+  (in the last 7 days, when activity recording is on), its open **Issues**
+  and its onboarding progress, such as `3/5`.
+- **Issues** shows how many open or resolving Issues the Application has
+  and a short cause, such as "Unknown model llama3:8b" (None when there are
+  none). Select it to list them under the row: each with its summary, **Open
+  in Changes** (opens that Issue on the Changes page, where you approve or
+  dismiss it) and **Copy fix for the coding agent** (see Changes, Issues).
 - The **Approved / Rejected / All** filter picks what the list shows.
   Rejected Applications are hidden until you choose **Rejected** or **All**;
   each shows when it was rejected, with **Forget**.
@@ -360,9 +365,18 @@ hosted Connection that does not serve that model.
   filled in; with none, several or unknown, choose the Connection (and the
   model, if it has another name there) yourself. **Approve** applies it as an
   ordinary Change you can revert; the Issue becomes **resolving**.
-- **Fix in the Application**: what to change in the Application's code,
-  written for its coding agent (send a model this gateway serves, listed for
-  that protocol, or ask for the Alias with a Change request).
+- **Copy fix for the coding agent**: copies the fix in the Application, a
+  ready instruction for the coding agent in the Application's repository:
+  paste it as-is. It says what is wrong, the evidence (counts, times, the
+  Connections, example request ids), what aiport found, what to change in
+  the Application (ask for the Alias with a Change request, or send a model
+  this gateway serves, listed for that protocol) and how to confirm the fix
+  (one call with the Application's own token answers `200`; aiport then
+  resolves the Issue by itself). Once the fix in aiport is applied it says
+  no code change is needed. It holds no prompts, keys or tokens. **Read the
+  fix** shows the same text first. The button is also on the Integrate page,
+  under the Application's row, and the text is the same one aiport gives the
+  Application's coding agent about its Issues.
 - **Dismiss**: the Issue stays quiet for 7 days unless the evidence doubles.
 
 An Issue resolves itself: when the Application's calls for that model
