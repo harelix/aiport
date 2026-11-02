@@ -64,7 +64,14 @@ type Document struct {
 	Errors      []ErrorCode `json:"errors"`
 	Features    []Feature   `json:"features"`
 	Privacy     []string    `json:"privacy"`
-	Integration Integration `json:"integration"`
+	// Integration is the Application brief; AgentIntegration the
+	// coding-agent brief. Briefs lists where each is served.
+	Integration      Integration `json:"integration"`
+	AgentIntegration Integration `json:"agent_integration"`
+	Briefs           []Brief     `json:"briefs"`
+	// Adapting is false when the Owner turned the adapting loop off: no
+	// Change requests and no hints then.
+	Adapting bool `json:"adapting"`
 }
 type Auth struct {
 	Required    bool   `json:"required"`
@@ -75,6 +82,7 @@ type Auth struct {
 // Describe builds the protocol document for the given configuration.
 func Describe(c config.Config) Document {
 	base := "http://" + c.Listen
+	on := !c.Adapting.Disabled
 	has := func(id string) bool {
 		for _, t := range c.Targets {
 			if t.ID == id && !t.Disabled {
@@ -83,7 +91,7 @@ func Describe(c config.Config) Document {
 		}
 		return false
 	}
-	return Document{
+	d := Document{
 		Protocol:    Protocol,
 		Version:     Version,
 		Gateway:     "aiport",
@@ -103,7 +111,7 @@ func Describe(c config.Config) Document {
 		Auth: Auth{
 			Required:    !c.Auth.Disabled,
 			Credential:  "A per-application aiport token. Never send provider API keys to aiport; it adds them upstream.",
-			HowToObtain: "Pair: POST /v1/aiport/pair {\"name\":\"<application name>\"} (no token needed), show the returned code to the owner, who approves it in the aiport dashboard, then GET the returned poll path to collect your token once.",
+			HowToObtain: "Pair: POST /v1/aiport/pair {\"name\":\"<application name>\"} (no token needed), show the returned code to the owner, who approves it on the Integrate page of the aiport dashboard, then GET the returned poll path to collect your token once.",
 		},
 		Request: []Header{
 			{"X-Aiport-Effort", "low, medium, high", "Task difficulty used to pick a model within a tier.", "planned"},
@@ -135,7 +143,7 @@ func Describe(c config.Config) Document {
 			{400, "invalid_feedback", "Feedback needs request_id and a score between 0 and 1."},
 			{403, "application_token_required", "This endpoint describes one Application: send that Application's own token, not the Owner's."},
 			{404, "request_not_found", "No retained request with this id for this application."},
-			{403, "change_requests_not_allowed", "The Owner has not allowed this Application to request changes; the Owner can enable it in the dashboard (Routing → Applications)."},
+			{403, "change_requests_not_allowed", "The Owner has not allowed this Application to request changes; the Owner can allow it on the Integrate page of the aiport dashboard."},
 			{400, "invalid_change_request", "The change request is incomplete or too large; error.problems lists every problem as {field, problem}."},
 			{403, "change_request_refused", "A policy Extension the Owner added refused this change request; error.reason says why and error.extension names it."},
 			{429, "change_requests_rate_limited", "Too many change requests from this Application in the last hour; retry after Retry-After seconds."},
@@ -161,13 +169,42 @@ func Describe(c config.Config) Document {
 			{"mcp", "available", "Model Context Protocol (Streamable HTTP, JSON responses) at POST /mcp, authenticated with Authorization: Bearer <the Application's own token> (from AIPORT_APP_TOKEN; the Owner's token is refused). Tools: aiport_capabilities, aiport_request_change and aiport_my_requests, answering exactly as GET /v1/aiport/capabilities and /v1/aiport/requests do. Project-level MCP entry: {\"type\":\"http\",\"url\":\"<this aiport>/mcp\",\"headers\":{\"Authorization\":\"Bearer ${AIPORT_APP_TOKEN}\"}}; never commit the token itself."},
 			{"pairing", "available", "POST /v1/aiport/pair {name}: an application asks for its own token; the owner approves the shown code in the dashboard; the application collects the token once from the poll path. Requests expire after 10 minutes."},
 		},
-		Integration: integration(base + "/v1"),
 		Privacy: []string{
 			"aiport records request metadata only (time, route, model, status, latency) when telemetry is on; never prompts or responses.",
 			"X-Aiport-* request headers are removed before forwarding to providers.",
 			"aiport listens on loopback only and refuses cross-site browser requests.",
 		},
+		Adapting: on,
 	}
+	if !on {
+		adaptingOff(&d)
+	}
+	d.Integration = applicationBrief(d, base)
+	d.AgentIntegration = agentBrief(d, base)
+	d.Briefs = briefs(base)
+	return d
+}
+
+// AdaptingOff is the one-line reason Change requests, their MCP tools and
+// hints are off.
+const AdaptingOff = "Off: the Owner has turned adapting off on this gateway (adapting.disabled), so Change requests answer 409 adapting_off and no hints are sent."
+
+// adaptingOff marks what the adapting loop provides as off, with the reason.
+func adaptingOff(d *Document) {
+	for i, h := range d.Response {
+		if h.Name == "X-Aiport-Hint" {
+			d.Response[i].Status, d.Response[i].Description = "off", AdaptingOff
+		}
+	}
+	for i, f := range d.Features {
+		switch f.Name {
+		case "change_requests":
+			d.Features[i].Status, d.Features[i].Description = "off", AdaptingOff
+		case "mcp":
+			d.Features[i].Description = "Model Context Protocol (Streamable HTTP, JSON responses) at POST /mcp, authenticated with Authorization: Bearer <the Application's own token> (from AIPORT_APP_TOKEN). aiport_capabilities works; aiport_request_change and aiport_my_requests are " + strings.ToLower(AdaptingOff[:1]) + AdaptingOff[1:]
+		}
+	}
+	d.ErrorFormat += " With adapting off no hint is sent."
 }
 
 // Markdown renders the document as a guide for people and coding agents.
@@ -209,7 +246,13 @@ func Markdown(d Document) string {
 	for _, e := range d.Errors {
 		w("| %d | `%s` | %s |\n", e.Status, e.Code, e.Meaning)
 	}
-	integrating(w, d)
+	w("\n## Integration briefs\n\nSelf-contained instructions generated from this gateway, to paste to a coding agent:\n\n")
+	for _, br := range d.Briefs {
+		w("- **%s** (`%s`): %s\n", br.Title, br.URL, br.Audience)
+	}
+	w("\n`%s?format=handover` returns both.\n", Path)
+	render(w, d.Integration, "##")
+	render(w, d.AgentIntegration, "##")
 	w("\n## Features\n\n| Feature | Status | Description |\n|---|---|---|\n")
 	for _, f := range d.Features {
 		w("| %s | %s | %s |\n", f.Name, f.Status, f.Description)
@@ -218,66 +261,5 @@ func Markdown(d Document) string {
 	for _, p := range d.Privacy {
 		w("- %s\n", p)
 	}
-	return b.String()
-}
-
-// Integration is the checklist for a coding agent wiring an application to
-// this gateway. It is part of the live document, so it always matches the
-// gateway being integrated with.
-type Integration struct {
-	Intro string   `json:"intro"`
-	Steps []string `json:"steps"`
-	Note  string   `json:"note"`
-}
-
-func integration(base string) Integration {
-	root := strings.TrimSuffix(base, "/v1")
-	return Integration{
-		Intro: "You are changing an application so its LLM calls go through the aiport gateway on this machine. aiport is a pass-through: keep the provider's native SDK and request format, change only where calls go and which key is sent.",
-		Steps: []string{
-			"**Get the application its own token by pairing.** If the application has no `AIPORT_APP_TOKEN` yet: `POST " + root + "/v1/aiport/pair` with `{\"name\":\"<application name>\",\"description\":\"<what it uses LLMs for>\"}` (no token needed). Show the returned `code` to the user and tell them to approve it in the aiport dashboard (Routing → Applications). Then `GET` the returned `poll` path every `poll_interval_s` seconds until `status` is `approved` (the reply then contains `token`, shown only once) or `rejected`; requests expire after 10 minutes. Store the token in the application's private, uncommitted configuration as `AIPORT_APP_TOKEN`. Pair once per application, not per run; pair again only if aiport answers `401`.",
-			"**Configuration, not code.** Read `AIPORT_BASE_URL` (default `" + root + "`) and `AIPORT_APP_TOKEN` from the application's environment or config. Never hard-code either, and never commit the token.",
-			"**Point the SDK at aiport.** OpenAI SDK: `base_url = AIPORT_BASE_URL + \"/v1\"`, `api_key = AIPORT_APP_TOKEN`. Anthropic SDK: `base_url = AIPORT_BASE_URL` (no `/v1`), `api_key = AIPORT_APP_TOKEN`. Plain HTTP: `POST /v1/chat/completions`, `/v1/responses` or `/v1/messages` with `Authorization: Bearer <token>` (Anthropic also accepts `x-api-key`).",
-			"**Remove provider keys from the application.** aiport adds the real key upstream. The application must not need `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` for calls routed through aiport.",
-			"**Use a protocol the gateway has configured.** `GET " + root + Path + "` lists which protocols are available. A protocol that is not configured returns `503 target_unconfigured`; aiport does not translate between protocols.",
-			"**Model names.** Send the model the Owner gave you, or an alias the Owner set up for this Application (`GET " + root + "/v1/aiport/capabilities` with the Application's token lists its aliases, binding and reachable protocols). aiport forwards unknown models unchanged; the provider decides.",
-			"**Errors.** A body of `{\"error\":{\"code\":...}}` with a code listed at `" + root + Path + "?format=markdown` came from aiport; anything else is the provider's own error, passed through. Retry only `429 concurrency_limit`, `502` and `504`, with backoff. On `401` the token is missing or no longer valid: pair again, do not retry.",
-			"**Log `X-Aiport-Request-Id`** from responses next to your own request logs; the owner finds the call in aiport's Activity page with it.",
-			"**Optional:** send `X-Aiport-Compress` to shrink large prompts, and `POST /v1/aiport/feedback` with the request id and a 0–1 score so the owner can see whether compression hurts answers. Do not rely on features marked `planned`.",
-			"**Let future sessions ask aiport for changes.** Add a project-level MCP entry to the Application's repository (Claude Code: `.mcp.json`; other agents: their project MCP config) so coding agents there can reach aiport: `" + mcpEntry(root) + "`. It takes the token from the `AIPORT_APP_TOKEN` environment variable; never write the token itself into the file. Then add this line to the repository's `AGENTS.md`: \"" + AgentsLine + "\" Requesting changes needs the Owner's permission: until the Owner allows this Application in the aiport dashboard (Routing → Applications), aiport answers `403 change_requests_not_allowed`; `GET " + root + "/v1/aiport/capabilities` shows whether it may.",
-			"**Verify.** Make one real call, check it succeeds, and ask the owner to confirm it appears under the application's name in aiport's Activity page. If it shows as `unknown`, the token is not the application's own.",
-		},
-		Note: "aiport stores no prompts or responses, only request metadata, and listens on this machine only. Full protocol reference: " + root + Path + "?format=markdown",
-	}
-}
-
-// AgentsLine is the line an integrating agent adds to the application's
-// AGENTS.md, so future sessions ask aiport instead of working around it.
-const AgentsLine = "This app's LLM calls go through aiport. If aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it."
-
-// mcpEntry is the project-level MCP server entry for this gateway. It names
-// the environment variable holding the token, never the token.
-func mcpEntry(root string) string {
-	return `{"mcpServers":{"aiport":{"type":"http","url":"` + root + `/mcp","headers":{"Authorization":"Bearer ${AIPORT_APP_TOKEN}"}}}}`
-}
-
-func integrating(w func(string, ...any), d Document) {
-	w("\n## Integrating an application (for coding agents)\n\n%s\n\n", d.Integration.Intro)
-	for i, step := range d.Integration.Steps {
-		w("%d. %s\n", i+1, step)
-	}
-	w("\n%s\n", d.Integration.Note)
-}
-
-// Handover renders only the integration instructions, as a self-contained
-// brief the owner can paste to a coding agent working in another repository.
-func Handover(d Document) string {
-	var b strings.Builder
-	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
-	w("# Integrate this application with aiport\n\n%s\n\n", d.Integration.Intro)
-	for i, step := range d.Integration.Steps {
-		w("%d. %s\n", i+1, step)
-	}
-	w("\n%s\n", d.Integration.Note)
 	return b.String()
 }

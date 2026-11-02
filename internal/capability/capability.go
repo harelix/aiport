@@ -80,7 +80,7 @@ type Capabilities struct {
 }
 
 // NotPermitted explains an empty ChangeKinds list.
-const NotPermitted = "This Application may not request changes. The Owner can allow it in the aiport dashboard (Routing → Applications)."
+const NotPermitted = "This Application may not request changes. The Owner can allow it on the Integrate page of the aiport dashboard."
 
 // AdaptingOff explains an empty ChangeKinds list while the Owner has turned
 // adapting off: no Change requests are accepted from any Application.
