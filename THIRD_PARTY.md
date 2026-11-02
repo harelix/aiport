@@ -19,7 +19,9 @@ this dependency requires reviewing upstream changes and refreshing vendored file
 
 The embedded dashboard bundles React 19.3.0 and React DOM 19.3.0, including their
 scheduler dependency. MIT license texts are retained in `licenses/`. Icons come from lucide-react 1.52.0
-(ISC license, retained in `licenses/lucide-react-LICENSE`); only the icons used are bundled. The frontend
+(ISC license, retained in `licenses/lucide-react-LICENSE`); only the icons used are bundled. Provider marks (OpenAI, Anthropic, Amazon Web Services, Meta, Ollama) are
+SVG paths from Simple Icons (CC0 1.0, https://simpleicons.org), inlined in `web/src/ProviderLogo.tsx`; the
+marks themselves remain trademarks of their owners and only identify the provider. The frontend
 uses Vite 7.3.6 and TypeScript 5.9.3 as build-time tools. This preview was built
 using the corresponding already-installed local packages because package-registry
 access was unavailable. Direct package versions are pinned in web/package.json;

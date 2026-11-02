@@ -83,7 +83,9 @@ listens on and Sign out (or "Authentication off" when it is turned off).
 
 A Connection is a provider aiport can forward to: OpenAI, Anthropic, Amazon
 Bedrock, Meta Model API, or a local server such as Ollama or llama.cpp. Each
-Connection speaks one protocol, `openai` or `anthropic`.
+Connection speaks one protocol, `openai` or `anthropic`. Each provider shows
+its logo on its card, in the add list and in the Overview's provider
+distribution; llama.cpp and custom providers show a neutral icon.
 
 On **Providers**:
 

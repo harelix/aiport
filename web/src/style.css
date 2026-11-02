@@ -580,3 +580,9 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .help-button.on{color:var(--accent-text);background:var(--panel)}
 .integrate-foot{margin-top:-8px}
 @media(max-width:650px){.pairing{grid-template-columns:1fr}}
+
+/* Provider marks */
+.provider-logo{flex:none;color:var(--text)}
+.provider-icon .provider-logo{color:var(--accent-text)}
+.add-row .provider-logo{color:var(--muted)}
+.with-logo{display:inline-flex;align-items:center;gap:8px}

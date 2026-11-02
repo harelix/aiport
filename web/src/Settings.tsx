@@ -1,6 +1,7 @@
 import React, {FormEvent, useState} from 'react';
 import {Activity, Check, ChevronRight, Cloud, Copy, HardDrive, Plus} from 'lucide-react';
 import {AuthenticationSettings} from './AuthGate';
+import {ProviderLogo} from './ProviderLogo';
 import {ApplicationsPanel} from './Applications';
 import KeyField, {KeySource, keyBadge} from './KeyField';
 
@@ -196,7 +197,7 @@ function ProviderCard({t, spec, src, role, defaults, onKeys, onChange, check, on
   const [text, tone] = t.disabled ? ['Disabled', ''] : keyBadge[src];
   return <article className={'provider' + (t.disabled ? ' off' : '')}>
     <header className="provider-title">
-      <span className="provider-icon" aria-hidden>{name.charAt(0)}</span>
+      <span className="provider-icon" aria-hidden><ProviderLogo provider={t.provider} location={t.location} size={20}/></span>
       <div><h3>{name}</h3><small>{t.id}</small></div>
       <span className={'badge ' + tone}>{text}</span>
     </header>
@@ -268,7 +269,7 @@ function ProviderGroup({location, targets, presets, providers, taken, sources, s
       <ul>
         {presets.map(p => <li key={p.id}>
           <button type="button" className={'add-row' + (adding === p.id ? ' open' : '')} aria-expanded={adding === p.id} onClick={() => setAdding(a => a === p.id ? '' : p.id)}>
-            <Plus size={14} aria-hidden/><strong>{p.name}</strong>{count(p.id) > 0 && <em className="count">{count(p.id)} added</em>}
+            <Plus size={14} aria-hidden/><ProviderLogo provider={p.id} location={location} size={16}/><strong>{p.name}</strong>{count(p.id) > 0 && <em className="count">{count(p.id)} added</em>}
             <span>{[p.regional && 'Region', p.endpoints.length > 1 && p.endpoints.length + ' endpoints', p.api_key_env ? 'API key' : 'No key', protocolsOf(p).map(protoName).join(' or ') + ' protocol'].filter(Boolean).join(' · ')}</span>
           </button>
           {adding === p.id && <AddPreset spec={p} taken={taken} onDone={done}/>}
