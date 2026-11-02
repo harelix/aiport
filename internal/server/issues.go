@@ -62,7 +62,7 @@ func (h *Handler) issuesRoute(w http.ResponseWriter, r *http.Request, fail func(
 		if h.decisions != nil {
 			issues = h.decisions.Issues(f)
 		}
-		writeJSON(w, 200, map[string]any{"adapting": h.decisions != nil && h.decisions.On(), "issues": issues})
+		writeJSON(w, 200, map[string]any{"adapting": h.decisions != nil && h.decisions.On(), "auto_fix": h.live.Config().Adapting.AutoFix, "issues": issues})
 		return true
 	}
 	id, ok := strings.CutPrefix(r.URL.Path, "/api/v1/issues/")

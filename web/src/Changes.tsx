@@ -36,6 +36,9 @@ export type Issue = {
   resolving_by?: string; resolution?: {how: string; at_ms: number; change_id?: string}; reopened?: number;
 };
 
+/** Who makes a Change aiport applies itself (adapting.auto_fix). */
+const AUTOMATIC = 'aiport (automatic)';
+
 const diagnosisText = (d: NonNullable<Issue['diagnosis']>, model: string) =>
   d.answer === 'one' ? 'Only ' + d.serving[0] + ' serves ' + model + '.'
   : d.answer === 'several' ? d.serving.join(', ') + ' all serve ' + model + ': choose one.'
@@ -51,6 +54,18 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
   const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection';
   const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || issue.subject);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [blocked, setBlocked] = useState<Blocked | null>(null);
+  const automatic = fix?.state === 'applied' && fix.by === AUTOMATIC && !!fix.change_id;
+  const revert = async () => {
+    setBusy('revert'); setError(''); setBlocked(null);
+    try {
+      await send('POST', 'changes/' + encodeURIComponent(fix!.change_id!) + '/revert');
+      onDecided('Reverted the automatic fix. aiport will not apply it automatically again for ' + issue.application + '; the Issue waits for your decision.');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
   const decide = async (action: 'accept' | 'dismiss') => {
     setBusy(action); setError(''); setBlocked(null);
     try {
@@ -70,7 +85,8 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
     <div className="need"><span className={'badge' + (issue.state === 'resolving' ? ' good' : '')}>{issue.state === 'resolving' ? 'Resolving' : 'Issue'}</span> {issue.summary}</div>
     <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>
     {issue.diagnosis && <div className="evidence">Diagnosis: {diagnosisText(issue.diagnosis, issue.subject)} Found from the Connections’ free model lists.</div>}
-    {issue.state === 'resolving' && <div className="evidence">{issue.resolving_by === 'aiport_fix' ? 'The aiport fix is applied' + (fix?.by ? ' (by ' + fix.by + ')' : '') : 'The Application says it fixed this'}: aiport marks the Issue resolved when {issue.application}’s calls {binds ? 'succeed again' : 'for ' + issue.subject + ' succeed'}.</div>}
+    {automatic && <div className="evidence"><strong>aiport fixed this automatically:</strong> the alias “{fix!.proposal.alias}” → {fix!.proposal.target}/{fix!.proposal.model} for only {issue.application}. <button className="text-button" disabled={!!busy} onClick={revert} aria-label={'Revert the automatic fix for ' + issue.application}><Undo2 size={14} aria-hidden/> {busy === 'revert' ? 'Reverting…' : 'Revert'}</button></div>}
+    {issue.state === 'resolving' && !automatic && <div className="evidence">{issue.resolving_by === 'aiport_fix' ? 'The aiport fix is applied' + (fix?.by ? ' (by ' + fix.by + ')' : '') : 'The Application says it fixed this'}: aiport marks the Issue resolved when {issue.application}’s calls {binds ? 'succeed again' : 'for ' + issue.subject + ' succeed'}.</div>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this Issue stays open.</div>}
     {issue.state === 'open' && fix?.state === 'proposed' && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
@@ -220,17 +236,32 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [reload, setReload] = useState(0), [upstream, setUpstream] = useState<Upstream | null>(null);
+  const [autoFix, setAutoFix] = useState<boolean | null>(null), [adapting, setAdapting] = useState(true);
   useEffect(() => {
     send('GET', 'upstream').then(setUpstream).catch(() => setUpstream(null));
     send('GET', 'changes').then(d => { setChanges(d.changes || []); setRevertable(!!d.revertable); }).catch(e => setError(e.message));
     send('GET', 'decisions').then(d => { setPending((d.items || []).filter((i: Decision) => !i.issue)); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
-    send('GET', 'issues').then(d => setIssues(d.issues || [])).catch(() => setIssues([]));
+    send('GET', 'issues').then(d => { setIssues(d.issues || []); setAutoFix(!!d.auto_fix); setAdapting(d.adapting !== false); }).catch(() => { setIssues([]); setAutoFix(null); });
   }, [tick, reload]);
   const revert = async (c: Change) => {
     setBusy(c.id); setError(''); setMessage('');
     try {
       await send('POST', 'changes/' + encodeURIComponent(c.id) + '/revert');
       setMessage('Reverted “' + c.what + '”. The previous configuration is live.');
+      setReload(x => x + 1); onChange();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+  const switchAutoFix = async (on: boolean) => {
+    setBusy('auto-fix'); setError(''); setMessage('');
+    try {
+      await send('PUT', 'adapting/auto-fix', {enabled: on});
+      setMessage(on
+        ? 'Automatic fixes are on: aiport applies an Issue’s aiport fix itself when only one Connection serves the model. You can revert each one below.'
+        : 'Automatic fixes are off: every aiport fix waits for your decision.');
       setReload(x => x + 1); onChange();
     } catch (e) {
       setError((e as Error).message);
@@ -269,6 +300,8 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
     </li>)}</ul>
   </section>}<section className="panel">
     <div className="panel-heading"><h2>Applied changes</h2><div className="header-actions"><span className="caption">Newest first · kept across restarts</span><DecisionSoundToggle/></div></div>
+    {autoFix !== null && <label className="check-label compact" title="adapting.auto_fix in aiport.yaml"><input type="checkbox" checked={autoFix} disabled={!!busy || !adapting} onChange={e => switchAutoFix(e.target.checked)}/>
+      <span>Automatic fixes: aiport applies an Issue’s aiport fix itself, only when exactly one Connection serves the model, and only for that one Application. Each one is a Change below that you can revert; a fix you revert is never applied automatically again.{!adapting && ' Adapting is turned off in the configuration, so nothing is applied.'}</span></label>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {message && <div className="notice" role="status">{message}</div>}
     {changes && !changes.length && <div className="empty"><span className="empty-icon"><History size={20} strokeWidth={1.75} aria-hidden/></span><h3>No changes yet</h3><p>Configuration edits made through aiport appear here, with the file before and after kept so you can revert them.</p></div>}
@@ -278,7 +311,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
         const undone = c.reverted_by ? byId.get(c.reverted_by) : undefined;
         return <tr key={c.id}>
           <td title={new Date(c.at_ms).toISOString()}>{when(c.at_ms)}</td>
-          <td>{c.what}</td>
+          <td>{c.by === AUTOMATIC ? 'aiport fixed: ' + c.what : c.what}</td>
           <td>{c.by}</td>
           <td>{c.reverted
             ? <span className="badge" title={undone ? 'Reverted by ' + undone.by : undefined}>Reverted{c.reverted_at_ms ? ' ' + when(c.reverted_at_ms) : ''}</span>

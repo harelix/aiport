@@ -150,6 +150,10 @@ type Issue struct {
 	// Reopened counts how often the Issue came back after being resolved
 	// or dismissed.
 	Reopened int `json:"reopened,omitempty"`
+	// Refused lists the aiport fixes the Owner reverted after aiport applied
+	// them automatically, or rejected: aiport never applies them
+	// automatically again for this Application and cause.
+	Refused []Proposal `json:"refused_auto_fixes,omitempty"`
 	// SinceMS is when the current state began.
 	SinceMS   int64 `json:"since_ms"`
 	CreatedAt int64 `json:"created_at_ms"`
@@ -173,6 +177,9 @@ type IssueStore interface {
 	SaveIssue(Issue) error
 	DeleteIssues(ids []string) error
 }
+
+// Automatic is who makes a Change aiport applies itself (adapting.auto_fix).
+const Automatic = "aiport (automatic)"
 
 // ErrNoFix: the Issue has no aiport fix waiting for a decision.
 var ErrNoFix = errors.New("this Issue has no aiport fix waiting for a decision")
@@ -627,7 +634,9 @@ func (q *Queue) track(r causeRules, symptoms []*symptom, at time.Time) []Item {
 }
 
 // revertedFixes moves resolving Issues whose aiport fix was reverted back to
-// open, offering the fix again.
+// open, offering the fix again. A reverted automatic fix (resolving or
+// already resolved) is recorded as refused, so it is never applied
+// automatically again.
 func (q *Queue) revertedFixes(now int64) {
 	reverted := map[string]bool{}
 	for _, ch := range q.live.Changes() {
@@ -637,10 +646,16 @@ func (q *Queue) revertedFixes(now int64) {
 	}
 	for i := range q.issues {
 		is := &q.issues[i]
-		if is.State != IssueResolving || is.Fix == nil || is.Fix.State != FixApplied || !reverted[is.Fix.ChangeID] {
+		if is.Fix == nil || is.Fix.State != FixApplied || !reverted[is.Fix.ChangeID] {
 			continue
 		}
-		is.Fix.State, is.State, is.ResolvingBy, is.SinceMS, is.UpdatedAt = FixReverted, IssueOpen, "", now, now
+		if is.Fix.By == Automatic && !refused(*is, is.Fix.Proposal) {
+			is.Refused = append(is.Refused, is.Fix.Proposal)
+		}
+		is.Fix.State, is.UpdatedAt = FixReverted, now
+		if is.State == IssueResolving {
+			is.State, is.ResolvingBy, is.SinceMS = IssueOpen, "", now
+		}
 		q.saveIssue(is)
 	}
 }
@@ -687,6 +702,45 @@ func (q *Queue) offerFix(is *Issue, kind Kind, p Proposal, now int64) (Item, boo
 	return it, true
 }
 
+// automaticFixes picks, from the Suggestions offered in this pass, the
+// aiport fixes aiport applies itself (their positions in offered): only with
+// adapting.auto_fix on, for an Issue whose error sticks (it was offered in
+// this pass), diagnosed in this pass as certain (exactly one Connection
+// serves the model), with a fix that is an Alias for that one Application
+// and that the Owner has not refused. Called with the lock held.
+func (q *Queue) automaticFixes(c config.Config, offered []Item, now int64) []int {
+	if !c.Adapting.AutoFix {
+		return nil
+	}
+	var out []int
+	for j, it := range offered {
+		i := q.issueIndex(it.Issue)
+		if it.Issue == "" || i < 0 || it.Status != Pending {
+			continue
+		}
+		is := q.issues[i]
+		d, fix := is.Diagnosis, is.Fix
+		certain := d != nil && d.At == now && d.Answer == ServedByOne && len(d.Serving) == 1
+		if !certain || is.State != IssueOpen || fix == nil || fix.Suggestion != it.ID || fix.State != FixProposed ||
+			fix.Kind != KindApplicationAlias || fix.Scope != ScopeApplication || fix.Proposal.Target != d.Serving[0] ||
+			it.Scope != ScopeApplication || len(it.AskedBy) > 1 || refused(is, fix.Proposal) {
+			continue
+		}
+		out = append(out, j)
+	}
+	return out
+}
+
+// refused reports whether the Owner refused fix p for Issue is.
+func refused(is Issue, p Proposal) bool {
+	for _, r := range is.Refused {
+		if r == p {
+			return true
+		}
+	}
+	return false
+}
+
 // settledFix keeps an Issue in step with the Owner's decision on the
 // Suggestion that offers its aiport fix. Called with the lock held.
 func (q *Queue) settledFix(it Item) {
@@ -708,6 +762,9 @@ func (q *Queue) settledFix(it Item) {
 		is.State, is.ResolvingBy, is.SinceMS = IssueResolving, ByAiportFix, v.At
 	case Rejected:
 		is.Fix.State = FixRejected
+		if !refused(*is, it.Proposal) {
+			is.Refused = append(is.Refused, it.Proposal)
+		}
 	case Dismissed:
 		is.State, is.Dismissal, is.SinceMS = IssueDismissed, v, v.At
 	}
@@ -751,7 +808,8 @@ func (q *Queue) pruneIssues(at time.Time, retention time.Duration) {
 		if is.State == IssueDismissed {
 			keep = max(retention, QuietFor)
 		}
-		if (is.State == IssueResolved || is.State == IssueDismissed) && at.UnixMilli()-is.UpdatedAt > keep.Milliseconds() {
+		// An Issue with refused automatic fixes is kept: the refusal is final.
+		if (is.State == IssueResolved || is.State == IssueDismissed) && len(is.Refused) == 0 && at.UnixMilli()-is.UpdatedAt > keep.Milliseconds() {
 			gone = append(gone, is.ID)
 			continue
 		}
