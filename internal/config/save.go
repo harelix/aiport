@@ -172,6 +172,29 @@ func AddOrigin(o Origin) Edit {
 	}
 }
 
+// SetMayRequestChanges allows or forbids one Application to file Change
+// requests. Forbidding removes the key, so the file only says what differs
+// from the default.
+func SetMayRequestChanges(id string, allowed bool) Edit {
+	return func(root *yaml.Node) error {
+		seq := mappingValue(root, "origins")
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return errors.New("application not found in configuration")
+		}
+		for _, item := range seq.Content {
+			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
+				value := ""
+				if allowed {
+					value = "true"
+				}
+				setScalar(item, "may_request_changes", value)
+				return nil
+			}
+		}
+		return errors.New("application not found in configuration")
+	}
+}
+
 // SetDefaults sets which connection serves each protocol by default
 // (empty = none).
 func SetDefaults(d Defaults) Edit {
