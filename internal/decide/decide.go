@@ -403,13 +403,8 @@ func (q *Queue) settle(id string, d Decision, at time.Time, judged *guarded) (It
 	if it.Status != Pending {
 		return Item{}, config.Change{}, nil, ErrDecided
 	}
-	if d.By == Automatic {
-		// An automatic fix never overrides the Application's "fixed on my
-		// side" (or anything else that moved its Issue on): only an open
-		// Issue's fix is applied automatically.
-		if j := q.issueIndex(it.Issue); it.Issue == "" || j < 0 || q.issues[j].State != IssueOpen {
-			return Item{}, config.Change{}, nil, ErrDecided
-		}
+	if d.By == Automatic && !q.mayApplyAutomatically(it) {
+		return Item{}, config.Change{}, nil, ErrDecided
 	}
 	v := &Verdict{Action: d.Action, Note: d.Note, By: d.By, At: at.UnixMilli()}
 	if it.Evidence != nil {
@@ -465,6 +460,20 @@ func (q *Queue) settle(id string, d Decision, at time.Time, judged *guarded) (It
 	q.save(it)
 	q.settledFix(it)
 	return it, ch, nil, nil
+}
+
+// mayApplyAutomatically reports whether aiport may still apply Suggestion
+// it as an automatic fix, checked again in the locked step that applies it
+// (the Owner may have changed something since the fix was picked, or while
+// a guardrail checked it): adapting and adapting.auto_fix are on, its Issue
+// is still open (an automatic fix never overrides the Application's "fixed
+// on my side", or anything else that moved the Issue on) and the Owner has
+// not refused the fix. Called with the lock held.
+func (q *Queue) mayApplyAutomatically(it Item) bool {
+	c := q.live.Config()
+	j := q.issueIndex(it.Issue)
+	return !c.Adapting.Disabled && c.Adapting.AutoFix && it.Issue != "" && j >= 0 &&
+		q.issues[j].State == IssueOpen && !refused(q.issues[j], it.Proposal)
 }
 
 // index returns the position of item id, or -1.

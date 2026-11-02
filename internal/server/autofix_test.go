@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"aiport/internal/config"
 )
@@ -216,5 +217,29 @@ func TestARejectedFixIsNotAppliedAutomatically(t *testing.T) {
 	}
 	if is := f.only(t); is["state"] != "open" || is["needs_owner"] != true {
 		t.Fatalf("after the reject: %v", is)
+	}
+}
+
+// Whether an automatic fix may be applied is checked again when it is
+// applied: if the Owner turns automatic fixes off while a guardrail checks
+// it, nothing is applied and the fix waits for the Owner.
+func TestAnAutomaticFixIsNotAppliedOnceAutomaticFixesAreTurnedOff(t *testing.T) {
+	dir := t.TempDir()
+	guard, started, release := waitingGuardrail(t, dir)
+	f := newIssuesFixture(t, "adapting: {auto_fix: true}\nextensions:\n"+listed("wait", "guardrail", guard, "    timeout_ms: 20000\n"))
+	f.chat(t, docsBotToken, "llama3:8b", 5)
+	time.Sleep(2 * time.Millisecond)
+	f.at = time.Now()
+	done := make(chan struct{})
+	go func() { defer close(done); f.h.Detect(f.at) }()
+	<-started
+	f.autoFix(t, false)
+	release()
+	<-done
+	if got := f.aliases(t, "docs-bot"); len(got) != 0 {
+		t.Fatalf("applied after automatic fixes were turned off: %v", got)
+	}
+	if is := f.only(t); is["state"] != "open" || m(is["fix"])["state"] != "proposed" || is["needs_owner"] != true {
+		t.Fatalf("the fix does not wait for the Owner: %v", is)
 	}
 }
