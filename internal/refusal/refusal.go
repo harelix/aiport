@@ -61,7 +61,7 @@ const HintHeader = "X-Aiport-Hint"
 // for this Application could point the name at a model the provider has.
 var UnknownModelHint = ChangeHint("application_alias")
 
-// IssuesPath and IssuesTool are where an Application's coding agent reads
+// IssuesPath and IssuesTool are where an Application's Coding agent reads
 // its Issues.
 const (
 	IssuesPath = "/v1/aiport/issues"

@@ -109,15 +109,7 @@ func failingFix(is Issue) string {
 	ev := is.Evidence
 	b.WriteString("aiport Issue " + is.ID + ": calls from the Application " + app + " to Connection " + conn + " fail with " + statusText(ev) + ".\n\n")
 	b.WriteString("What is wrong: Connection " + conn + " itself keeps failing (gateway errors and timeouts); the requests are not at fault.\n\n")
-	b.WriteString("Evidence: " + strconv.Itoa(ev.Count) + " failed calls")
-	if ev.FromMS > 0 && ev.ToMS > 0 {
-		b.WriteString(" between " + utc(ev.FromMS) + " and " + utc(ev.ToMS))
-	}
-	b.WriteString(" (looking back " + strconv.Itoa(ev.WindowMinutes) + " minutes).")
-	if len(ev.Examples) > 0 {
-		b.WriteString(" Example request ids: " + strings.Join(ev.Examples, ", ") + ".")
-	}
-	b.WriteString("\n\n")
+	b.WriteString(evidenceText(ev, false) + "\n\n")
 	working := ""
 	if is.Fix != nil && is.Fix.Proposal.Target != "" {
 		working = strconv.Quote(is.Fix.Proposal.Target)
@@ -133,6 +125,6 @@ func failingFix(is Issue) string {
 		}
 		b.WriteString(" If the Owner approves aiport's own fix for this Issue instead (binding " + app + " to a working Connection), no code change is needed.\n\n")
 	}
-	b.WriteString("How to confirm: make one call through aiport with " + app + "'s own token and check it answers 200 instead of " + strconv.Itoa(ev.Status) + ". aiport marks this Issue resolved by itself when calls from " + app + " succeed again; it checks request history, so nothing else needs reporting.")
+	b.WriteString(confirmText(app, ev.Status, "", ""))
 	return b.String()
 }

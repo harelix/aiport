@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// "Copy fix for the coding agent": the Application fix an Issue carries is a
+// "Copy fix for the Coding agent": the Application fix an Issue carries is a
 // self-contained instruction for the Application's coding agent (what is
 // wrong, the evidence, what to change, how to confirm), the same text on
 // every route that shows the Issue, and it holds no secrets.

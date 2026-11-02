@@ -7,7 +7,7 @@ import (
 	"aiport/internal/telemetry"
 )
 
-// Issues as the Application's coding agent sees them (GET /v1/aiport/issues
+// Issues as the Application's Coding agent sees them (GET /v1/aiport/issues
 // and the MCP tool aiport_my_issues): only that Application's own Issues,
 // with what is wrong, the evidence, the Application fix and where the
 // aiport fix stands, and never the Owner's notes or other Applications'
@@ -27,7 +27,7 @@ type AgentFix struct {
 	At       int64    `json:"at_ms,omitempty"`
 }
 
-// AgentIssue is an Issue as its Application's coding agent reads it.
+// AgentIssue is an Issue as its Application's Coding agent reads it.
 type AgentIssue struct {
 	ID          string     `json:"id"`
 	Application string     `json:"application"`
@@ -50,7 +50,7 @@ type AgentIssue struct {
 	UpdatedAt   int64       `json:"updated_at_ms"`
 }
 
-// ForAgent is Issue is as its Application's coding agent reads it.
+// ForAgent returns the Issue as its Application's Coding agent reads it.
 func (is Issue) ForAgent() AgentIssue {
 	a := AgentIssue{
 		ID: is.ID, Application: is.Application, Cause: is.Cause, Subject: is.Subject, State: is.State,

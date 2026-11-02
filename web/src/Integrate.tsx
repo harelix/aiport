@@ -91,7 +91,7 @@ function useIssues(tick: number): Record<string, Issue[]> {
 const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : i.summary;
 
 /* An Application's Issues, under its row: each with its short cause, a link
-   to the Issue on the Changes page and "Copy fix for the coding agent". */
+   to the Issue on the Changes page and "Copy fix for the Coding agent". */
 function AppIssues({issues, onOpen}: {issues: Issue[]; onOpen: (i: Issue) => void}) {
   return <ul className="app-issues">{issues.map(i => <li key={i.id}>
     <div className="app-issue-head">

@@ -10,7 +10,7 @@ import (
 	"aiport/internal/telemetry"
 )
 
-// IssuesPath is where an Application's coding agent reads its own Issues
+// IssuesPath is where an Application's Coding agent reads its own Issues
 // and says it fixed one on its side:
 //
 //	GET  /v1/aiport/issues             this Application's Issues (open, being resolved, recently resolved or dismissed), newest first

@@ -214,7 +214,7 @@ narrow screen the strip moves below).
   and a short cause, such as "Unknown model llama3:8b" (None when there are
   none). Select it to list them under the row: each with its summary, **Open
   in Changes** (opens that Issue on the Changes page, where you approve or
-  dismiss it) and **Copy fix for the coding agent** (see Changes, Issues).
+  dismiss it) and **Copy fix for the Coding agent** (see Changes, Issues).
 - The **Approved / Rejected / All** filter picks what the list shows.
   Rejected Applications are hidden until you choose **Rejected** or **All**;
   each shows when it was rejected, with **Forget**.
@@ -369,8 +369,8 @@ hosted Connection that does not serve that model.
   filled in; with none, several or unknown, choose the Connection (and the
   model, if it has another name there) yourself. **Approve** applies it as an
   ordinary Change you can revert; the Issue becomes **resolving**.
-- **Copy fix for the coding agent**: copies the fix in the Application, a
-  ready instruction for the coding agent in the Application's repository:
+- **Copy fix for the Coding agent**: copies the fix in the Application, a
+  ready instruction for the Coding agent in the Application's repository:
   paste it as-is. It says what is wrong, the evidence (counts, times, the
   Connections, example request ids), what aiport found, what to change in
   the Application (ask for the Alias with a Change request, or send a model
@@ -380,7 +380,7 @@ hosted Connection that does not serve that model.
   no code change is needed. It holds no prompts, keys or tokens. **Read the
   fix** shows the same text first. The button is also on the Integrate page,
   under the Application's row, and the text is the same one aiport gives the
-  Application's coding agent about its Issues.
+  Application's Coding agent about its Issues.
 - **Dismiss**: the Issue stays quiet for 7 days unless the evidence doubles.
   You can dismiss any Issue that is not resolved or dismissed yet, whatever
   its fix stands at (waiting, approved, rejected or reverted); an approved
@@ -391,7 +391,7 @@ hosted Connection that does not serve that model.
 
 An Issue resolves itself: when the Application's calls for that model
 succeed again, aiport marks it **resolved** and records how: `aiport_fix`
-(the Change you approved), `application_fix` (the Application's coding
+(the Change you approved), `application_fix` (the Application's Coding
 agent fixed it, see below) or `stopped` (the calls succeeded, or stopped
 failing for a whole window, without a fix). A fix is credited only when a
 call shows it works: if the Application makes no calls for that model for a
@@ -422,7 +422,7 @@ failures to the Connection the Application is bound to now count.
   other Applications are not touched. This fix is never applied
   automatically, even with automatic fixes on: moving a whole Application
   to another Connection is always your decision.
-- **Fix in the Application**: the request itself is fine; the coding agent
+- **Fix in the Application**: the request itself is fine; the Coding agent
   is told not to retry in a tight loop, to back off and handle `5xx`
   answers and timeouts, and that it can ask for the binding with a Change
   request of kind `bind_application`.
@@ -468,16 +468,16 @@ rejected is kept beyond request-history retention
 (`telemetry.retention_days`), even once it is resolved or dismissed; it
 holds no more than any other Issue (ids, model names, counts).
 
-### What the Application's coding agent sees
+### What the Application's Coding agent sees
 
-The Application's coding agent hears about its Issues over the connection
+The Application's Coding agent hears about its Issues over the connection
 it already has with aiport, with the Application's own token (your
 management token gets `403`):
 
 - The MCP tool `aiport_my_issues`, or `GET /v1/aiport/issues` (and
   `GET /v1/aiport/issues/{id}` for one), lists that Application's open and
   recent Issues: what is wrong, the evidence, the fix in the Application
-  (the same text as "Copy fix for the coding agent") and whether the aiport
+  (the same text as "Copy fix for the Coding agent") and whether the aiport
   fix is proposed, applied, rejected or reverted. An Application never sees
   another Application's Issues (their ids answer `404`), and never your
   notes.

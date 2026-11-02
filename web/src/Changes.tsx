@@ -31,7 +31,8 @@ export type Issue = {
   state: 'open' | 'resolving' | 'resolved' | 'dismissed';
   summary: string; needs_owner: boolean; application_fix: string;
   evidence: {count: number; from_ms: number; to_ms: number; window_minutes: number; status?: number; error?: string; examples?: string[]; connections?: string[]};
-  diagnosis?: {protocol: string; answer: 'one' | 'none' | 'several' | 'unknown'; serving: string[]; unknown: string[]; available?: string[]};
+  /** summary is the server's own words for what aiport found (decide.Diagnosis.Summary). */
+  diagnosis?: {protocol: string; answer: 'one' | 'none' | 'several' | 'unknown'; serving: string[]; unknown: string[]; available?: string[]; summary?: string};
   fix?: {suggestion: string; kind: string; scope: string; proposal: {alias?: string; target?: string; model?: string}; state: 'proposed' | 'applied' | 'rejected' | 'reverted'; change_id?: string; by?: string};
   resolving_by?: string; resolution?: {how: string; at_ms: number; change_id?: string}; reopened?: number;
 };
@@ -39,16 +40,11 @@ export type Issue = {
 /** Who makes a Change aiport applies itself (adapting.auto_fix). */
 const AUTOMATIC = 'aiport (automatic)';
 
-const diagnosisText = (d: NonNullable<Issue['diagnosis']>, model: string) =>
-  d.answer === 'one' ? 'Only ' + d.serving[0] + ' serves ' + model + '.'
-  : d.answer === 'several' ? d.serving.join(', ') + ' all serve ' + model + ': choose one.'
-  : d.answer === 'none' ? 'No enabled ' + d.protocol + ' Connection lists ' + model + '.'
-  : 'aiport could not list the models of ' + (d.unknown.join(', ') || 'every Connection') + ', so it is not certain which serves ' + model + '.';
-
 /**
  * One open or resolving Issue: what is wrong, the evidence, which Connections serve the model, the aiport fix
  * (an Alias for this Application only, or for a failing Connection binding this Application to a working one)
- * with Approve / Dismiss, and the fix in the Application for its Coding agent.
+ * with Approve / Dismiss, and the fix in the Application for its Coding agent. Approve stays while the Application
+ * says it fixed the Issue (resolving); Dismiss is there for any Issue still open or resolving.
  */
 function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]; onDecided: (message: string) => void}) {
   const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection';
@@ -84,12 +80,12 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
   return <div className="decision issue" id={issueAnchor(issue.id)} tabIndex={-1}>
     <div className="need"><span className={'badge' + (issue.state === 'resolving' ? ' good' : '')}>{issue.state === 'resolving' ? 'Resolving' : 'Issue'}</span> {issue.summary}</div>
     <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>
-    {issue.diagnosis && <div className="evidence">Diagnosis: {diagnosisText(issue.diagnosis, issue.subject)} Found from the Connections’ free model lists.</div>}
+    {issue.diagnosis?.summary && <div className="evidence">Diagnosis: {issue.diagnosis.summary}</div>}
     {automatic && <div className="evidence"><strong>aiport fixed this automatically:</strong> the alias “{fix!.proposal.alias}” → {fix!.proposal.target}/{fix!.proposal.model} for only {issue.application}. <button className="text-button" disabled={!!busy} onClick={revert} aria-label={'Revert the automatic fix for ' + issue.application}><Undo2 size={14} aria-hidden/> {busy === 'revert' ? 'Reverting…' : 'Revert'}</button></div>}
     {issue.state === 'resolving' && !automatic && <div className="evidence">{issue.resolving_by === 'aiport_fix' ? 'The aiport fix is applied' + (fix?.by ? ' (by ' + fix.by + ')' : '') : 'The Application says it fixed this'}: aiport marks the Issue resolved when {issue.application}’s calls {binds ? 'succeed again' : 'for ' + issue.subject + ' succeed'}.</div>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this Issue stays open.</div>}
-    {issue.state === 'open' && fix?.state === 'proposed' && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
+    {fix?.state === 'proposed' && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
       {binds
         ? <label>Fix in aiport: bind only {issue.application} to<select value={target} onChange={e => setTarget(e.target.value)}>
             {!target && <option value="">Choose a working Connection</option>}
@@ -108,6 +104,9 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
         <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
       </div>
     </form>}
+    {fix?.state !== 'proposed' && <div className="actions">
+      <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
+    </div>}
     <ApplicationFix issue={issue}/>
   </div>;
 }
@@ -116,14 +115,14 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
 export const issueAnchor = (id: string) => 'issue-' + id;
 
 /**
- * The fix in the Application, for its coding agent: "Copy fix for the coding agent" copies the text the server
+ * The fix in the Application, for its Coding agent: "Copy fix for the Coding agent" copies the text the server
  * writes (decide.ApplicationFix, the same text aiport_my_issues gives the agent), shown below it to read first.
  */
 export function ApplicationFix({issue}: {issue: Issue}) {
   if (!issue.application_fix) return null;
   return <div className="application-fix">
-    <CopyButton text={issue.application_fix} label="Copy fix for the coding agent"/>
-    <details><summary>Read the fix for {issue.application}’s coding agent</summary><pre>{issue.application_fix}</pre></details>
+    <CopyButton text={issue.application_fix} label="Copy fix for the Coding agent"/>
+    <details><summary>Read the fix for {issue.application}’s Coding agent</summary><pre>{issue.application_fix}</pre></details>
   </div>;
 }
 

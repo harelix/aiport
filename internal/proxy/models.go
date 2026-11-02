@@ -56,7 +56,7 @@ const (
 type Serving struct {
 	Model    string `json:"model"`
 	Protocol string `json:"protocol"`
-	Answer Answer `json:"answer"`
+	Answer   Answer `json:"answer"`
 	// Serving are the Connections whose list has the model.
 	Serving []string `json:"serving"`
 	// Unknown are the Connections whose listing failed: they may or may not

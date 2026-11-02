@@ -219,7 +219,7 @@ func TestUnknownModelIssueStartToFinish(t *testing.T) {
 	if ev["count"] != float64(6) || ev["window_minutes"] != float64(60) || ev["status"] != float64(404) || ev["error"] != "model_not_found" || len(ev["examples"].([]any)) == 0 || fmt.Sprint(ev["connections"]) != "[hosted]" {
 		t.Fatalf("evidence: %v", ev)
 	}
-	if diag["answer"] != "one" || fmt.Sprint(diag["serving"]) != "[local]" || diag["protocol"] != "openai" {
+	if diag["answer"] != "one" || fmt.Sprint(diag["serving"]) != "[local]" || diag["protocol"] != "openai" || diag["summary"] != `Connection "local" serves "llama3:8b" (from the Connections' free model lists).` {
 		t.Fatalf("diagnosis: %v", diag)
 	}
 	p := m(fix["proposal"])

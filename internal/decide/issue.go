@@ -98,7 +98,9 @@ type Diagnosis struct {
 	Serving   []string `json:"serving"`
 	Unknown   []string `json:"unknown"`
 	Available []string `json:"available,omitempty"`
-	At        int64    `json:"at_ms"`
+	// Summary says what aiport found, in fixed words (diagnosisSummary).
+	Summary string `json:"summary"`
+	At      int64  `json:"at_ms"`
 }
 
 // ModelFinder answers which enabled Connections of protocol serve model
@@ -294,7 +296,7 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 // its Coding agent so it can be pasted as-is: what is wrong, the evidence,
 // what aiport found, what to change in the Application and how to confirm
 // the fix. It is the one place that writes it (the Issues routes, MCP and
-// "Copy fix for the coding agent" all show this text). It holds only ids,
+// "Copy fix for the Coding agent" all show this text). It holds only ids,
 // model names, counts, times and request ids: never prompts, provider
 // messages, keys or tokens.
 func ApplicationFix(is Issue) string {
@@ -316,32 +318,9 @@ func unknownModelFix(is Issue) string {
 	}
 	b.WriteString(" does not serve " + model + ", and no Alias routes " + model + " for " + app + ".\n\n")
 
-	b.WriteString("Evidence: " + strconv.Itoa(ev.Count) + " failed calls")
-	if ev.FromMS > 0 && ev.ToMS > 0 {
-		b.WriteString(" between " + utc(ev.FromMS) + " and " + utc(ev.ToMS))
-	}
-	b.WriteString(" (looking back " + strconv.Itoa(ev.WindowMinutes) + " minutes)")
-	if len(ev.Connections) > 0 {
-		b.WriteString(", sent to Connection " + strings.Join(ev.Connections, ", "))
-	}
-	b.WriteString(".")
-	if len(ev.Examples) > 0 {
-		b.WriteString(" Example request ids: " + strings.Join(ev.Examples, ", ") + ".")
-	}
-	b.WriteString("\n")
+	b.WriteString(evidenceText(ev, true) + "\n")
 	if d != nil {
-		b.WriteString("What aiport found: ")
-		switch d.Answer {
-		case ServedByOne:
-			b.WriteString("Connection " + strconv.Quote(d.Serving[0]) + " serves " + model)
-		case ServedBySeveral:
-			b.WriteString("Connections " + strings.Join(d.Serving, ", ") + " serve " + model)
-		case ServedByNone:
-			b.WriteString("no enabled Connection of this gateway serves " + model)
-		default:
-			b.WriteString("not every Connection could be listed, so it is not certain which serves " + model)
-		}
-		b.WriteString(" (from the Connections' free model lists).\n")
+		b.WriteString("What aiport found: " + diagnosisSummary(*d, is.Subject) + "\n")
 	}
 	b.WriteString("\n")
 
@@ -366,8 +345,54 @@ func unknownModelFix(is Issue) string {
 		b.WriteString("\nDo not retry " + model + " unchanged.\n\n")
 	}
 
-	b.WriteString("How to confirm: after the change, make one call through aiport with " + app + "'s own token and check it answers 200 instead of " + strconv.Itoa(ev.Status) + ". aiport marks this Issue resolved by itself when calls from " + app + " for " + model + " succeed again; it checks request history, so nothing else needs reporting.")
+	b.WriteString(confirmText(app, ev.Status, "after the change, ", " for "+model))
 	return b.String()
+}
+
+// evidenceText is the "Evidence:" line of an Application fix: how many calls
+// failed, when, the window, and (with sentTo) the Connections they went to,
+// with example request ids.
+func evidenceText(ev Evidence, sentTo bool) string {
+	s := "Evidence: " + strconv.Itoa(ev.Count) + " failed calls"
+	if ev.FromMS > 0 && ev.ToMS > 0 {
+		s += " between " + utc(ev.FromMS) + " and " + utc(ev.ToMS)
+	}
+	s += " (looking back " + strconv.Itoa(ev.WindowMinutes) + " minutes)"
+	if sentTo && len(ev.Connections) > 0 {
+		s += ", sent to Connection " + strings.Join(ev.Connections, ", ")
+	}
+	s += "."
+	if len(ev.Examples) > 0 {
+		s += " Example request ids: " + strings.Join(ev.Examples, ", ") + "."
+	}
+	return s
+}
+
+// confirmText is the "How to confirm" paragraph of an Application fix:
+// when (such as "after the change, ") one call with app's token answers 200
+// instead of status, and aiport resolves the Issue once app's calls (which:
+// such as " for \"llama3:8b\"") succeed again.
+func confirmText(app string, status int, when, which string) string {
+	return "How to confirm: " + when + "make one call through aiport with " + app + "'s own token and check it answers 200 instead of " + strconv.Itoa(status) + ". aiport marks this Issue resolved by itself when calls from " + app + which + " succeed again; it checks request history, so nothing else needs reporting."
+}
+
+// diagnosisSummary says what aiport found out about which Connections
+// serve model, in fixed words (Diagnosis.Summary, also in the Application
+// fix).
+func diagnosisSummary(d Diagnosis, model string) string {
+	m := strconv.Quote(model)
+	var s string
+	switch d.Answer {
+	case ServedByOne:
+		s = "Connection " + strconv.Quote(d.Serving[0]) + " serves " + m
+	case ServedBySeveral:
+		s = "Connections " + strings.Join(d.Serving, ", ") + " serve " + m
+	case ServedByNone:
+		s = "no enabled Connection of this gateway serves " + m
+	default:
+		s = "not every Connection could be listed, so it is not certain which serves " + m
+	}
+	return s + " (from the Connections' free model lists)."
 }
 
 func utc(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.RFC3339) }
@@ -532,6 +557,7 @@ func diagnose(finder ModelFinder, symptoms []*symptom, count int, at time.Time) 
 		if len(d.Available) > 20 {
 			d.Available = d.Available[:20]
 		}
+		d.Summary = diagnosisSummary(d, s.subject)
 		s.diagnosis = &d
 	}
 }
