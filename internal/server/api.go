@@ -35,6 +35,9 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 	if h.decisionsRoute(w, r, fail) {
 		return true
 	}
+	if h.issuesRoute(w, r, fail) {
+		return true
+	}
 	if h.upstreamRoute(w, r, fail) {
 		return true
 	}

@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {ArrowUpRight, History, Lightbulb, Puzzle, Undo2} from 'lucide-react';
+import {ArrowUpRight, CircleAlert, History, Lightbulb, Puzzle, Undo2} from 'lucide-react';
 import {type Upstream, UpstreamAction} from './Upstream';
 import {DecisionSoundToggle} from './decisionSound';
 
@@ -20,7 +20,72 @@ export type Decision = {
   informational?: boolean;
   /** The panel where the Owner acts on it ('applications': the Applications panel, where Pairing is). */
   opens?: string;
+  /** The Issue this Suggestion is the aiport fix for: shown with that Issue, not on its own. */
+  issue?: string;
 };
+
+/** An Issue: a problem aiport keeps seeing for one Application, as GET /api/v1/issues lists it. */
+export type Issue = {
+  id: string; application: string; cause: string; subject: string;
+  state: 'open' | 'resolving' | 'resolved' | 'dismissed';
+  summary: string; needs_owner: boolean; application_fix: string;
+  evidence: {count: number; from_ms: number; to_ms: number; window_minutes: number; status?: number; error?: string; examples?: string[]; connections?: string[]};
+  diagnosis?: {protocol: string; answer: 'one' | 'none' | 'several' | 'unknown'; serving: string[]; unknown: string[]; available?: string[]};
+  fix?: {suggestion: string; kind: string; scope: string; proposal: {alias?: string; target?: string; model?: string}; state: 'proposed' | 'applied' | 'rejected' | 'reverted'; change_id?: string; by?: string};
+  resolving_by?: string; resolution?: {how: string; at_ms: number; change_id?: string}; reopened?: number;
+};
+
+const diagnosisText = (d: NonNullable<Issue['diagnosis']>, model: string) =>
+  d.answer === 'one' ? 'Only ' + d.serving[0] + ' serves ' + model + '.'
+  : d.answer === 'several' ? d.serving.join(', ') + ' all serve ' + model + ': choose one.'
+  : d.answer === 'none' ? 'No enabled ' + d.protocol + ' Connection lists ' + model + '.'
+  : 'aiport could not list the models of ' + (d.unknown.join(', ') || 'every Connection') + ', so it is not certain which serves ' + model + '.';
+
+/**
+ * One open or resolving Issue: what is wrong, the evidence, which Connections serve the model, the aiport fix
+ * (an Alias for this Application only) with Approve / Dismiss, and the fix in the Application for its Coding agent.
+ */
+function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]; onDecided: (message: string) => void}) {
+  const fix = issue.fix, ev = issue.evidence;
+  const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || issue.subject);
+  const [busy, setBusy] = useState(''), [error, setError] = useState(''), [blocked, setBlocked] = useState<Blocked | null>(null);
+  const decide = async (action: 'accept' | 'dismiss') => {
+    setBusy(action); setError(''); setBlocked(null);
+    try {
+      await send('POST', 'issues/' + encodeURIComponent(issue.id), action === 'accept' ? {action, target, model} : {action});
+      onDecided(action === 'accept'
+        ? 'Approved for only ' + issue.application + ': the alias “' + issue.subject + '” → ' + target + '/' + model + '. The Issue resolves itself when its calls succeed; you can revert the Change below.'
+        : 'Dismissed. aiport stays quiet about this Issue for 7 days unless the evidence doubles.');
+    } catch (e) {
+      const err = e as Error & {code?: string; extension?: string; reason?: string};
+      if (err.code === 'guardrail_blocked') setBlocked({extension: err.extension || 'a guardrail', reason: err.reason || ''});
+      else setError(err.message);
+    } finally {
+      setBusy('');
+    }
+  };
+  return <div className="decision issue">
+    <div className="need"><span className={'badge' + (issue.state === 'resolving' ? ' good' : '')}>{issue.state === 'resolving' ? 'Resolving' : 'Issue'}</span> {issue.summary}</div>
+    <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>
+    {issue.diagnosis && <div className="evidence">Diagnosis: {diagnosisText(issue.diagnosis, issue.subject)} Found from the Connections’ free model lists.</div>}
+    {issue.state === 'resolving' && <div className="evidence">{issue.resolving_by === 'aiport_fix' ? 'The aiport fix is applied' + (fix?.by ? ' (by ' + fix.by + ')' : '') : 'The Application says it fixed this'}: aiport marks the Issue resolved when {issue.application}’s calls for {issue.subject} succeed.</div>}
+    {error && <div className="notice error" role="alert">{error}</div>}
+    {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this Issue stays open.</div>}
+    {issue.state === 'open' && fix?.state === 'proposed' && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
+      <label>Fix in aiport: alias for only {issue.application}<input value={issue.subject} readOnly spellCheck={false}/></label>
+      <label>Connection<select value={target} onChange={e => setTarget(e.target.value)}>
+        {!target && <option value="">Choose a Connection</option>}
+        {targets.map(t => <option key={t}>{t}</option>)}
+      </select></label>
+      <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} spellCheck={false} autoComplete="off"/></label>
+      <div className="actions">
+        <button className="primary" disabled={!!busy || !target || !model.trim()}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
+        <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
+      </div>
+    </form>}
+    {issue.application_fix && <details className="application-fix"><summary>Fix in the Application, for its coding agent</summary><pre>{issue.application_fix}</pre></details>}
+  </div>;
+}
 
 /** One Application that asked for a Change for every Application, with its own argument. */
 type Asker = {application: string; why: string; scope_case: string; filed_by?: string; repeats?: number; asked_at_ms: number};
@@ -127,14 +192,15 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
 
 /** Changes: Suggestions waiting for a decision (only when there are any), then every configuration edit made through aiport, newest first, with Revert. */
 export default function Changes({tick, onChange, targets = [], onOpenApplications}: {tick: number; onChange: () => void; targets?: string[]; onOpenApplications?: () => void}) {
-  const [pending, setPending] = useState<Decision[]>([]), [demand, setDemand] = useState<Demand[]>([]);
+  const [pending, setPending] = useState<Decision[]>([]), [demand, setDemand] = useState<Demand[]>([]), [issues, setIssues] = useState<Issue[]>([]);
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [reload, setReload] = useState(0), [upstream, setUpstream] = useState<Upstream | null>(null);
   useEffect(() => {
     send('GET', 'upstream').then(setUpstream).catch(() => setUpstream(null));
     send('GET', 'changes').then(d => { setChanges(d.changes || []); setRevertable(!!d.revertable); }).catch(e => setError(e.message));
-    send('GET', 'decisions').then(d => { setPending(d.items || []); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
+    send('GET', 'decisions').then(d => { setPending((d.items || []).filter((i: Decision) => !i.issue)); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
+    send('GET', 'issues').then(d => setIssues(d.issues || [])).catch(() => setIssues([]));
   }, [tick, reload]);
   const revert = async (c: Change) => {
     setBusy(c.id); setError(''); setMessage('');
@@ -150,7 +216,10 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   };
   const byId = new Map((changes || []).map(c => [c.id, c]));
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
-  return <>{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
+  return <>{!!issues.length && <section className="panel" aria-label="Issues">
+    <div className="panel-heading"><h2><CircleAlert size={16} aria-hidden/> Issues</h2><span>Problems aiport keeps seeing for one Application · they close themselves when its calls succeed again</span></div>
+    {issues.map(i => <IssueCard key={i.id + i.state + (i.fix?.suggestion || '')} issue={i} targets={targets} onDecided={decided}/>)}
+  </section>}{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
     <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history and Change requests from Applications</span></div>
     {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided} onOpenApplications={onOpenApplications}/>)}
   </section>}{!!demand.length && <section className="panel" aria-label="Demand for things aiport cannot do yet">

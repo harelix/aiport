@@ -34,6 +34,7 @@ func (h *Handler) openDecisions() {
 	}
 	h.failedAuth = telemetry.NewFailedAuth()
 	q.WatchFailedAuth(h.failedAuth)
+	q.Diagnose(modelFinder{h})
 	h.decisions = q
 }
 
@@ -115,6 +116,16 @@ func (h *Handler) decisionsRoute(w http.ResponseWriter, r *http.Request, fail fu
 		return true
 	}
 	it, ch, err := h.decisions.Decide(id, decide.Decision{Action: decide.Action(body.Action), Note: body.Note, Scope: decide.Scope(body.Scope), Proposal: decide.Proposal{Alias: body.Alias, Target: body.Target, Model: body.Model}}, h.clock())
+	if err != nil {
+		decisionFailed(w, err, fail)
+		return true
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "item": it, "change_id": ch.ID})
+	return true
+}
+
+// decisionFailed answers an Owner decision the queue refused.
+func decisionFailed(w http.ResponseWriter, err error, fail func(int, string, string)) {
 	var invalid decide.Invalid
 	var blocked extension.Denied
 	switch {
@@ -132,10 +143,7 @@ func (h *Handler) decisionsRoute(w http.ResponseWriter, r *http.Request, fail fu
 		fail(503, "config_readonly", "This server cannot edit its configuration")
 	case errors.As(err, &invalid):
 		fail(400, "invalid_decision", invalid.Reason)
-	case err != nil:
-		fail(400, "invalid_decision", err.Error())
 	default:
-		writeJSON(w, 200, map[string]any{"ok": true, "item": it, "change_id": ch.ID})
+		fail(400, "invalid_decision", err.Error())
 	}
-	return true
 }

@@ -371,6 +371,8 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .decision:first-of-type{border-top:0}
 .decision .need{color:var(--text);font-size:14px;overflow-wrap:anywhere}
 .decision .evidence{color:var(--muted);font-size:12px}
+.application-fix summary{cursor:pointer;font-size:12px;color:var(--text-2)}
+.application-fix pre{margin:6px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--inset);color:var(--text-2);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .decision-form{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
 .decision-form label{display:grid;gap:4px;font-size:12px;color:var(--text-2)}
 .decision-form .actions{display:flex;gap:8px}
