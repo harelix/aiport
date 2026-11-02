@@ -1,11 +1,16 @@
+<p align="center">
+  <img src="visuals/logo-256.png" alt="Aiport logo" width="128" height="128">
+</p>
+
 # Aiport
 
 A local AI gateway, under development from [the design](Aiport_DESIGN.md).
 
 **Current build: experimental native forwarding and terminal onboarding.** Chat
 Completions, Responses and Messages share a byte-forwarding path. No provider or
-coding-agent combination has passed the live compatibility gate yet. The embedded dashboard now shows bounded session metadata. SQLite persistence,
-editable settings and web-first onboarding are still planned.
+coding-agent combination has passed the live compatibility gate yet. The embedded
+dashboard shows request metadata saved in SQLite and edits providers and routing.
+Web-first onboarding is still planned.
 
 ## Run the existing configuration
 
