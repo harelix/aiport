@@ -148,9 +148,19 @@ func TestAnApplicationFixIsConfirmedByRealCalls(t *testing.T) {
 		t.Fatalf("resolved without a successful call: %v", is)
 	}
 
-	// The Application now sends a model the gateway serves; it succeeds.
+	// A successful call for another model is not the same cause: it does
+	// not confirm the fix.
 	f.hosted.set(`{"object":"list","data":[{"id":"gpt-4o-mini"}]}`, true)
 	if codes := f.chat(t, docsBotToken, "gpt-4o-mini", 1); fmt.Sprint(codes) != "[200]" {
+		t.Fatalf("call for another model: %v", codes)
+	}
+	f.detect()
+	if is := f.only(t); is["state"] != "resolving" {
+		t.Fatalf("confirmed by a call for another model: %v", is)
+	}
+
+	// docs-bot's calls for llama3:8b now succeed.
+	if codes := f.chat(t, docsBotToken, "llama3:8b", 1); fmt.Sprint(codes) != "[200]" {
 		t.Fatalf("call after the Application fix: %v", codes)
 	}
 	f.detect()

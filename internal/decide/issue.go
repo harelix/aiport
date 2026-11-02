@@ -565,10 +565,6 @@ func (q *Queue) track(c config.Config, cause Cause, symptoms []*symptom, succeed
 	now := at.UnixMilli()
 	var offered []Item
 	seen := map[int]*symptom{}
-	appSuccess := map[string]int64{} // each Application's last successful call in the window
-	for _, s := range symptoms {
-		appSuccess[s.app] = max(appSuccess[s.app], s.lastSuccess)
-	}
 	for _, s := range symptoms {
 		i := q.issueFor(s.app, cause, s.subject)
 		if i >= 0 {
@@ -635,8 +631,9 @@ func (q *Queue) track(c config.Config, cause Cause, symptoms []*symptom, succeed
 			success = max(success, succeeded(is.Application, is.Subject))
 		}
 		if is.State == IssueResolving && is.ResolvingBy == ByApplicationFix {
-			// The Application's word is not enough: its calls must succeed.
-			if !confirmedByApplication(success, appSuccess[is.Application], after) {
+			// The Application's word is not enough: its calls for the same
+			// cause must succeed (silence never confirms it).
+			if success <= after {
 				continue
 			}
 		} else if success <= after && now-after < window.Milliseconds() {

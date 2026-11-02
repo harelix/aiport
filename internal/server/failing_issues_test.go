@@ -219,3 +219,28 @@ func TestFailingConnectionIssueResolvesAndReopens(t *testing.T) {
 		t.Fatalf("another Application's success resolved it: %v", is)
 	}
 }
+
+// "Fixed on my side" for a failing Connection is confirmed only by a
+// successful call routed for that Application after it said so.
+func TestAFailingConnectionApplicationFixIsConfirmedByItsOwnCalls(t *testing.T) {
+	f, flaky := failingFixture(t)
+	f.chat(t, docsBotToken, "llama3:8b", 5)
+	f.detect()
+	id := f.only(t)["id"].(string)
+	if w, _ := call(f.h, "POST", IssuesPath+"/"+id+"/fixed", "", docsBotToken, false); w.Code != 200 {
+		t.Fatalf("fixed: %d", w.Code)
+	}
+	f.chat(t, otherAppToken, "llama3:8b", 1)
+	f.detect()
+	if is := f.only(t); is["state"] != "resolving" {
+		t.Fatalf("another Application's success confirmed it: %v", is)
+	}
+	flaky.set(false)
+	if codes := f.chat(t, docsBotToken, "llama3:8b", 1); fmt.Sprint(codes) != "[200]" {
+		t.Fatalf("docs-bot's call: %v", codes)
+	}
+	f.detect()
+	if is := f.only(t); is["state"] != "resolved" || m(is["resolution"])["how"] != "application_fix" {
+		t.Fatalf("after docs-bot's successful call: %v", is)
+	}
+}

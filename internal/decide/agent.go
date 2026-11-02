@@ -173,12 +173,3 @@ func (q *Queue) withdrawFix(is *Issue, now int64) {
 	}
 	is.Fix = nil
 }
-
-// confirmedByApplication reports whether calls confirm the Application fix
-// of a resolving Issue: after the fix and after the subject's last error,
-// a call for the same subject succeeded, or another of the Application's
-// calls did (it now sends a model this gateway serves). Its word alone,
-// or silence, never confirms it.
-func confirmedByApplication(success, appSuccess, after int64) bool {
-	return success > after || appSuccess > after
-}

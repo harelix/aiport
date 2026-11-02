@@ -484,7 +484,11 @@ a model this gateway serves), it says so with `aiport_issue_fixed` (or
 `POST /v1/aiport/issues/{id}/fixed`). The Issue becomes **resolving** by the
 Application fix, and the aiport fix stops waiting for you. aiport does not
 take the agent's word for it: the Issue is resolved, as `application_fix`,
-only once that Application's calls succeed again. If the error goes on, the
+only once that Application's calls succeed again for the same cause (for an
+unknown model, a successful call for that same model; for a failing
+Connection, a successful call routed for that Application after it said
+so). A successful call for another model does not count, and neither does
+silence. If the error goes on, the
 Issue opens again and offers the aiport fix again.
 
 ### What waits for your decision
