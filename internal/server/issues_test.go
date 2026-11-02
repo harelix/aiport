@@ -288,6 +288,32 @@ func TestAnApprovedFixWithNoCallsAfterItResolvesAsStopped(t *testing.T) {
 	}
 }
 
+// The Owner can dismiss any Issue that is not resolved or dismissed yet,
+// whatever its aiport fix stands at.
+func TestAnyUndecidedIssueCanBeDismissed(t *testing.T) {
+	for _, first := range []string{"accept", "reject"} {
+		t.Run(first, func(t *testing.T) {
+			f := newIssuesFixture(t, "")
+			f.chat(t, docsBotToken, "llama3:8b", 5)
+			f.detect()
+			id := f.only(t)["id"].(string)
+			if code, out := f.decide(t, id, `{"action":"`+first+`"}`); code != 200 {
+				t.Fatalf("%s: %d %v", first, code, out)
+			}
+			code, out := f.decide(t, id, `{"action":"dismiss","note":"not now"}`)
+			if code != 200 || m(out["issue"])["state"] != "dismissed" {
+				t.Fatalf("dismiss after %s: %d %v", first, code, out)
+			}
+			if is := f.only(t); is["state"] != "dismissed" || is["needs_owner"] != false {
+				t.Fatalf("after dismiss: %v", is)
+			}
+			if code, out := f.decide(t, id, `{"action":"dismiss"}`); code != 409 {
+				t.Fatalf("dismissing twice: %d %v", code, out)
+			}
+		})
+	}
+}
+
 // With no Connection, several or an unlisted one serving the model, the
 // Issue stays open with no proposed Connection; the Owner chooses one.
 func TestUncertainDiagnosesLeaveTheConnectionToTheOwner(t *testing.T) {

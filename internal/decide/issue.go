@@ -232,10 +232,11 @@ func (q *Queue) Issue(id string) (Issue, bool) {
 	return Issue{}, false
 }
 
-// DecideIssue decides an open Issue's aiport fix: Accept applies it (as
-// Decide does, with d.Proposal filling in what the fix leaves open) and the
-// Issue becomes resolving; Dismiss dismisses the Issue (quiet period);
-// Reject rejects the fix and leaves the Issue open.
+// DecideIssue decides an open or resolving Issue's aiport fix: Accept
+// applies it (as Decide does, with d.Proposal filling in what the fix
+// leaves open) and the Issue becomes resolving; Reject rejects the fix and
+// leaves the Issue as it is. Dismiss dismisses any Issue that is not
+// resolved or dismissed yet (quiet period), whatever its fix stands at.
 func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.Change, error) {
 	if !q.On() {
 		return Issue{}, config.Change{}, ErrOff
@@ -252,8 +253,23 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 		return Issue{}, config.Change{}, ErrDecided
 	}
 	if is.Fix == nil || is.Fix.State != FixProposed {
-		q.mu.Unlock()
-		return Issue{}, config.Change{}, ErrNoFix
+		defer q.mu.Unlock()
+		if d.Action != Dismiss {
+			return Issue{}, config.Change{}, ErrNoFix
+		}
+		// Nothing waits for the Owner: dismiss the Issue itself.
+		if len(d.Note) > 2000 {
+			return Issue{}, config.Change{}, Invalid{"the note must be at most 2,000 characters"}
+		}
+		if d.By == "" {
+			d.By = config.Owner
+		}
+		p := &q.issues[i]
+		now := at.UnixMilli()
+		p.Dismissal = &Verdict{Action: Dismiss, Note: d.Note, By: d.By, At: now, EvidenceCount: p.Evidence.Count}
+		p.State, p.ResolvingBy, p.SinceMS, p.UpdatedAt = IssueDismissed, "", now, now
+		q.saveIssue(p)
+		return *p, config.Change{}, nil
 	}
 	suggestion := is.Fix.Suggestion
 	q.mu.Unlock()

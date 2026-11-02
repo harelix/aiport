@@ -380,6 +380,12 @@ hosted Connection that does not serve that model.
   under the Application's row, and the text is the same one aiport gives the
   Application's coding agent about its Issues.
 - **Dismiss**: the Issue stays quiet for 7 days unless the evidence doubles.
+  You can dismiss any Issue that is not resolved or dismissed yet, whatever
+  its fix stands at (waiting, approved, rejected or reverted); an approved
+  fix stays applied until you revert its Change.
+- **Reject** (`POST /api/v1/issues/{id}` with `action: reject`): turns the
+  aiport fix down and leaves the Issue as it is. The dashboard offers
+  Approve and Dismiss; Reject is there for scripts.
 
 An Issue resolves itself: when the Application's calls for that model
 succeed again, aiport marks it **resolved** and records how: `aiport_fix`
