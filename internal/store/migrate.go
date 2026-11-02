@@ -206,6 +206,21 @@ var migrations = []string{
 		body          TEXT NOT NULL
 	);
 	CREATE INDEX issues_key ON issues(application, cause, subject);`,
+
+	// 8: Catalog changes, what one configuration Change (or revert) changed
+	// in one Application's Catalog. The change is JSON in body; the columns
+	// are what it is looked up and pruned by (kept as long as request
+	// history). Application ids, task names, model names and Connection ids
+	// only: never keys, URLs, prompts, responses or tokens. Additive.
+	`CREATE TABLE catalog_changes (
+		change_id   TEXT NOT NULL,
+		application TEXT NOT NULL,
+		at_ms       INTEGER NOT NULL,
+		body        TEXT NOT NULL,
+		PRIMARY KEY (change_id, application)
+	);
+	CREATE INDEX catalog_changes_application ON catalog_changes(application, at_ms DESC);
+	CREATE INDEX catalog_changes_time ON catalog_changes(at_ms);`,
 }
 
 // preRelease maps the schema version of a database written by a pre-release

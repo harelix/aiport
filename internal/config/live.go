@@ -65,6 +65,7 @@ type Live struct {
 	path      string
 	cfg       Config
 	listeners []func(Config)
+	watchers  []func(ch Change, before, after Config)
 	changes   []Change
 	log       ChangeLog
 	now       func() time.Time
@@ -115,6 +116,17 @@ func (l *Live) OnChange(fn func(Config)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.listeners = append(l.listeners, fn)
+}
+
+// AfterChange registers fn to run after every successful change and revert,
+// after the OnChange listeners, with the recorded Change and the
+// configuration before and after it. It runs before Change returns, never on
+// a request that only reads the configuration. Register before serving
+// requests.
+func (l *Live) AfterChange(fn func(ch Change, before, after Config)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.watchers = append(l.watchers, fn)
 }
 
 // Change applies edit on behalf of the Owner; see ChangeAs.
@@ -195,6 +207,7 @@ func (l *Live) Changes() []Change {
 }
 
 func (l *Live) commit(c Config, ch Change) {
+	before := l.cfg
 	l.cfg = c
 	if l.log != nil {
 		_ = l.log.Save(ch)
@@ -205,6 +218,9 @@ func (l *Live) commit(c Config, ch Change) {
 	}
 	for _, fn := range l.listeners {
 		fn(copyConfig(c))
+	}
+	for _, fn := range l.watchers {
+		fn(ch, copyConfig(before), copyConfig(c))
 	}
 }
 

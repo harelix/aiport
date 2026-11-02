@@ -24,6 +24,7 @@ func NewConfigured(c config.Config, s config.Secrets, collector *telemetry.Colle
 	}
 	h.keepChanges(path)
 	h.live.OnChange(h.applyLive)
+	h.openCatalogLog()
 	h.keys = config.EnvKeys(path)
 	h.auth = localauth.New(c.Auth, func(updated config.Auth) error {
 		_, _, err := h.live.Change("sign-in settings", config.SetAuth(updated))

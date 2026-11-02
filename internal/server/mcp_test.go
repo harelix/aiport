@@ -196,7 +196,7 @@ func TestMCPListsItsTools(t *testing.T) {
 		}
 		names[tool["name"].(string)] = true
 	}
-	if len(names) != 5 || !names["aiport_capabilities"] || !names["aiport_request_change"] || !names["aiport_my_requests"] || !names["aiport_my_issues"] || !names["aiport_issue_fixed"] {
+	if len(names) != 6 || !names["aiport_catalog"] || !names["aiport_capabilities"] || !names["aiport_request_change"] || !names["aiport_my_requests"] || !names["aiport_my_issues"] || !names["aiport_issue_fixed"] {
 		t.Fatalf("tools: %v", names)
 	}
 }

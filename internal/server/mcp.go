@@ -22,7 +22,7 @@ const MCPPath = "/mcp"
 var mcpVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 
 // mcpInstructions explain the loop to a coding agent in two sentences.
-const mcpInstructions = "This Application's LLM calls go through aiport; call aiport_capabilities to see what it can use right now, and if aiport lacks something it needs, ask the Owner with aiport_request_change instead of working around it. The Owner decides in aiport's dashboard, and aiport_my_requests shows each request's answer and the Change that was made."
+const mcpInstructions = "This Application's LLM calls go through aiport; call aiport_capabilities to see what it can use right now and aiport_catalog for the model names it can use and what changed in them (read it again when the X-Aiport-Catalog header changes), and if aiport lacks something it needs, ask the Owner with aiport_request_change instead of working around it. The Owner decides in aiport's dashboard, and aiport_my_requests shows each request's answer and the Change that was made."
 
 // mcpIssuesInstructions are added while aiport adapts.
 const mcpIssuesInstructions = " At the start of a session, check aiport_my_issues for problems aiport keeps seeing with this Application's calls and their fix; after fixing one in the code, say so with aiport_issue_fixed."
@@ -143,6 +143,8 @@ func (h *Handler) mcpTool(applicationID, name string, args []byte) (any, *rpcErr
 	switch name {
 	case "aiport_capabilities":
 		r = internalRequest(http.MethodGet, CapabilitiesPath, nil)
+	case "aiport_catalog":
+		r = internalRequest(http.MethodGet, CatalogPath, nil)
 	case "aiport_request_change":
 		r = internalRequest(http.MethodPost, RequestsPath, args)
 	case "aiport_my_requests":
@@ -186,6 +188,8 @@ func (h *Handler) mcpTool(applicationID, name string, args []byte) (any, *rpcErr
 	switch {
 	case name == "aiport_capabilities":
 		h.serveCapabilities(tw, r, applicationID, fail)
+	case name == "aiport_catalog":
+		h.serveCatalog(tw, r, applicationID, fail)
 	case strings.HasPrefix(r.URL.Path, IssuesPath):
 		h.serveIssues(tw, r, applicationID, fail)
 	default:
@@ -226,6 +230,13 @@ var mcpTools = []map[string]any{
 		"name":        "aiport_capabilities",
 		"title":       "What aiport can do for this Application",
 		"description": "What aiport can do right now for this Application: its Aliases, the Connections it can reach, its default routing, and the kinds of Change it may ask for. Same answer as GET " + CapabilitiesPath + ".",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+		"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
+	},
+	{
+		"name":        "aiport_catalog",
+		"title":       "This Application's Catalog and what changed in it",
+		"description": "The model names this Application can use through aiport: its task names (Aliases, use these first), where each goes, its binding or the protocol defaults it follows, and the models of the Connections it reaches; then its recent Catalog changes, newest first (task names removed, added or moved, routing that changed, each with the Change id and time). Read it at the start of a session and whenever the X-Aiport-Catalog header changes. Same answer as GET " + CatalogPath + ".",
 		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
 		"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
 	},

@@ -17,6 +17,12 @@ const CapabilitiesPath = "/v1/aiport/capabilities"
 // answers through this too.
 func (h *Handler) capabilities(applicationID string) (capability.Capabilities, bool) {
 	caps, ok := capability.For(h.snapshot(), applicationID, h.gateway)
+	if ok {
+		caps.Catalog.Version = h.catalogVersion(applicationID)
+		if last := h.recentCatalogChanges(applicationID, 1); len(last) == 1 {
+			caps.Catalog.ChangedAt = &last[0].At
+		}
+	}
 	if ok && h.decisions != nil && h.decisions.On() {
 		n := h.decisions.OpenIssues(applicationID)
 		caps.OpenIssues = &n

@@ -405,6 +405,24 @@ already looks for models:
   Application's task names or where they go, its binding, or the protocol
   defaults it follows change, and only then: an Application that sees a new
   version should read `/v1/models` again.
+- `GET /v1/aiport/catalog` (or the MCP tool `aiport_catalog`, same answer)
+  returns the calling Application's Catalog and its recent Catalog changes,
+  newest first. aiport records a Catalog change for every Application a
+  configuration Change affects (approving or reverting an Alias, binding an
+  Application, changing a protocol default, removing a Connection; a revert
+  is a Catalog change too, with `revert_of`): task names removed, added or
+  moved (`from` → `to`), the binding or protocol defaults that changed
+  (`routing`), and the Connections it no longer or newly reaches, each with
+  the Change id and time. An Application the Change did not affect gets
+  nothing. Catalog changes are kept as long as request history
+  (`telemetry.retention_days`) and survive a restart. They hold Application
+  ids, task names, model names and Connection ids only, never keys,
+  addresses, prompts, responses or tokens.
+- The capabilities answer (`GET /v1/aiport/capabilities`) carries
+  `catalog: {version, changed_at_ms}`: the version and the time of the newest
+  kept Catalog change (`null` when none is kept).
+
+All of this works with adapting turned off: it is information, not a Change.
 
 ## Activity and history
 

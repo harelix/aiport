@@ -42,9 +42,10 @@ func (h *Handler) openDecisions() {
 }
 
 // Detect runs one background pass at time at, as the ticker does: it
-// forgets decided items older than request history, then detects over
-// request history.
+// forgets decided items and Catalog changes older than request history,
+// then detects over request history.
 func (h *Handler) Detect(at time.Time) {
+	h.pruneCatalogChanges(h.snapshot(), at)
 	if h.decisions != nil {
 		h.decisions.Prune(at)
 		h.decisions.Detect(at)
@@ -58,6 +59,18 @@ func (h *Handler) Detect(at time.Time) {
 // needs no restart. It does nothing when the handler has no decision queue.
 // Detection never runs during a request.
 func (h *Handler) StartAdapting(stop <-chan struct{}) {
+	go func() { // Catalog changes are forgotten with request history, adapting or not
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				h.pruneCatalogChanges(h.snapshot(), h.clock())
+			}
+		}
+	}()
 	if h.decisions == nil {
 		return
 	}

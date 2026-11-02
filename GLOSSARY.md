@@ -36,6 +36,12 @@ A model name an Application sends that aiport replaces with a real model on a
 Connection. An Application can have its own Aliases; they come before the
 shared ones.
 
+**Catalog**
+What one Application can use through aiport: its task names (its own Aliases
+and the shared ones) and the models listed by the Connections it reaches, with
+a version. A **Catalog change** is the difference one Change made to one
+Application's Catalog.
+
 ## Adapting aiport
 
 **Change request**

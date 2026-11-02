@@ -81,6 +81,17 @@ type Capabilities struct {
 	// resolved (read them with aiport_my_issues); absent while aiport does
 	// not adapt.
 	OpenIssues *int `json:"open_issues,omitempty"`
+	// Catalog is this Application's Catalog version (also sent in
+	// X-Aiport-Catalog on every answer) and when it last changed; read
+	// what changed at /v1/aiport/catalog.
+	Catalog CatalogState `json:"catalog"`
+}
+
+// CatalogState is the version of an Application's Catalog and the time of
+// its newest kept Catalog change (nil when none is kept).
+type CatalogState struct {
+	Version   string `json:"version"`
+	ChangedAt *int64 `json:"changed_at_ms"`
 }
 
 // NotPermitted explains an empty ChangeKinds list.

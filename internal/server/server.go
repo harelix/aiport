@@ -73,8 +73,11 @@ type Handler struct {
 	// catalogVersions are the Catalog versions by Application, rebuilt on
 	// every config change for the X-Aiport-Catalog header.
 	catalogVersions atomic.Pointer[map[string]string]
-	assets          http.Handler
-	auth            *localauth.Manager
+	// catalogLog keeps every Application's Catalog changes (nil for a
+	// handler without a configuration file).
+	catalogLog *catalogLog
+	assets     http.Handler
+	auth       *localauth.Manager
 }
 
 func New(c config.Config, s config.Secrets) http.Handler {
@@ -304,6 +307,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == CapabilitiesPath {
 		h.serveCapabilities(w, r, originID, fail)
+		return
+	}
+	if r.URL.Path == CatalogPath {
+		h.serveCatalog(w, r, originID, fail)
 		return
 	}
 	if r.URL.Path == MCPPath {
