@@ -70,8 +70,11 @@ type Handler struct {
 	// (none while adapting is off), rebuilt on every config change so the
 	// forwarding path checks a set instead of copying the configuration.
 	requesters atomic.Pointer[map[string]bool]
-	assets     http.Handler
-	auth       *localauth.Manager
+	// catalogVersions are the Catalog versions by Application, rebuilt on
+	// every config change for the X-Aiport-Catalog header.
+	catalogVersions atomic.Pointer[map[string]string]
+	assets          http.Handler
+	auth            *localauth.Manager
 }
 
 func New(c config.Config, s config.Secrets) http.Handler {
@@ -80,6 +83,7 @@ func New(c config.Config, s config.Secrets) http.Handler {
 	h.initKeySources(c, s)
 	h.setRequesters(c)
 	h.setAuthorities(c)
+	h.setCatalogVersions(c)
 	return h
 }
 
@@ -135,6 +139,7 @@ func (h *Handler) setRequesters(c config.Config) {
 // proxy limits and telemetry still need a restart.
 func (h *Handler) applyLive(c config.Config) {
 	h.setRequesters(c)
+	h.setCatalogVersions(c)
 	h.setAuthorities(c)
 	h.gateway.Apply(c)
 	if h.keys.Env == nil {
@@ -219,7 +224,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(auth) == 1 && len(auth[0]) <= 519 && strings.HasPrefix(auth[0], "Bearer ") {
 		token = strings.TrimPrefix(auth[0], "Bearer ")
 	}
-	if r.URL.Path == "/v1/messages" && len(auth) == 0 {
+	// Anthropic SDKs send their key in X-Api-Key, also when listing models.
+	if (r.URL.Path == "/v1/messages" || r.URL.Path == ModelsPath) && len(auth) == 0 {
 		keys := r.Header.Values("X-Api-Key")
 		if len(keys) == 1 && len(keys[0]) <= 512 {
 			token = keys[0]
@@ -228,15 +234,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	digest := sha256.Sum256([]byte(token))
 	authenticated, management := 0, 0
 	originID := "unknown"
+	application := false // authenticated by an Application token
 	for _, credential := range h.creds() {
 		match := subtle.ConstantTimeCompare(digest[:], credential.Digest[:])
 		authenticated |= match
 		if match == 1 {
 			originID = credential.OriginID
+			application = !credential.Management
 		}
 		if credential.Management {
 			management |= match
 		}
+	}
+	// Every answer to an Application carries its Catalog version, so it
+	// notices a change on its next call. Forwarded answers keep it: the
+	// provider's headers are added, its body is never changed.
+	if application {
+		w.Header().Set(CatalogHeader, h.catalogVersion(originID))
 	}
 	// A run credential authenticates only an Agent run's model calls, as the
 	// built-in Application; it is never an Application's or the Owner's.
@@ -282,6 +296,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == FeedbackPath {
 		h.serveFeedback(w, r, originID, fail)
+		return
+	}
+	if r.URL.Path == ModelsPath {
+		h.serveModels(w, r, originID, fail)
 		return
 	}
 	if r.URL.Path == CapabilitiesPath {

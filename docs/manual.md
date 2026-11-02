@@ -383,6 +383,29 @@ Changes: approving a Suggestion or Change request of kind
 **every Application** as the Scope, as a shared Alias. An Application can
 list its own Aliases with `GET /v1/aiport/capabilities`.
 
+### The Catalog: which model names an Application can use
+
+An Application's Catalog is what it can use through aiport: its task names
+(its own Aliases, then the shared Aliases of the Connections it reaches) and
+the models those Connections list. Its SDK or Coding agent reads it where it
+already looks for models:
+
+- `GET /v1/models` with the Application's token answers in the OpenAI list
+  shape, or in the Anthropic shape when the request carries
+  `anthropic-version` (Anthropic SDKs may send the token in `X-Api-Key`).
+  Only names usable on that protocol are listed. Task names come first,
+  marked as aiport's (`owned_by: "aiport"`, or "(aiport task name)" in the
+  display name); then the models of the Connection it is bound to, or of the
+  protocol defaults. A Connection whose model list cannot be read adds
+  nothing. Each Application sees only its own Catalog; keys and addresses
+  never appear.
+- Every answer to a request with an Application token carries
+  `X-Aiport-Catalog: <version>`, forwarded calls and errors included (the
+  provider's answer is otherwise unchanged). The version changes when the
+  Application's task names or where they go, its binding, or the protocol
+  defaults it follows change, and only then: an Application that sees a new
+  version should read `/v1/models` again.
+
 ## Activity and history
 
 With `telemetry.enabled: true`, aiport records request metadata (never
