@@ -138,7 +138,8 @@ func baseURL(listen string) string {
 }
 
 // explainPrompt is what an agent explaining is is told: aiport's evidence
-// (explain.Prompt: never tokens, keys or anything an Application wrote) and
+// (explain.Prompt: never tokens or keys; of what an Application wrote,
+// only a model name that looks like a model id) and
 // the task.
 func explainPrompt(is decide.Issue) string {
 	return "aiport, the local AI gateway this repository's Application calls, keeps seeing the problem below with the Application's model calls.\n\n" +

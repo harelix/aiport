@@ -14,6 +14,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -65,22 +66,25 @@ const system = "You explain why an Application's calls through aiport, a local A
 	"In at most five short sentences, say the most likely root cause, then what to change and where (in the Application or in aiport). " +
 	"Plain text only, no headings or lists."
 
-// Prompt is everything a Connection is told about Issue is: its cause, the
-// model name or Connection id it is about, the evidence (status and error
-// type, counts, window, example request ids, Connection ids) and aiport's
-// diagnosis. Never the Application's id or name, keys, tokens, prompts,
-// provider messages or anything an Application wrote besides the model name
-// it asked for.
+// Prompt is everything a Connection or a Coding agent is told about Issue
+// is: its cause, the model name or Connection id it is about, the evidence
+// (status and error type, counts, window, example request ids, Connection
+// ids) and aiport's diagnosis. Never the Application's id or name, keys,
+// tokens, prompts or provider messages. The only text from an Application
+// in it is the model name it asked for, and only when that name looks like
+// a model id (SafeName); every other name in it (Connection ids, model
+// lists, the provider's error type) passes the same check.
 func Prompt(is decide.Issue) string {
 	var b strings.Builder
 	ev := is.Evidence
+	model := SafeName(is.Subject, withheldModel)
 	switch is.Cause {
 	case decide.CauseUnknownModel:
-		b.WriteString("Problem: an Application's calls for the model " + strconv.Quote(is.Subject) + " fail.\n")
+		b.WriteString("Problem: an Application's calls for the model " + model + " fail.\n")
 	case decide.CauseFailingConnection:
-		b.WriteString("Problem: an Application's calls to the Connection " + strconv.Quote(is.Subject) + " keep failing (gateway errors or timeouts).\n")
+		b.WriteString("Problem: an Application's calls to the Connection " + SafeName(is.Subject, withheldName) + " keep failing (gateway errors or timeouts).\n")
 	default:
-		b.WriteString("Problem: " + string(is.Cause) + " (" + strconv.Quote(is.Subject) + ").\n")
+		b.WriteString("Problem: " + SafeName(string(is.Cause), withheldName) + " (" + SafeName(is.Subject, withheldName) + ").\n")
 	}
 	b.WriteString("Failed calls: " + strconv.Itoa(ev.Count) + " in the last " + strconv.Itoa(ev.WindowMinutes) + " minutes")
 	if ev.FromMS > 0 && ev.ToMS > 0 {
@@ -90,36 +94,82 @@ func Prompt(is decide.Issue) string {
 	if ev.Status != 0 {
 		b.WriteString("HTTP status: " + strconv.Itoa(ev.Status))
 		if ev.Error != "" {
-			b.WriteString(", provider error type " + ev.Error)
+			b.WriteString(", provider error type " + SafeName(ev.Error, withheldName))
 		}
 		b.WriteString(".\n")
 	}
 	if len(ev.Connections) > 0 {
-		b.WriteString("Sent to Connection: " + strings.Join(ev.Connections, ", ") + ".\n")
+		b.WriteString("Sent to Connection: " + safeList(ev.Connections) + ".\n")
 	}
 	if len(ev.Examples) > 0 {
-		b.WriteString("Example request ids: " + strings.Join(ev.Examples, ", ") + ".\n")
+		b.WriteString("Example request ids: " + safeList(ev.Examples) + ".\n")
 	}
 	if d := is.Diagnosis; d != nil {
-		b.WriteString("aiport's diagnosis (" + d.Protocol + " protocol): " + d.Summary + "\n")
+		protocol := SafeName(d.Protocol, withheldName)
+		b.WriteString("aiport's diagnosis (" + protocol + " protocol): " + diagnosis(*d, is.Cause, model) + "\n")
 		if len(d.Serving) > 0 {
-			b.WriteString("Connections that list the model: " + strings.Join(d.Serving, ", ") + ".\n")
+			b.WriteString("Connections that list the model: " + safeList(d.Serving) + ".\n")
 		}
 		if len(d.Unknown) > 0 {
-			b.WriteString("Connections whose model list could not be read: " + strings.Join(d.Unknown, ", ") + ".\n")
+			b.WriteString("Connections whose model list could not be read: " + safeList(d.Unknown) + ".\n")
 		}
 		if len(d.Available) > 0 {
-			b.WriteString("Models the " + d.Protocol + " Connections list: " + strings.Join(d.Available, ", ") + ".\n")
+			b.WriteString("Models the " + protocol + " Connections list: " + safeList(d.Available) + ".\n")
 		}
 	}
 	if f := is.Fix; f != nil {
-		b.WriteString("aiport's own fix: " + string(f.Kind) + ", " + string(f.State))
+		b.WriteString("aiport's own fix: " + SafeName(string(f.Kind), withheldName) + ", " + SafeName(string(f.State), withheldName))
 		if f.Proposal.Target != "" {
-			b.WriteString(", Connection " + strconv.Quote(f.Proposal.Target))
+			b.WriteString(", Connection " + SafeName(f.Proposal.Target, withheldName))
 		}
 		b.WriteString(".\n")
 	}
 	return b.String()
+}
+
+// diagnosis is aiport's diagnosis in words, naming the model as model (an
+// already checked name), never the stored summary, which quotes the name as
+// it was asked for.
+func diagnosis(d decide.Diagnosis, cause decide.Cause, model string) string {
+	if cause != decide.CauseUnknownModel {
+		return "see the lists below."
+	}
+	switch d.Answer {
+	case decide.ServedByOne:
+		return "only one Connection of this gateway serves " + model + " (from the Connections' free model lists)."
+	case decide.ServedBySeveral:
+		return "several Connections of this gateway serve " + model + " (from the Connections' free model lists)."
+	case decide.ServedByNone:
+		return "no enabled Connection of this gateway serves " + model + " (from the Connections' free model lists)."
+	}
+	return "not every Connection could be listed, so it is not certain which serves " + model + "."
+}
+
+// safeName is what a name must look like to reach a model or an agent.
+var safeName = regexp.MustCompile(`^[A-Za-z0-9._:/@+-]{1,128}$`)
+
+const (
+	withheldModel = "(a model name that is withheld because it contains unusual characters)"
+	withheldName  = "(a name that is withheld because it contains unusual characters)"
+)
+
+// SafeName is s quoted when it looks like a model id or Connection id (at
+// most 128 letters, digits and . _ : / @ + -), otherwise withheld: text an
+// Application (or a provider) wrote never reaches a model or an agent as
+// words it could follow.
+func SafeName(s, withheld string) string {
+	if !safeName.MatchString(s) {
+		return withheld
+	}
+	return strconv.Quote(s)
+}
+
+func safeList(l []string) string {
+	out := make([]string, len(l))
+	for i, s := range l {
+		out[i] = SafeName(s, withheldName)
+	}
+	return strings.Join(out, ", ")
 }
 
 func utc(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.RFC3339) }

@@ -507,8 +507,13 @@ Explain is disabled with a hint saying so.
   provider's error type, the counts and time window, example request ids,
   the model name, the Connection ids and aiport's diagnosis (which
   Connections list the model, and the models they list). Never keys,
-  tokens, the Application's id or name, prompts, provider messages or
-  anything else an Application wrote.
+  tokens, the Application's id or name, prompts or provider messages. The
+  one thing in it an Application wrote is the model name it asked for,
+  and only when that name looks like a model id (at most 128 letters,
+  digits and `. _ : / @ + -`); any other name is replaced by "(a model
+  name that is withheld because it contains unusual characters)", and
+  Connection ids, model lists and the error type pass the same check. The
+  same holds for what a Coding agent is told.
 - **Streaming**: the words appear as the model writes them. When it
   finishes, the explanation is saved with the Issue, kept across restarts,
   and shown with who wrote it. **Explain again** replaces it; if writing

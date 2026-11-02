@@ -90,7 +90,8 @@ func (h *Handler) worktreeRoot() string {
 }
 
 // fixPrompt is what an agent fixing is is told: aiport's evidence
-// (explain.Prompt: never tokens, keys or anything an Application wrote),
+// (explain.Prompt: never tokens or keys; of what an Application wrote,
+// only a model name that looks like a model id),
 // the saved explanation if any, and the task.
 func fixPrompt(is decide.Issue, branch string) string {
 	s := "aiport, the local AI gateway this repository's Application calls, keeps seeing the problem below with the Application's model calls.\n\n" + explain.Prompt(is)
