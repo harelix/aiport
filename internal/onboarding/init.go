@@ -201,7 +201,7 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 	for _, name := range agentNames {
 		fmt.Fprintf(out, "\n  In another terminal, source the same credential file, then:\n    aiport agent %s --config %s --model YOUR_MODEL\n", name, quote(*path))
 	}
-	fmt.Fprintln(out, "\n  Presets are experimental. Model and client compatibility require live checks.\n  Dashboard is served at the gateway URL. Activity is session-only; SQLite persistence is not available yet.")
+	fmt.Fprintln(out, "\n  Presets are experimental. Model and client compatibility require live checks.\n  Dashboard is served at the gateway URL. Activity history is saved in SQLite next to the config.")
 	return nil
 }
 func token() (string, error) {

@@ -7,7 +7,8 @@ anything that changes the product scope.
 ## Setup
 
 - Go 1.27+ is the only requirement to build: `make build`, `make test`, `make check`,
-  `make check-offline`.
+  `make check-offline`. `make release VERSION=x.y.z` cross-builds archives for
+  macOS, Linux and Windows with SHA-256 checksums into `dist-release/`.
 - Dashboard changes also need Node.js and pnpm: `pnpm --dir web install`, then
   `make web-build`, and commit the rebuilt `internal/dashboard/dist`.
 - Go dependencies are vendored. Adding one requires a reason in the PR, `go mod vendor`,

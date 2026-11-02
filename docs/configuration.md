@@ -266,6 +266,23 @@ Nord6/Nord1 8.73:1, Nord4/Nord1 7.45:1, Nord0/Nord8 6.24:1, Nord3/Nord6 6.40:1,
 and input-border Nord9/Nord1 3.74:1. These checks do not establish full UI
 accessibility or visual/browser verification.
 
+## Health check, errors and terminal output
+
+```sh
+curl -H "Authorization: Bearer $AIPORT_LOCAL_TOKEN" http://127.0.0.1:8787/api/v1/health
+```
+
+All API paths require local credentials (unless auth is disabled). Management
+routes, health included, need the management token; Application tokens only
+grant inference. Host must match a configured address. Unknown paths return
+structured 404 errors; missing or disabled routes and admission failures
+return redacted local errors with a UUID. Upstream statuses, bodies, content
+types and request ids pass through unchanged.
+
+A token already exported in your shell takes precedence over the one in the
+private `.env` file next to the config. Terminal output uses colour only on a
+TTY; `NO_COLOR`, redirected output and token output stay plain.
+
 ## Extensions
 
 `extensions:` lists the programs (policies and guardrails) that take part in

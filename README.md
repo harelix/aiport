@@ -4,237 +4,134 @@
 
 # aiport
 
-A local AI gateway, under development from [the design](aiport_DESIGN.md).
+A local AI gateway for the applications and coding agents on your machine: one
+place for provider keys, routing and request history, that notices when an
+application keeps failing and offers to fix it.
 
-**New here?** Read the [user manual](docs/manual.md): install and run, a tour of
-the dashboard, connecting applications, and deciding on Changes. It is also
-built into the dashboard (the help button in the header).
+<!-- TODO(author): add a dashboard screenshot (Changes or Integrate page), e.g. visuals/dashboard.png -->
 
-**Current build: experimental native forwarding and terminal onboarding.** Chat
-Completions, Responses and Messages share a byte-forwarding path. No provider or
-coding-agent combination has passed the live compatibility gate yet. The embedded
-dashboard shows request metadata saved in SQLite and edits providers and routing.
-Web-first onboarding is still planned.
+## Quickstart
 
-## Run the existing configuration
+You need Go 1.27+ (`brew install go`, or https://go.dev/dl). Nothing else:
+dependencies are vendored and the dashboard is committed pre-built.
 
 ```sh
-./bin/aiport check
-./bin/aiport serve
+git clone https://github.com/harelix/aiport && cd aiport
+make build                 # -> bin/aiport, dashboard embedded
+./bin/aiport init          # choose providers and coding agents; writes aiport.yaml
+./bin/aiport serve         # prints the dashboard URL and management token
 ```
 
-The original example points to Ollama at `http://127.0.0.1:11434/v1`; start your
-local provider separately. Use your configured upstream model identifier.
+Open http://127.0.0.1:8787/, paste the management token, and set a password.
+Add your provider keys on **Settings**, then **Check connection** on each card
+(one free `GET /models`, nothing generated). Start any local provider (Ollama,
+llama.cpp) yourself.
 
-No token export is needed. On first start, `serve`/`check`/`agent` create any missing
-local tokens and save them to the private file next to the config
-(`aiport.yaml.env`, mode 0600). Every later start, in any terminal, reuses them.
-A token already exported in your shell takes precedence. When started in an
-interactive terminal, `serve` prints the dashboard URL and management token;
-redirected output gets a hint instead. Retrieve it later with
-`./bin/aiport auth token`.
+## Why aiport
 
-Stop an older running aiport with Ctrl+C before starting the rebuilt binary.
+- **Applications never hold provider keys.** Each one pairs for its own local
+  token, approved by you; aiport adds the real key on the way out.
+- **Native forwarding.** Chat Completions, Responses and Messages are passed
+  through byte for byte in the provider's own format; aiport does no
+  translation, so nothing is lost between SDK and provider.
+- **It adapts to its Applications, with your approval.** aiport watches its
+  request history. When an error keeps happening for one Application it opens
+  an **Issue** with the evidence and a fix on each side: a Change in aiport
+  you approve with one click, and an instruction for the Application's coding
+  agent. It can also ask your installed coding agent to **Explain** the root
+  cause or **Fix it** in a separate worktree, ending in a diff you keep or
+  discard.
+- **Local and private.** It listens on loopback only, refuses cross-site
+  requests, and records request metadata, never prompts or responses.
 
-## First-run onboarding
+## Usage
 
-For this workspace, where `aiport.yaml` already exists, use a new config path:
+The [user manual](docs/manual.md) walks through every page of the dashboard. It
+is also built into the dashboard (the help button in the header). The main
+tasks:
+
+**Connect an application.** Open **Integrate** and copy the instruction at the
+top to the coding agent working on that application. The agent switches the
+application's SDK to aiport and pairs it; you approve the short code it shows.
+Any running gateway also describes itself without a token:
 
 ```sh
-./bin/aiport init --config aiport-onboard.yaml
+curl 'http://127.0.0.1:8787/_connect?format=markdown'   # guide for people and agents
+curl http://127.0.0.1:8787/_connect                     # JSON for programs
 ```
 
-The terminal wizard selects one or more providers and coding agents, detects
-installed clients, and creates private config and local-credential files.
-For a fresh installation, omit `--config` to create `aiport.yaml`.
-Existing files are never overwritten. Example without prompts:
+See [Connect](docs/connect.md) and the manual's
+[Integrate page](docs/manual.md#the-integrate-page-and-the-two-briefs) section.
+
+**Launch a coding agent through aiport.**
 
 ```sh
-./bin/aiport init --config aiport-onboard.yaml \
-  --provider openai,anthropic --agent codex,claude
-source aiport-onboard.yaml.env
-# Set OPENAI_API_KEY and ANTHROPIC_API_KEY in your shell to your own provider keys.
-./bin/aiport check --config aiport-onboard.yaml
-./bin/aiport serve --config aiport-onboard.yaml
+./bin/aiport agent claude --model YOUR_ANTHROPIC_MODEL
+./bin/aiport agent codex --model YOUR_OPENAI_MODEL      # add --dry-run to inspect
 ```
 
-The wizard prints commands using `aiport`; use `./bin/aiport` in this checkout,
-or put the built executable on your PATH. Upstream keys are referenced through
-environment variables, never pasted into the wizard, printed, or stored in YAML.
-The generated `.env` file contains only random local credentials. Keep it private
-and out of version control. Source it in each terminal that needs those tokens.
+The agent gets its own local token, never your provider keys, and its global
+settings are not edited. The Connection it uses must speak the agent's
+protocol.
 
-Preset IDs: `openai`, `anthropic`, `bedrock`, `meta`, `ollama`, `llamacpp`.
-Use comma-separated IDs for multiple targets. `--region REGION` selects the
-Bedrock region (default `us-east-1`). `--base-url URL` overrides one selected
-provider's API prefix, including a different local port or AWS endpoint.
-The first selected target of each protocol becomes its default. Inspect/edit
-the generated YAML to choose a different per-agent target before starting.
+**Decide on Changes.** **Changes** shows Issues, Suggestions and Change
+requests, with a badge only when one needs you. Every Change can be reverted.
+See [Changes](docs/manual.md#changes).
 
-## Launch a coding agent
+## Configuration
 
-In another terminal, source the generated credential file and launch your client:
+`init` writes `aiport.yaml` and a private `aiport.yaml.env` (mode 0600) holding
+local tokens and the keys you paste in the dashboard. It never overwrites
+existing files. Provider keys never go into YAML.
 
 ```sh
-source aiport-onboard.yaml.env
-./bin/aiport agent codex --config aiport-onboard.yaml --model YOUR_OPENAI_MODEL
-# Or, when the config includes an Anthropic target and claude origin:
-./bin/aiport agent claude --config aiport-onboard.yaml --model YOUR_ANTHROPIC_MODEL
+./bin/aiport init --provider openai,anthropic --agent codex,claude   # no prompts
+./bin/aiport check                                                    # validate
+./bin/aiport auth token                                               # print the management token again
 ```
 
-Add `--dry-run` to inspect the endpoint/model without launching. Extra native
-agent options go after `--`. Settings apply to this launch; global client settings
-are not edited. The child receives its own local token, not configured upstream
-keys or the management credential. Codex uses Responses over HTTP, with client
-request/stream retries disabled. Claude Code uses native Messages. The selected
-target must actually support the client's protocol; aiport does no translation.
-Ollama/llama.cpp Chat compatibility alone does not establish Codex compatibility.
+Preset providers: `openai`, `anthropic`, `bedrock`, `meta`, `ollama`,
+`llamacpp`. `--base-url` overrides one provider's address, and `--region` sets
+the Bedrock region (default `us-east-1`). Request history is kept in SQLite
+next to the config (`telemetry.enabled`, `retention_days`, default 7). See the
+[configuration reference](docs/configuration.md), and
+[`aiport.example.yaml`](aiport.example.yaml).
 
-## Connect an application
+## What runs and what leaves the machine
 
-Any running gateway describes how to talk to it at `/_connect`, without a token:
+- aiport sends calls only to the Connections you configured, with the key for
+  that Connection. It stores request metadata (time, Application, model,
+  status, latency), never prompts or responses.
+- **Agent runs** start a coding agent you installed (Claude Code, Codex or
+  Gemini CLI, through the Agent Client Protocol) in a git worktree of the
+  Application's repository, only when you click. Commands ask you first;
+  aiport never commits to your branch, merges or pushes. aiport only sees the
+  permission requests an agent sends, so an agent's own settings can allow
+  more. Read [What aiport cannot see](docs/manual.md#explain-by-a-coding-agent) before using them.
+- [Extensions](docs/extensions.md) you add are programs started by aiport to
+  take part in decisions about Change requests.
 
-```sh
-curl http://127.0.0.1:8787/_connect                    # JSON for programs
-curl 'http://127.0.0.1:8787/_connect?format=markdown'  # guide for people/agents
-```
+## Limitations
 
-See [docs/connect.md](docs/connect.md).
+- Experimental. No provider and coding-agent combination has passed the live
+  [compatibility](docs/compatibility.md) gate yet.
+- Token counts and cost are not measured.
+- No translation between protocols: a Connection must speak the protocol of
+  the client calling it. Ollama or llama.cpp Chat compatibility does not make
+  them work with Codex.
+- Gemini runs' model calls do not go through aiport, and Codex runs use
+  Codex's own login.
+- No release archives yet; build from source (`make release` produces them).
 
-**Integrate one of your applications.** Open the dashboard's **Integrate** page
-and copy the **Application brief** to the coding agent working on that
-application. The agent switches the application's SDK to aiport and **pairs**
-it: the application asks for its own token and shows a short code, you approve
-the code on the same page, and the application collects its token once. Its
-calls then appear under its own name in Activity. The **Coding agent** tab has
-the second brief, for agents working in that repository later (MCP entry,
-`AGENTS.md` line, Change requests). Both are served by aiport itself, at
-`/_connect?format=handover&for=application` and `&for=agent`.
+## Contributing
 
-## Check health
+See [CONTRIBUTING.md](CONTRIBUTING.md): `make test`, `make check`,
+`make check-offline`, and a DCO sign-off on every commit. Larger changes start
+from [the design](aiport_DESIGN.md); the vocabulary is in the
+[glossary](GLOSSARY.md). Dependency licenses are in
+[THIRD_PARTY.md](THIRD_PARTY.md).
 
-```sh
-curl -H "Authorization: Bearer $AIPORT_LOCAL_TOKEN" \
-  http://127.0.0.1:8787/api/v1/health
-```
+## License
 
-All API paths require local credentials. Management health requires the global
-token. Origin tokens only grant inference access. Host must match the exact
-configured IP and port. Foreign browser Origin/Host and cross-site requests are
-rejected. No CORS or remote serving. Unknown paths return structured 404 errors;
-missing/disabled routes and admission failures are redacted local errors with a
-UUID. Native upstream statuses, bodies, content types and request IDs pass through.
-
-## Build from source
-
-The only prerequisite is **Go 1.27+** (`brew install go`, or https://go.dev/dl).
-Everything else is in the repository: Go dependencies are vendored, and the
-dashboard is committed pre-built in `internal/dashboard/dist`, so no Node.js,
-network access, C compiler or database server is needed.
-
-```sh
-git clone <repo> aiport && cd aiport
-make build            # -> bin/aiport (UI embedded, pure Go, CGO disabled)
-./bin/aiport serve
-```
-
-What you do **not** need to run: `go get`, `go mod tidy` or `go mod vendor`. All
-dependencies, including the pure-Go SQLite engine, are already committed under
-`vendor/`; those commands are only for maintainers changing dependencies (see
-CONTRIBUTING.md).
-
-Checks: `make test`, `make check`, and `make check-offline` (proves the build needs
-no network). `make release VERSION=x.y.z` cross-builds self-contained archives for
-macOS, Linux and Windows plus SHA-256 checksums into `dist-release/`.
-
-Changing the dashboard itself additionally needs Node.js and pnpm
-(`pnpm --dir web install && make web-build`); commit the rebuilt `dist` with your change.
-
-Deterministic fixtures use in-memory HTTP transports because this execution
-sandbox denies listening sockets. Live provider and agent workflows remain
-unverified. The user has separately observed the M0 listener start on macOS arm64.
-No archives or supported platform release matrix exist yet.
-
-See [configuration](docs/configuration.md), [implementation](docs/implementation.md),
-[compatibility](docs/compatibility.md), and [dependency notices](THIRD_PARTY.md).
-aiport is licensed under [Apache-2.0](LICENSE); the name and logo are covered by
-[TRADEMARKS.md](TRADEMARKS.md). See [CONTRIBUTING.md](CONTRIBUTING.md) (DCO sign-off required).
-
-## Embedded dashboard preview
-
-After restarting the rebuilt binary, open **http://127.0.0.1:8787/** (or your
-configured literal loopback address). For first-run access, verify the startup `AIPORT_LOCAL_TOKEN`, then set a password
-and an optional username. Later visits use those credentials. An HttpOnly browser
-session survives reloads and expires after 12 hours or a server restart. Login
-assets and minimal sign-in status are public on the local listener.
-
-Overview shows retained request counts, latency, errors and provider distribution.
-Activity has shared time/origin/target/outcome filters, cursor pagination and
-metadata details. Settings shows connections, agent routing, and working authentication controls.
-Paste provider API keys into each connection card; they apply immediately and are
-stored only in the private `aiport.yaml.env` (never YAML, never shown again).
-Adding or removing connections still means editing YAML, checking, and restarting.
-Cost and token metrics remain unknown. **Check connection** on each provider card
-(or **Check all** per group) sends one authenticated `GET /models` to that
-connection: it generates nothing and costs nothing, and shows whether the provider
-is reachable and accepted the key. It runs only when you click it, and a passing
-check does not prove every model or feature works.
-
-Activity is saved to a private SQLite file next to your configuration
-(`aiport.yaml.db`, 0600) when `telemetry.enabled: true`. Request handlers only
-offer a metadata record to a nonblocking bounded queue; one writer saves records
-in batches and deletes rows older than `retention_days` (default 7). History
-survives restarts. Dropped records and failed writes are counted and shown.
-If the database cannot be opened, aiport says so at startup and keeps the latest
-500 records in memory for that session instead. A database written by a newer
-aiport turns recording off rather than risk it. Generated onboarding configs
-enable telemetry; existing configs are preserved, so set `telemetry.enabled: true`
-in yours and restart if you want it. When disabled, no request metadata is recorded.
-Deleted rows can linger in SQLite's WAL and free pages; deletion is not secure erasure.
-
-The React/TypeScript UI is embedded in `bin/aiport`; running it needs no frontend
-service or network downloads. To rebuild its assets as a contributor:
-
-```sh
-pnpm --dir web install
-pnpm --dir web build
-go build -trimpath -o bin/aiport ./cmd/aiport
-```
-
-The current frontend compiled and typechecked with local installed packages.
-Registry installation and browser visual/interaction QA remain unverified because
-network/browser tooling was unavailable during this work block.
-
-## Sign-in, recovery, and optional authentication
-
-Click **Forgot username or password?** on the login screen for the recovery popup.
-It explains how to retrieve and paste the management token to bypass account login.
-After recovery, open **Settings → Authentication** to replace username/password.
-Agent credentials and upstream provider API keys cannot recover access.
-
-```sh
-./bin/aiport auth token --config aiport.yaml
-```
-
-Use your actual config path. This explicit command prints the configured token
-from the current shell, or from the matching private `aiport.yaml.env` file.
-If you changed the token only in the server's environment, use that same shell:
-`printf '%s\n' "$AIPORT_LOCAL_TOKEN"` (or your configured variable name).
-`aiport token` generates a new token; it does not retrieve a running server's token.
-Never paste a recovery token into provider-key fields.
-
-The Authentication section can disable or re-enable local authentication and
-reset the account. Disabling removes credential requirements for both management
-and inference on the loopback listener; Host/Origin/cross-site protections remain.
-Credentials are retained. Re-enabling requires a saved or new password. Source
-your private token file before restarting with authentication enabled.
-
-Passwords require at least 12 characters and are stored only as salted
-PBKDF2-HMAC-SHA256 hashes in the private YAML. Changes take effect immediately,
-atomically persist, and revoke previous browser sessions. Provider settings and
-secret references are preserved. No browser account/session token is forwarded
-upstream or stored in localStorage.
-
-The entire interface now uses the official **Nord** palette in dark/light modes.
-Terminal onboarding/startup accents use Nord Frost when writing to a TTY;
-`NO_COLOR`, redirected output, and secret/token output remain plain.
+[Apache-2.0](LICENSE). The aiport name and logo are covered by
+[TRADEMARKS.md](TRADEMARKS.md).
