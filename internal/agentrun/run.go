@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -198,6 +199,7 @@ func New(now func() time.Time, id func() string) *Runner {
 type Run struct {
 	spec    Spec
 	r       *Runner
+	id      string // never changes
 	mu      sync.Mutex
 	info    Info
 	log     []Update
@@ -206,7 +208,7 @@ type Run struct {
 	changed chan struct{} // closed and replaced on every change
 	done    chan struct{}
 	err     error
-	stop    context.CancelFunc
+	stop    context.CancelFunc // set before the run is published
 	stopped bool
 }
 
@@ -217,23 +219,24 @@ func (r *Runner) Start(ctx context.Context, spec Spec) (*Run, error) {
 	if !filepath.IsAbs(spec.Program.Path) || !filepath.IsAbs(spec.Dir) {
 		return nil, errors.New("the agent and its directory must be absolute paths")
 	}
+	limit := spec.Limit
+	if limit <= 0 {
+		limit = 10 * time.Minute
+	}
 	r.mu.Lock()
 	if r.active[spec.Application] != nil {
 		r.mu.Unlock()
 		return nil, ErrBusy
 	}
-	run := &Run{spec: spec, r: r, changed: make(chan struct{}), done: make(chan struct{})}
-	run.info = Info{ID: r.id(), Application: spec.Application, Issue: spec.Issue, Mode: spec.Mode, Agent: spec.Agent, AgentName: spec.AgentName,
+	// The run can be stopped from the moment others can see it: its stop
+	// function is set before it is published.
+	runCtx, cancel := context.WithTimeout(ctx, limit)
+	run := &Run{spec: spec, r: r, id: r.id(), stop: cancel, changed: make(chan struct{}), done: make(chan struct{})}
+	run.info = Info{ID: run.id, Application: spec.Application, Issue: spec.Issue, Mode: spec.Mode, Agent: spec.Agent, AgentName: spec.AgentName,
 		ModelCalls: spec.ModelCalls, State: Running, StartedAt: r.now().UnixMilli(), LimitMS: spec.Limit.Milliseconds()}
 	r.active[spec.Application] = run
 	r.last[spec.Issue] = run
 	r.mu.Unlock()
-	limit := spec.Limit
-	if limit <= 0 {
-		limit = 10 * time.Minute
-	}
-	runCtx, cancel := context.WithTimeout(ctx, limit)
-	run.stop = cancel
 	go run.loop(runCtx)
 	return run, nil
 }
@@ -274,7 +277,7 @@ func (r *Runner) Stop(id string) bool {
 	r.mu.Lock()
 	var run *Run
 	for _, a := range r.active {
-		if a.info.ID == id {
+		if a.id == id {
 			run = a
 		}
 	}
@@ -484,7 +487,7 @@ func (run *Run) loop(ctx context.Context) {
 		return
 	}
 	if ini.ProtocolVersion != ProtocolVersion {
-		err = errors.New("the agent speaks ACP version " + itoa(ini.ProtocolVersion) + "; aiport speaks version 1")
+		err = errors.New("the agent speaks ACP version " + strconv.Itoa(ini.ProtocolVersion) + "; aiport speaks version 1")
 		return
 	}
 	var ns newSessionResult
@@ -687,9 +690,4 @@ func randomID() string {
 	var b [12]byte
 	_, _ = rand.Read(b[:])
 	return "run-" + hex.EncodeToString(b[:])
-}
-
-func itoa(n int) string {
-	b, _ := json.Marshal(n)
-	return string(b)
 }
