@@ -18,10 +18,9 @@ import (
 // Fix it (harelix/aiport#25): on the Owner's click aiport makes a git
 // worktree of the Application's repository on a new branch named for the
 // Issue (internal/worktree) and runs the Application's Coding agent there.
-// Edits inside the worktree are allowed; every command and anything
-// outside the worktree is denied (commandRule is where the Owner's
-// approval of commands comes in, harelix/aiport#26). The run ends with a
-// diff the Owner reviews:
+// Edits inside the worktree are allowed; a command inside it waits for the
+// Owner's answer (commandRule, harelix/aiport#26); anything outside the
+// worktree is denied. The run ends with a diff the Owner reviews:
 //
 //   - Keep: aiport commits the diff on the new branch, as one commit
 //     authored by aiport, and removes the worktree; the branch stays, and the
@@ -31,8 +30,12 @@ import (
 //   - Discard: the worktree and the branch are removed; the Issue stays open.
 //
 // Stop, the time limit (agent_runs.fix_minutes) and a failed run remove the
-// worktree and the branch. The branch and the diff summary are kept with
-// the Issue (decide.BranchFix).
+// worktree and the branch, except a run stopped because a command request
+// went unanswered: what it changed so far waits for review like a finished
+// run's diff (decide.BranchStoppedWaiting). The branch and the diff summary
+// are kept with the Issue (decide.BranchFix). A run still recorded as going
+// when aiport starts is marked stopped and its worktree removed
+// (stopLeftFixes).
 
 // fixUnavailable says why Fix it is unavailable for Application app, in a
 // hint the dashboard shows instead of the button; "" when it is available.
@@ -115,20 +118,17 @@ func fixRules(root string, command agentrun.Policy) agentrun.Policy {
 			}
 			return agentrun.Verdict{Allow: true, Reason: "editing inside the run's worktree"}
 		case "execute":
+			for _, path := range p.Paths {
+				if !inside(root, path) {
+					return agentrun.Verdict{Reason: "a command outside the run's worktree"}
+				}
+			}
+			if cwd := cwdOf(p); cwd != "" && !inside(root, cwd) {
+				return agentrun.Verdict{Reason: "a command outside the run's worktree"}
+			}
 			return command(ctx, p)
 		}
 		return agentrun.Verdict{Reason: "Fix it allows only reading and editing files inside the run's worktree"}
-	}
-}
-
-// commandRule answers a command a Fix it run of Application app for Issue
-// issue wants to run. This is the seam where the Owner approves commands
-// (harelix/aiport#26: ask on the dashboard, Allow once / Allow this command
-// for this run / Deny, stop the run after 5 unanswered minutes); until then
-// every command is denied.
-func (h *Handler) commandRule(app, issue string) agentrun.Policy {
-	return func(context.Context, agentrun.Permission) agentrun.Verdict {
-		return agentrun.Verdict{Reason: "Fix it does not run commands yet: aiport denies every command"}
 	}
 }
 
@@ -141,7 +141,8 @@ func fixPrompt(is decide.Issue, branch string) string {
 		s += "\nRoot cause found earlier:\n" + e.Text + "\n"
 	}
 	return s + "\nFix it in this repository's code. You are in a git worktree on the new branch " + branch + ", made for this fix: " +
-		"edit files only inside this directory (aiport allows that). aiport denies running commands and anything outside this directory. " +
+		"edit files only inside this directory (aiport allows that). Before each command you run here (tests, builds), aiport asks the Owner, who may deny it; " +
+		"aiport denies anything outside this directory. " +
 		"Do not commit, merge or push: aiport shows your diff to the Owner, who keeps or discards it. " +
 		"End with a short summary of what you changed and why, in plain text."
 }
@@ -160,7 +161,7 @@ func (h *Handler) startFix(is decide.Issue) (*agentrun.Run, int, string, string)
 	if is.State != decide.IssueOpen {
 		return nil, 409, "issue_not_open", "Fix it works on an open Issue; this one is " + string(is.State)
 	}
-	if b := is.BranchFix; b != nil && (b.State == decide.BranchRunning || b.State == decide.BranchReady) {
+	if b := is.BranchFix; b != nil && (b.State == decide.BranchRunning || b.Reviewable()) {
 		return nil, 409, "fix_waiting", "This Issue's last fix is still going or waiting for the Owner: keep or discard it first"
 	}
 	if hint := h.fixUnavailable(is.Application); hint != "" {
@@ -228,7 +229,21 @@ func (h *Handler) fixEnded(issue string, b decide.BranchFix, info agentrun.Info)
 			b.State, b.Summary, b.Files = decide.BranchReady, s.Text, s.Files
 		}
 	case agentrun.Stopped:
-		discard(decide.BranchStopped, "Stopped; the worktree and the branch were removed.")
+		if !h.stoppedUnanswered(info.ID) {
+			discard(decide.BranchStopped, "Stopped; the worktree and the branch were removed.")
+			break
+		}
+		why := "A command request was unanswered for " + h.approvalTimeout().String() + ", so aiport stopped the run"
+		s, err := t.Summary()
+		switch {
+		case err != nil:
+			discard(decide.BranchStopped, why+"; "+err.Error()+"; the worktree was removed.")
+		case s.Empty():
+			discard(decide.BranchStopped, why+" before it changed anything; the worktree and the branch were removed.")
+		default:
+			b.State, b.Summary, b.Files = decide.BranchStoppedWaiting, s.Text, s.Files
+			b.Note = why + "; what it changed so far waits for your review."
+		}
 	case agentrun.TimedOut:
 		discard(decide.BranchStopped, "Reached its time limit of "+time.Duration(info.LimitMS*int64(time.Millisecond)).String()+"; the worktree and the branch were removed.")
 	default:
@@ -236,6 +251,33 @@ func (h *Handler) fixEnded(issue string, b decide.BranchFix, info agentrun.Info)
 	}
 	if h.decisions != nil {
 		_, _ = h.decisions.RecordBranch(issue, b, h.clock())
+	}
+}
+
+// stopLeftFixes marks stopped every branch fix still recorded as running,
+// with no run going: aiport stopped (or crashed) while it ran. Its worktree
+// and branch are removed, as for a stopped run.
+func (h *Handler) stopLeftFixes() {
+	if h.decisions == nil || !h.decisions.On() {
+		return
+	}
+	h.fixMu.Lock()
+	defer h.fixMu.Unlock()
+	for _, is := range h.decisions.Issues(decide.IssueFilter{}) {
+		b := is.BranchFix
+		if b == nil || b.State != decide.BranchRunning {
+			continue
+		}
+		if run, going := h.runner().Active(is.Application); going && run.Info().ID == b.Run {
+			continue
+		}
+		note := "aiport stopped while the run was going; the worktree and the branch were removed."
+		if err := treeOf(*b).Discard(); err != nil {
+			note += " " + err.Error()
+		}
+		fixed := *b
+		fixed.State, fixed.Worktree, fixed.Note = decide.BranchStopped, "", note
+		_, _ = h.decisions.RecordBranch(is.ID, fixed, h.clock())
 	}
 }
 
@@ -314,7 +356,7 @@ func readyFix(is decide.Issue, fail func(int, string, string)) (decide.BranchFix
 		fail(409, "no_fix", "This Issue has no fix from Fix it")
 	case b.State == decide.BranchRunning:
 		fail(409, "fix_running", "The Fix it run is still going: wait for its diff or stop it")
-	case b.State != decide.BranchReady:
+	case !b.Reviewable():
 		fail(409, "fix_not_waiting", "This Issue's fix is "+string(b.State)+": nothing waits to be kept or discarded")
 	default:
 		return *b, true
@@ -336,7 +378,7 @@ func (h *Handler) keepFix(w http.ResponseWriter, is decide.Issue, fail func(int,
 		fail(409, "keep_failed", err.Error())
 		return
 	}
-	b.State, b.Commit, b.Worktree = decide.BranchKept, commit, ""
+	b.State, b.Commit, b.Worktree, b.Note = decide.BranchKept, commit, "", ""
 	if err != nil {
 		b.Note = err.Error()
 	}
@@ -360,7 +402,7 @@ func (h *Handler) discardFix(w http.ResponseWriter, is decide.Issue, fail func(i
 		fail(409, "discard_failed", err.Error())
 		return
 	}
-	b.State, b.Worktree = decide.BranchDiscarded, ""
+	b.State, b.Worktree, b.Note = decide.BranchDiscarded, "", ""
 	fresh, err := h.decisions.RecordBranch(is.ID, b, h.clock())
 	if err != nil {
 		fail(500, "issue_update_failed", "The Issue could not be updated")
@@ -389,7 +431,7 @@ func (h *Handler) showFix(w http.ResponseWriter, id string, fail func(int, strin
 	diff, truncated := "", false
 	var err error
 	switch {
-	case b.State == decide.BranchReady:
+	case b.Reviewable():
 		h.fixMu.Lock()
 		diff, truncated, err = treeOf(*b).Diff()
 		h.fixMu.Unlock()

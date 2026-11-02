@@ -56,6 +56,9 @@ type acpAsk struct {
 	// Write, when set, is written to Path once the request is allowed (an
 	// edit the agent makes itself, as agents do).
 	Write string `json:"write,omitempty"`
+	// Input is the tool call's rawInput (for a command, {"command": ...});
+	// CWD in it stands for the agent's working directory.
+	Input map[string]any `json:"input,omitempty"`
 	// Options are the option kinds offered (default allow_once,
 	// allow_always, reject_once, reject_always).
 	Options []string `json:"options,omitempty"`
@@ -135,6 +138,10 @@ func fakeACPAgent(script string) int {
 				}
 				tc := map[string]any{"toolCallId": "tc-" + askID, "title": st.Ask.Title, "kind": st.Ask.Kind, "status": "pending"}
 				path := strings.ReplaceAll(st.Ask.Path, "CWD", cwd)
+				if st.Ask.Input != nil {
+					raw, _ := json.Marshal(st.Ask.Input)
+					tc["rawInput"] = json.RawMessage(strings.ReplaceAll(string(raw), "CWD", cwd))
+				}
 				if path != "" {
 					tc["locations"] = []map[string]any{{"path": path}}
 				}

@@ -624,12 +624,29 @@ docs-bot").
   itself. Reading, searching and editing, creating, deleting or moving
   files inside the worktree are allowed (symbolic links are followed, so a
   link pointing out of the worktree is outside; the worktree's `.git` is
-  not the agent's to change). Every command (tests, builds, git) and
-  anything outside the worktree, including your own copy of the
-  repository, is denied. Asking you before commands is coming next. aiport
-  only ever answers "once", so nothing is remembered in the agent's own
+  not the agent's to change). A command inside the worktree waits for
+  your answer (see Approving commands below). Anything outside the
+  worktree, including your own copy of the repository and a command that
+  says it runs elsewhere, is denied without asking. aiport only ever
+  answers "once" to the agent, so nothing is remembered in the agent's own
   settings. The agent starts as for Explain: by absolute path, with the
   minimal environment, only on your click.
+- **Approving commands**: when the agent asks to run a command (tests, a
+  build), the Issue shows the command exactly as the agent wrote it (as
+  plain text: it is the agent's, not aiport's) with three answers:
+  - **Allow once**: this one time.
+  - **Allow this command for this run**: this time and every time the run
+    asks for the exact same command again; another command, or the same
+    one in a later run, asks again.
+  - **Deny**: the agent is told no and goes on without it.
+
+  The agent runs an allowed command itself, in its own process, in the
+  worktree's directory; aiport only answers the permission, and what the
+  command changes in the worktree shows in the diff. While a command
+  waits, the Changes badge in the Gateway menu counts it. A command left
+  unanswered for 5 minutes stops the run: what it changed so far stays in
+  its worktree, and the Issue shows it for review with Keep the branch and
+  Discard, as after a finished run (state `stopped_waiting`).
 - **What the agent is told**: the Issue's evidence, the saved explanation
   if there is one, the branch it works on, and that it must not commit,
   merge or push.
@@ -652,7 +669,9 @@ docs-bot").
 - **Nothing left behind**: Stop, the time limit (30 minutes,
   `agent_runs.fix_minutes`), a run that fails and a run that changed
   nothing remove the worktree and the branch; the Issue stays open and
-  shows why the run ended.
+  shows why the run ended. A run that was going when aiport stopped is
+  marked stopped the next time aiport starts, and its worktree and branch
+  are removed.
 - **What is kept**: the branch name, the commit it started from, the diff
   summary and the changed files are saved with the Issue (and, once kept,
   the commit aiport made), also across restarts. The diff itself is read
@@ -674,7 +693,14 @@ diff waits for you, `agent_run_running`, `issue_not_open` or
 the `diff`; `POST /api/v1/issues/{id}/fix/keep` and `…/fix/discard`.
 `GET /api/v1/issues` says per Application in `fix_by` whether Fix it is
 available, with which agent and time limit, or the hint; each Issue
-carries its `branch_fix`.
+carries its `branch_fix`. Commands waiting for you: `GET /api/v1/approvals`
+(each with `id`, `run`, `application`, `issue`, `command`, `expires_at_ms`);
+answer with `POST /api/v1/approvals/{id}` and `{"answer": "allow_once"}`,
+`"allow_run"` or `"deny"` (`404 approval_not_found` once answered or its run
+ended). `GET /api/v1/runs` gives each run's `waiting` count, and
+`GET /api/v1/issues/{id}/run` the Issue's waiting `approvals`. These are
+management routes, never open to an Application token; answering needs
+the dashboard's CSRF header.
 
 ### Automatic fixes
 

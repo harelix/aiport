@@ -309,7 +309,7 @@ func (h *Handler) runsRoute(w http.ResponseWriter, r *http.Request, fail func(in
 			fail(405, "method_not_allowed", "Use GET")
 			return true
 		}
-		writeJSON(w, 200, map[string]any{"runs": h.runner().Running()})
+		writeJSON(w, 200, map[string]any{"runs": h.runViews()})
 		return true
 	}
 	if rest, ok := strings.CutPrefix(r.URL.Path, "/api/v1/runs/"); ok {
@@ -349,7 +349,7 @@ func (h *Handler) runsRoute(w http.ResponseWriter, r *http.Request, fail func(in
 		fail(404, "run_not_found", "This Issue has no Agent run kept")
 		return true
 	}
-	writeJSON(w, 200, map[string]any{"run": run.Info(), "log": run.Log()})
+	writeJSON(w, 200, map[string]any{"run": run.Info(), "log": run.Log(), "approvals": h.waiting(id)})
 	return true
 }
 

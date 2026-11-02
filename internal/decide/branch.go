@@ -22,7 +22,17 @@ const (
 	BranchKept      BranchState = "kept"      // the Owner kept it: one commit on the branch, the worktree is gone
 	BranchDiscarded BranchState = "discarded" // the Owner discarded it: the worktree and the branch are gone
 	BranchStopped   BranchState = "stopped"   // stopped, timed out or failed: the worktree and the branch are gone
+	// BranchStoppedWaiting: a command request went unanswered, so aiport
+	// stopped the run; what it changed so far waits for review in its
+	// worktree, like a ready one.
+	BranchStoppedWaiting BranchState = "stopped_waiting"
 )
+
+// Reviewable reports whether b's diff waits in its worktree for the Owner
+// to keep or discard.
+func (b BranchFix) Reviewable() bool {
+	return b.State == BranchReady || b.State == BranchStoppedWaiting
+}
 
 // MaxBranchFiles bounds the files a branch fix's summary lists.
 const MaxBranchFiles = 50

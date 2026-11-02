@@ -43,7 +43,7 @@ export type Issue = {
 
 /** What a Fix it run left: its branch, diff summary and, once kept, the commit aiport made on that branch. */
 export type BranchFix = {branch: string; base: string; worktree?: string; agent: string; run: string;
-  state: 'running' | 'ready' | 'empty' | 'kept' | 'discarded' | 'stopped'; summary?: string; files?: string[]; commit?: string; note?: string; started_at_ms: number; at_ms: number};
+  state: 'running' | 'ready' | 'stopped_waiting' | 'empty' | 'kept' | 'discarded' | 'stopped'; summary?: string; files?: string[]; commit?: string; note?: string; started_at_ms: number; at_ms: number};
 /** Whether Fix it is available for an Application (fix_by in GET /api/v1/issues): which agent, or a hint why not. */
 export type FixStatus = {available: boolean; hint?: string; agent?: string; agent_name?: string; model_calls?: ModelCalls; limit_ms?: number};
 
@@ -60,6 +60,32 @@ export type ExplainStatus = {available: boolean; hint?: string; source?: string;
 export type ModelCalls = {through_aiport: boolean; connection?: string; model?: string; note?: string};
 /** An Agent run, as the runner describes it ("run" event, GET /api/v1/runs). */
 export type AgentRun = {id: string; application: string; issue: string; mode: string; agent: string; agent_name: string; model_calls: ModelCalls; state: string; error?: string; started_at_ms: number; limit_ms: number};
+/** A command a Fix it run asks to run, waiting for the Owner (GET /api/v1/approvals). The command is the agent's text: plain text only. */
+export type Approval = {id: string; run: string; application: string; issue: string; command: string; title: string; asked_at_ms: number; expires_at_ms: number};
+
+/** A waiting command with the Owner's three answers; the agent runs it itself, in its worktree, once allowed. */
+function ApprovalCard({approval, onAnswered}: {approval: Approval; onAnswered: () => void}) {
+  const [busy, setBusy] = useState(''), [error, setError] = useState('');
+  const answer = async (a: 'allow_once' | 'allow_run' | 'deny') => {
+    setBusy(a); setError('');
+    try { await send('POST', 'approvals/' + encodeURIComponent(approval.id), {answer: a}); onAnswered(); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(''); }
+  };
+  const minutes = Math.max(0, Math.round((approval.expires_at_ms - approval.asked_at_ms) / 60000));
+  return <div className="approval" role="group" aria-label="Command waiting for your answer">
+    <p><strong>The agent asks to run a command</strong> in its worktree:</p>
+    <pre className="approval-command">{approval.command}</pre>
+    <div className="actions">
+      <button type="button" className="primary small" disabled={!!busy} onClick={() => answer('allow_once')}>Allow once</button>
+      <button type="button" className="secondary small" disabled={!!busy} onClick={() => answer('allow_run')} title="Allow this exact command again, in this run only">Allow this command for this run</button>
+      <button type="button" className="secondary small" disabled={!!busy} onClick={() => answer('deny')}>Deny</button>
+      <span className="caption">Unanswered for {minutes} min, the run stops and keeps what it changed for your review.</span>
+    </div>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+  </div>;
+}
+
 /** One step of a run besides its words: a thought, a tool call, a plan, a permission aiport answered. */
 type RunStep = {kind: string; text: string; tool?: string; status?: string; verdict?: string; reason?: string};
 
@@ -86,7 +112,7 @@ function RunPanel({run, steps, busy, branch}: {run: AgentRun; steps: RunStep[]; 
   const shown = steps.slice(-30);
   return <div className="run-panel" aria-label={'Agent run of ' + run.agent_name}>
     <div className="run-head">
-      <strong>{run.agent_name}</strong> <span className="caption">{run.mode === 'fix' ? 'changes the code in its own worktree' + (branch ? ' on ' + branch : '') + ' · commands denied' : 'reads the code, read-only'} · stops after {Math.round(run.limit_ms / 60000)} min</span>
+      <strong>{run.agent_name}</strong> <span className="caption">{run.mode === 'fix' ? 'changes the code in its own worktree' + (branch ? ' on ' + branch : '') + ' · commands wait for your approval' :'reads the code, read-only'} · stops after {Math.round(run.limit_ms / 60000)} min</span>
       {busy && <button type="button" className="secondary small" disabled={stopping} onClick={stop}>{stopping ? 'Stopping…' : 'Stop'}</button>}
     </div>
     <p className={'caption' + (run.model_calls.through_aiport ? '' : ' run-own-login')}>{callsLine(run.model_calls)}</p>
@@ -177,7 +203,8 @@ export function IssueFix({issue, explain, onChanged}: {issue: Issue; explain: Ex
   const [busy, setBusy] = useState(''), [error, setError] = useState('');
   const [run, setRun] = useState<AgentRun | null>(null), [steps, setSteps] = useState<RunStep[]>([]);
   const [diff, setDiff] = useState<{diff: string; truncated: boolean} | null>(null);
-  const running = b?.state === 'running', ready = b?.state === 'ready';
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const running = b?.state === 'running', ready = b?.state === 'ready' || b?.state === 'stopped_waiting';
   // While the run goes, follow its log; once it has ended, reload the Issue for its diff.
   useEffect(() => {
     if (!running) return;
@@ -186,17 +213,17 @@ export function IssueFix({issue, explain, onChanged}: {issue: Issue; explain: Ex
       while (!stop) {
         const d = await fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/run', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null).catch(() => null);
         if (stop) return;
-        if (d?.run) { setRun(d.run); setSteps((d.log || []).filter((u: RunStep) => u.kind !== 'status')); }
+        if (d?.run) { setRun(d.run); setSteps((d.log || []).filter((u: RunStep) => u.kind !== 'status')); setApprovals(d.approvals || []); }
         if (d?.run && d.run.state !== 'running') { onChanged(); }
         await new Promise(r => setTimeout(r, 1500));
       }
     };
     follow();
-    return () => { stop = true; };
+    return () => { stop = true; setApprovals([]); };
   }, [issue.id, running]);
   useEffect(() => {
     setDiff(null);
-    if (!b || (b.state !== 'ready' && b.state !== 'kept')) return;
+    if (!b || (!ready && b.state !== 'kept')) return;
     fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/fix', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null)
       .then(d => d && setDiff({diff: d.diff || '', truncated: !!d.truncated})).catch(() => {});
   }, [issue.id, b?.state, b?.run]);
@@ -216,8 +243,10 @@ export function IssueFix({issue, explain, onChanged}: {issue: Issue; explain: Ex
   if (!b && !status?.available) return status?.hint ? <p className="caption fix-hint">{status.hint}</p> : null;
   return <div className="branch-fix">
     {running && run && <RunPanel run={run} steps={steps} busy branch={b?.branch}/>}
+    {running && approvals.map(a => <ApprovalCard key={a.id} approval={a} onAnswered={() => { setApprovals(l => l.filter(x => x.id !== a.id)); onChanged(); }}/>)}
     {running && !run && <p className="caption" role="status">Starting {status?.agent_name || b?.agent} in a worktree on {b?.branch}…</p>}
     {ready && <div className="fix-review">
+      {b!.state === 'stopped_waiting' && <p className="caption">{b!.note}</p>}
       <p><strong>Review the change</strong> on branch <code>{b!.branch}</code>: {b!.summary}. Nothing is committed yet; your branch and working copy are untouched.</p>
       {diff && <DiffView diff={diff.diff} truncated={diff.truncated}/>}
       <div className="actions">
@@ -233,7 +262,7 @@ export function IssueFix({issue, explain, onChanged}: {issue: Issue; explain: Ex
       <button type="button" className="secondary" disabled={!!busy} onClick={() => act('fix')} title={'Fix it with ' + (status?.agent_name || status?.agent) + ' in its own worktree; stops after ' + Math.round((status?.limit_ms || 0) / 60000) + ' min'}>
         {busy === 'fix' ? 'Starting…' : b ? 'Fix it again' : 'Fix it'}
       </button>
-      <span className="caption">{status?.agent_name} edits a new branch in its own worktree; commands are denied; you review the diff.</span>
+      <span className="caption">{status?.agent_name} edits a new branch in its own worktree; you approve each command it runs; you review the diff.</span>
     </div>}
   </div>;
 }
