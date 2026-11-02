@@ -150,6 +150,23 @@ var migrations = []string{
 		before_config  BLOB NOT NULL,
 		after_config   BLOB NOT NULL
 	);`,
+
+	// 5: the decision queue: Suggestions (and later Change requests) waiting
+	// for or given the Owner's decision. The item itself is JSON in body; the
+	// columns are what the queue looks items up by. Metadata only, never
+	// prompts or responses.
+	`CREATE TABLE decisions (
+		id             TEXT PRIMARY KEY,
+		source         TEXT NOT NULL, -- suggestion, request
+		kind           TEXT NOT NULL,
+		application    TEXT NOT NULL,
+		subject        TEXT NOT NULL, -- what repeats of the same item share
+		status         TEXT NOT NULL, -- pending, accepted, rejected, dismissed
+		created_at_ms  INTEGER NOT NULL,
+		updated_at_ms  INTEGER NOT NULL,
+		body           TEXT NOT NULL
+	);
+	CREATE INDEX decisions_subject ON decisions(source, kind, application, subject);`,
 }
 
 // SchemaVersion is the newest schema this build understands.

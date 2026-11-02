@@ -13,6 +13,7 @@ import (
 // they are listed and revertable after a restart. Without a usable database
 // they are kept for this session only.
 func (h *Handler) keepChanges(path string) {
+	defer h.openDecisions()
 	if path == "" {
 		return
 	}
