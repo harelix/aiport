@@ -216,7 +216,7 @@ func (h *Handler) servePair(w http.ResponseWriter, r *http.Request, fail func(in
 		"poll":            PairPath + "/" + x.secret,
 		"poll_interval_s": pairPollEvery,
 		"expires_at_ms":   x.ExpiresAt,
-		"message":         "Show this code to the aiport owner. They approve it in the aiport dashboard (Routing → Applications). Then GET the poll path to collect your token.",
+		"message":         "Show this code to the aiport owner. They approve it on the Integrate page of the aiport dashboard. Then GET the poll path to collect your token.",
 	})
 }
 

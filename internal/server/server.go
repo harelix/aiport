@@ -364,11 +364,17 @@ func (h *Handler) serveConnect(w http.ResponseWriter, r *http.Request, fail func
 		return
 	}
 	if format == "handover" {
-		// Only the integration brief, for pasting to a coding agent.
+		// Only the integration briefs, for pasting to a coding agent:
+		// for=application, for=agent, or both.
+		brief, ok := connect.Handover(doc, r.URL.Query().Get("for"))
+		if !ok {
+			fail(400, "invalid_format", "for must be application or agent (or left out for both briefs)")
+			return
+		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.WriteHeader(200)
 		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(connect.Handover(doc)))
+			_, _ = w.Write([]byte(brief))
 		}
 		return
 	}

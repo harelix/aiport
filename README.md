@@ -6,6 +6,10 @@
 
 A local AI gateway, under development from [the design](aiport_DESIGN.md).
 
+**New here?** Read the [user manual](docs/manual.md): install and run, a tour of
+the dashboard, connecting applications, and deciding on Changes. It is also
+built into the dashboard (the help button in the header).
+
 **Current build: experimental native forwarding and terminal onboarding.** Chat
 Completions, Responses and Messages share a byte-forwarding path. No provider or
 coding-agent combination has passed the live compatibility gate yet. The embedded
@@ -97,14 +101,15 @@ curl 'http://127.0.0.1:8787/_connect?format=markdown'  # guide for people/agents
 
 See [docs/connect.md](docs/connect.md).
 
-**Integrate one of your applications.** Open the dashboard's **Routing** page and
-use **Copy instructions** under *Hand over to a coding agent*: paste them to the
-coding agent working on that application (or into its `AGENTS.md`). The agent
-switches the application's SDK to aiport and **pairs** it: the application asks
-for its own token and shows a short code, you approve the code under
-*Applications* on the same page, and the application collects its token once.
-Its calls then appear under its own name in Activity. The same instructions are
-served at `/_connect?format=handover`.
+**Integrate one of your applications.** Open the dashboard's **Integrate** page
+and copy the **Application brief** to the coding agent working on that
+application. The agent switches the application's SDK to aiport and **pairs**
+it: the application asks for its own token and shows a short code, you approve
+the code on the same page, and the application collects its token once. Its
+calls then appear under its own name in Activity. The **Coding agent** tab has
+the second brief, for agents working in that repository later (MCP entry,
+`AGENTS.md` line, Change requests). Both are served by aiport itself, at
+`/_connect?format=handover&for=application` and `&for=agent`.
 
 ## Check health
 
