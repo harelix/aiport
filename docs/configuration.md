@@ -75,7 +75,7 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `defaults` | Optional `openai_target` and `anthropic_target`; matching target protocols required |
 | `aliases` | List of `target`, `alias`, `model`; unique alias per target; model strings 1–256 bytes |
 | `telemetry.enabled` | true; request metadata is saved to `<config>.db` (SQLite) |
-| `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests are kept (dismissed and rejected ones at least 7 days); Changes themselves are never pruned |
+| `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests are kept (dismissed ones at least 7 days, the quiet period); Changes themselves are never pruned |
 | `telemetry.queue_capacity` | 4096; range 1–65536 |
 | `telemetry.batch_size` | 100; range 1–queue capacity |
 | `telemetry.flush_interval_ms` | 250; range 1–60000 |

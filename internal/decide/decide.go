@@ -539,7 +539,7 @@ func (q *Queue) Run(stop <-chan struct{}, every func() time.Duration, now func()
 // Prune forgets decided items (accepted, rejected or dismissed) decided
 // longer ago than request history is kept (telemetry.retention_days), so a
 // Change request's text is kept no longer than the requests it was about.
-// Dismissed and rejected items are kept at least QuietFor, so they stay
+// Dismissed items are kept at least QuietFor, so they stay
 // quiet as long as promised. Items still waiting, demand for unsupported
 // kinds and the Changes themselves (config.Live) are kept. Prune runs
 // whether or not the loop is on.
@@ -553,7 +553,7 @@ func (q *Queue) Prune(at time.Time) {
 	kept, gone := q.items[:0], []string{}
 	for _, it := range q.items {
 		keep := retention
-		if it.Status == Dismissed || it.Status == Rejected {
+		if it.Status == Dismissed {
 			keep = max(retention, QuietFor)
 		}
 		decided := it.Status == Accepted || it.Status == Rejected || it.Status == Dismissed
@@ -594,7 +594,7 @@ func (q *Queue) Detect(at time.Time) []Item {
 	return out
 }
 
-// quiet reports whether s was dismissed (or rejected) in the last QuietFor
+// quiet reports whether s was dismissed in the last QuietFor
 // and its evidence has not doubled since.
 func (q *Queue) quiet(s Item, at time.Time) bool {
 	if q.latest(s, Pending) >= 0 {
@@ -605,7 +605,7 @@ func (q *Queue) quiet(s Item, at time.Time) bool {
 		return false
 	}
 	last := q.items[i]
-	if last.Status != Dismissed && last.Status != Rejected || last.Decision == nil {
+	if last.Status != Dismissed || last.Decision == nil {
 		return false
 	}
 	recent := at.UnixMilli()-last.Decision.At < QuietFor.Milliseconds()

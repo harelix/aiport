@@ -204,6 +204,25 @@ func TestApproveSuggestionCreatesRevertableAlias(t *testing.T) {
 	}
 }
 
+// Only dismissing starts the quiet period: a rejected Suggestion is
+// suggested again on the next detection pass while the pattern lasts.
+func TestARejectedSuggestionIsNotQuiet(t *testing.T) {
+	at := suggestionsNow
+	h, management := suggestionsServer(t, filepath.Join(t.TempDir(), "aiport.yaml"), "", seededHistory(), &at)
+	h.Detect(at)
+	_, list := pendingDecisions(t, h, management)
+	if len(list) != 1 {
+		t.Fatalf("want one Suggestion: %v", list)
+	}
+	if code, out := decideOn(t, h, management, list[0]["id"].(string), `{"action":"reject","note":"wrong idea"}`); code != 200 {
+		t.Fatalf("reject: %d %v", code, out)
+	}
+	h.Detect(at)
+	if _, again := pendingDecisions(t, h, management); len(again) != 1 || again[0]["id"] == list[0]["id"] {
+		t.Fatalf("a rejected Suggestion stayed quiet: %v", again)
+	}
+}
+
 // A dismissed Suggestion stays hidden for 7 days, also across a restart,
 // unless its evidence doubles.
 func TestDismissedSuggestionStaysQuiet(t *testing.T) {
