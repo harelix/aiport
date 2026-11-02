@@ -9,6 +9,7 @@ import (
 
 	"aiport/internal/catalog"
 	"aiport/internal/config"
+	"aiport/internal/decide"
 	"aiport/internal/store"
 )
 
@@ -27,20 +28,22 @@ type catalogLog struct {
 	mu       sync.Mutex
 	db       *store.CatalogChanges // nil: kept in memory only
 	mem      []catalog.Record      // oldest first, when db is nil
-	watchers []func([]catalog.Record)
+	watchers []func(config.Config, []catalog.Record)
 }
 
-// Watch registers fn to run with the Catalog changes of each configuration
-// Change after they are kept (one record per affected Application, never an
-// empty list). It runs while the Change is applied: keep it short.
-func (l *catalogLog) Watch(fn func([]catalog.Record)) {
+// Watch registers fn to run with the configuration after each configuration
+// Change and that Change's Catalog changes, after they are kept (one record
+// per affected Application, never an empty list). It runs while the Change
+// is applied, under the configuration's lock: keep it short, and never read
+// the live configuration from it (use the one it is given).
+func (l *catalogLog) Watch(fn func(after config.Config, records []catalog.Record)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.watchers = append(l.watchers, fn)
 }
 
 // keep stores records and tells the watchers.
-func (l *catalogLog) keep(records []catalog.Record) {
+func (l *catalogLog) keep(records []catalog.Record, after config.Config) {
 	l.mu.Lock()
 	if l.db != nil {
 		if err := l.db.Save(records); err != nil {
@@ -49,10 +52,10 @@ func (l *catalogLog) keep(records []catalog.Record) {
 	} else {
 		l.mem = append(l.mem, records...)
 	}
-	watchers := append([]func([]catalog.Record){}, l.watchers...)
+	watchers := append([]func(config.Config, []catalog.Record){}, l.watchers...)
 	l.mu.Unlock()
 	for _, fn := range watchers {
-		fn(records)
+		fn(after, records)
 	}
 }
 
@@ -104,6 +107,25 @@ func (h *Handler) openCatalogLog() {
 	}
 	h.pruneCatalogChanges(h.snapshot(), h.clock())
 	h.live.AfterChange(h.recordCatalogChanges)
+	h.catalogLog.Watch(h.noticeCatalogChanges)
+}
+
+// noticeCatalogChanges hands one Change's Catalog changes to the decision
+// queue, which opens a Catalog-change Issue for each Application the Change
+// took something from. None while aiport does not adapt (as configured
+// after the Change). It runs inside the Change: after is the configuration
+// it made, and the queue only queues the notices.
+func (h *Handler) noticeCatalogChanges(after config.Config, records []catalog.Record) {
+	q := h.decisions
+	if q == nil || after.Adapting.Disabled {
+		return
+	}
+	notices := make([]decide.CatalogNotice, 0, len(records))
+	for _, r := range records {
+		now := catalog.For(after, r.Application, nil)
+		notices = append(notices, decide.CatalogNotice{Record: r, Available: now.TaskNames, Connections: now.Connections})
+	}
+	q.CatalogChanged(notices)
 }
 
 // recordCatalogChanges keeps the Catalog change Change ch made for every
@@ -118,7 +140,7 @@ func (h *Handler) recordCatalogChanges(ch config.Change, before, after config.Co
 		records = append(records, catalog.Record{ChangeID: ch.ID, At: ch.At, RevertOf: ch.RevertOf, Change: c})
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].Application < records[j].Application })
-	h.catalogLog.keep(records)
+	h.catalogLog.keep(records, after)
 	// after, not the live configuration: this runs while the Change is applied.
 	h.pruneCatalogChanges(after, time.UnixMilli(ch.At))
 }

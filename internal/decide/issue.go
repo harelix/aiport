@@ -151,6 +151,9 @@ type Issue struct {
 	// Explanation is the root cause in words, written on the Owner's click
 	// (Queue.Explain); nil until then.
 	Explanation *Explanation `json:"explanation,omitempty"`
+	// Catalog is a Catalog-change Issue's change and what the Application
+	// can still use (CauseCatalogChanged only).
+	Catalog *CatalogNotice `json:"catalog_change,omitempty"`
 	// BranchFix is the latest Fix it run's branch and diff summary
 	// (Queue.RecordBranch); nil until Fix it ran.
 	BranchFix *BranchFix `json:"branch_fix,omitempty"`
@@ -218,6 +221,7 @@ func (q *Queue) Issues(f IssueFilter) []Issue {
 	if !q.On() {
 		return []Issue{}
 	}
+	q.drainCatalog()
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	out := []Issue{}
@@ -240,6 +244,7 @@ func (q *Queue) Issue(id string) (Issue, bool) {
 	if !q.On() {
 		return Issue{}, false
 	}
+	q.drainCatalog()
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if i := q.issueIndex(id); i >= 0 {
@@ -257,6 +262,7 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 	if !q.On() {
 		return Issue{}, config.Change{}, ErrOff
 	}
+	q.drainCatalog()
 	q.mu.Lock()
 	i := q.issueIndex(id)
 	if i < 0 {
@@ -592,9 +598,9 @@ type causeRules struct {
 	summary func(is Issue, p Proposal) string
 	// applicationFix writes the Application fix (see ApplicationFix).
 	applicationFix func(is Issue) string
-	// counts reports whether call e is one of the errors of an Issue about
-	// subject (what X-Aiport-Hint uses to name the Issue).
-	counts func(e telemetry.Event, subject string) bool
+	// counts reports whether call e is one of the errors of Issue is (what
+	// X-Aiport-Hint uses to name the Issue).
+	counts func(e telemetry.Event, is hintIssue) bool
 }
 
 var causes = map[Cause]causeRules{
@@ -609,8 +615,8 @@ var causes = map[Cause]causeRules{
 		},
 		summary:        func(is Issue, _ Proposal) string { return unknownModelSummary(is) },
 		applicationFix: unknownModelFix,
-		counts: func(e telemetry.Event, model string) bool {
-			return notFound(e) && e.RequestedModel != nil && *e.RequestedModel == model
+		counts: func(e telemetry.Event, is hintIssue) bool {
+			return notFound(e) && e.RequestedModel != nil && *e.RequestedModel == is.subject
 		},
 	},
 	CauseFailingConnection: {
@@ -620,7 +626,13 @@ var causes = map[Cause]causeRules{
 		},
 		summary:        func(is Issue, p Proposal) string { return failingSummary(is, p.Target) },
 		applicationFix: failingFix,
-		counts:         func(e telemetry.Event, target string) bool { return failed(e) && e.Target == target },
+		counts:         func(e telemetry.Event, is hintIssue) bool { return failed(e) && e.Target == is.subject },
+	},
+	// A Catalog change is not detected from errors (CatalogChanged opens
+	// it), so it has no threshold and no aiport fix.
+	CauseCatalogChanged: {
+		applicationFix: catalogFix,
+		counts:         func(e telemetry.Event, is hintIssue) bool { return sentRemoved(e, is.names) },
 	},
 }
 

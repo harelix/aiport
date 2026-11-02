@@ -586,6 +586,31 @@ Connection or on the one you bound it to (`aiport_fix` or `stopped`), and
 reopens if the failures stick again. Reverting the binding opens it again
 with the fix offered again.
 
+#### A Catalog change
+
+When a Change takes something away from an Application's Catalog (a task
+name it had, or the binding or a protocol default it follows moves; for
+example you remove a Connection and leave docs-bot's Alias `summarize`
+without one), aiport opens one Issue of cause `catalog_changed` for that
+Application, one per Change. Applications the Change took nothing from get
+none, and a Change that is an Issue's own aiport fix (or its revert) opens
+none: that Issue already says so.
+
+- **What it says**: what changed (task names removed or moved, the binding
+  or protocol default and where it goes now), what the Application can still
+  use (its task names and the Connections whose models it reaches), and how
+  to confirm. Changes and Integrate show it with nothing to approve: it needs
+  no decision from you, and it never lights the Changes badge.
+- **Delivery**: like every Issue: `GET /v1/aiport/issues`, the MCP tool
+  `aiport_my_issues`, the `open_issues` count in the capabilities answer, and
+  `X-Aiport-Hint` on a failing call that sent a removed task name.
+- **Resolution**: it resolves itself when the Application's calls succeed
+  after the change (and after its last failing call with a removed name),
+  when its Coding agent reports it fixed (`aiport_issue_fixed`), or when you
+  revert the Change. You can also dismiss it.
+
+None are opened while adapting is off; the Catalog itself is still disclosed.
+
 The badge on Changes counts an Issue only while its fix waits for you.
 
 #### Explain

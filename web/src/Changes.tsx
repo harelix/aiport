@@ -43,7 +43,39 @@ export type Issue = {
   explanation?: Explanation;
   /** The latest Fix it run's branch and diff summary (decide.BranchFix). */
   branch_fix?: BranchFix;
+  /** A Catalog-change Issue's change and what the Application can still use (cause catalog_changed). */
+  catalog_change?: CatalogNotice;
 };
+
+type TaskName = {name: string; connection: string; model: string; shared: boolean};
+
+/** A Catalog change an Application was told about (decide.CatalogNotice): no Owner decision. */
+export type CatalogNotice = {
+  change_id: string; at_ms: number; revert_of?: string;
+  removed: TaskName[]; moved: {name: string; from: TaskName; to: TaskName}[];
+  routing: {of: string; before: string; after: string}[];
+  available: TaskName[]; connections: string[];
+};
+
+/** Whether an Issue tells an Application about a Catalog change (nothing to explain or approve). */
+export const isCatalogChange = (i: Issue) => i.cause === 'catalog_changed';
+
+/** What a Catalog change took away and what is still there, in short lines. */
+export function CatalogChange({issue}: {issue: Issue}) {
+  const n = issue.catalog_change;
+  if (!n) return null;
+  const via = (t: TaskName) => t.connection + '/' + t.model;
+  const routing = (of: string) => of === 'binding' ? 'Binding' : of === 'openai' ? 'OpenAI default' : of === 'anthropic' ? 'Anthropic default' : of;
+  const changed = [
+    ...n.removed.map(t => '“' + t.name + '” removed (was ' + via(t) + ')'),
+    ...n.moved.map(m => '“' + m.name + '” now ' + via(m.to) + ' (was ' + via(m.from) + ')'),
+    ...n.routing.map(s => routing(s.of) + ' now ' + (s.after || 'none') + (s.before ? ' (was ' + s.before + ')' : '')),
+  ];
+  return <>
+    <div className="evidence">Catalog change (Change {n.change_id}, {when(n.at_ms)}): {changed.join('; ')}. {issue.application} was told; nothing waits for you.</div>
+    <div className="evidence">Still available: {n.available.length ? n.available.map(t => '“' + t.name + '”').join(', ') : 'no task names'}{n.connections.length ? ', and the models of ' + n.connections.join(', ') : ''}.</div>
+  </>;
+}
 
 /** What a Fix it run left: its branch, diff summary and, once kept, the commit aiport made on that branch. */
 export type BranchFix = {branch: string; base: string; worktree?: string; agent: string; run: string;
@@ -360,7 +392,7 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
       <h3 className="need">{issue.summary}</h3>
       <div className="decision-meta"><span className={'badge' + (issue.state === 'resolving' ? ' good' : ' warn')}>{issue.state === 'resolving' ? 'Resolving' : 'Open'}</span><span className="badge">{issue.application}</span></div>
     </div>
-    <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>
+    {isCatalogChange(issue) ? <CatalogChange issue={issue}/> : <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>}
     {issue.diagnosis?.summary && <div className="evidence">Diagnosis: {issue.diagnosis.summary}</div>}
     {automatic && <div className="evidence"><strong>aiport fixed this automatically:</strong> the alias “{fix!.proposal.alias}” → {fix!.proposal.target}/{fix!.proposal.model} for only {issue.application}. <button className="text-button" disabled={!!busy} onClick={revert} aria-label={'Revert the automatic fix for ' + issue.application}><Undo2 size={14} aria-hidden/> {busy === 'revert' ? 'Reverting…' : 'Revert'}</button></div>}
     {issue.state === 'resolving' && !automatic && <div className="evidence">{issue.resolving_by === 'aiport_fix' ? 'The aiport fix is applied' + (fix?.by ? ' (by ' + fix.by + ')' : '') : 'The Application says it fixed this'}: aiport marks the Issue resolved when {issue.application}’s calls {binds ? 'succeed again' : 'for ' + issue.subject + ' succeed'}.</div>}
@@ -388,7 +420,7 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
     {fix?.state !== 'proposed' && <div className="actions">
       <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
     </div>}
-    <IssueExplanation issue={issue} explain={explain} onExplained={onExplained}/>
+    {!isCatalogChange(issue) && <IssueExplanation issue={issue} explain={explain} onExplained={onExplained}/>}
     <IssueFix issue={issue} explain={explain} onChanged={onExplained}/>
     <ApplicationFix issue={issue}/>
   </div>;

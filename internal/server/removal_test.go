@@ -31,6 +31,22 @@ var (
 // binding; claude is the only Anthropic-protocol Connection.
 func removalServer(t *testing.T) (*Handler, string) {
 	t.Helper()
+	f := removalFixture(t, "")
+	return f.h, f.path
+}
+
+// removal is removalServer with its fake upstreams, so a test can make a
+// Connection's calls fail.
+type removal struct {
+	h                            *Handler
+	path                         string
+	hosted, spare, local, claude *catalogUpstream
+}
+
+// removalFixture builds removalServer's gateway with extra appended to its
+// configuration.
+func removalFixture(t *testing.T, extra string) removal {
+	t.Helper()
 	hosted := newCatalogUpstream(t, 200, `{"object":"list","data":[{"id":"gpt-4o"},{"id":"gpt-4o-mini"}]}`)
 	spare := newCatalogUpstream(t, 200, `{"object":"list","data":[{"id":"gpt-4o"}]}`)
 	local := newCatalogUpstream(t, 200, `{"object":"list","data":[{"id":"llama3:8b"}]}`)
@@ -46,7 +62,7 @@ func removalServer(t *testing.T) (*Handler, string) {
 		"origins:\n" +
 		"  - id: docs-bot\n    name: Docs Bot\n    token_env: REM_DOCS_TOKEN\n    aliases:\n      - {alias: summarize, target: hosted, model: gpt-4o}\n" +
 		"  - id: review-code\n    name: Review Code\n    token_env: REM_REVIEW_TOKEN\n    target: hosted\n" +
-		"  - id: nightly\n    name: Nightly\n    token_env: REM_NIGHTLY_TOKEN\n    target: local\n"
+		"  - id: nightly\n    name: Nightly\n    token_env: REM_NIGHTLY_TOKEN\n    target: local\n" + extra
 	path := filepath.Join(t.TempDir(), "aiport.yaml")
 	if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
 		t.Fatal(err)
@@ -67,7 +83,7 @@ func removalServer(t *testing.T) (*Handler, string) {
 	now := time.UnixMilli(1_800_000_000_000)
 	h.now = func() time.Time { return now }
 	t.Cleanup(h.Close)
-	return h, path
+	return removal{h: h, path: path, hosted: hosted, spare: spare, local: local, claude: claude}
 }
 
 // suggestions maps each listed dependent's id to its suggested replacement.

@@ -234,6 +234,9 @@ type Queue struct {
 	// hints is the open and resolving Issues per Application, read without
 	// the lock on the forwarding path (HintIssue); publishHints swaps it.
 	hints atomic.Pointer[map[string][]hintIssue]
+	// inbox is Catalog changes waiting to become Issues (CatalogChanged).
+	inboxMu sync.Mutex
+	inbox   []CatalogNotice
 }
 
 // WatchFailedAuth lets detection read failed-authentication counts from f, so
@@ -665,6 +668,7 @@ func (q *Queue) Detect(at time.Time) []Item {
 		return nil
 	}
 	c := q.live.Config()
+	q.drainCatalog()
 	symptoms := unknownModelSymptoms(c, q.history, at)
 	q.mu.Lock()
 	finder := q.finder
@@ -677,6 +681,7 @@ func (q *Queue) Detect(at time.Time) []Item {
 		found = unknownTokens(c, q.failed, at)
 	}
 	q.revertedFixes(at.UnixMilli())
+	q.catalogResolutions(at)
 	out := q.track(c, CauseUnknownModel, symptoms, nil, at)
 	// Only unknown-model Issues can be fixed automatically: a failing
 	// Connection has no diagnosis, so automaticFixes never picks it.

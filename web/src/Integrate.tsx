@@ -2,7 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {HelpLink} from './help';
 import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, Plus, Terminal} from 'lucide-react';
 import {forgetRejected, MayRequestToggle, Origin, Pairing, PairingList, Rejected, Target, usePairings, useRejected} from './Applications';
-import {ApplicationFix, type ExplainStatus, explainOf, type FixStatus, type Issue, IssueExplanation, IssueFix, issueAnchor} from './Changes';
+import {ApplicationFix, CatalogChange, isCatalogChange, type ExplainStatus, explainOf, type FixStatus, type Issue, IssueExplanation, IssueFix, issueAnchor} from './Changes';
 import {Inline} from './markdown';
 import {AgentSettings, agentConnected, agentName, type CodingAgents, effectiveAgent, useCodingAgents} from './CodingAgents';
 
@@ -90,18 +90,18 @@ function useIssues(tick: number): {issues: Record<string, Issue[]>; explain: Exp
 }
 
 /** A short cause for an Issue, for the Applications list. */
-const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : i.summary;
+const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : isCatalogChange(i) ? 'Catalog change ' + i.subject : i.summary;
 
 /* An Application's Issues, under its row: each with its short cause, a link
    to the Issue on the Changes page, Explain and "Copy fix for the Coding agent". */
 function AppIssues({issues, explain, onOpen, onExplained}: {issues: Issue[]; explain: ExplainStatus | null; onOpen: (i: Issue) => void; onExplained: () => void}) {
   return <ul className="app-issues">{issues.map(i => <li key={i.id}>
     <div className="app-issue-head">
-      <span className={'badge' + (i.state === 'resolving' ? ' good' : ' warn')}>{i.state === 'resolving' ? 'Resolving' : 'Issue'}</span>
+      <span className={'badge' + (i.state === 'resolving' ? ' good' : ' warn')}>{i.state === 'resolving' ? 'Resolving' : isCatalogChange(i) ? 'Catalog change' : 'Issue'}</span>
       <span>{i.summary}</span>
       <button type="button" className="text-button" onClick={() => onOpen(i)} aria-label={'Open the Issue ' + shortCause(i) + ' in Changes'}>Open in Changes <ArrowUpRight size={14} aria-hidden/></button>
     </div>
-    <IssueExplanation issue={i} explain={explain} onExplained={onExplained}/>
+    {isCatalogChange(i) ? <CatalogChange issue={i}/> : <IssueExplanation issue={i} explain={explain} onExplained={onExplained}/>}
     <IssueFix issue={i} explain={explain} onChanged={onExplained}/>
     <ApplicationFix issue={i}/>
   </li>)}</ul>;

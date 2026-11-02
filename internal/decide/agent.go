@@ -41,6 +41,8 @@ type AgentIssue struct {
 	ApplicationFix string `json:"application_fix"`
 	// Explanation is the saved root cause (also in ApplicationFix).
 	Explanation *Explanation `json:"explanation,omitempty"`
+	// Catalog is a Catalog-change Issue's change and what is still there.
+	Catalog *CatalogNotice `json:"catalog_change,omitempty"`
 	// AiportFix is the fix in aiport's configuration, if one is offered or
 	// was made: proposed (waiting for the Owner), applied, rejected or
 	// reverted.
@@ -56,7 +58,7 @@ type AgentIssue struct {
 func (is Issue) ForAgent() AgentIssue {
 	a := AgentIssue{
 		ID: is.ID, Application: is.Application, Cause: is.Cause, Subject: is.Subject, State: is.State,
-		Summary: is.Summary, Evidence: is.Evidence, Diagnosis: is.Diagnosis, ApplicationFix: is.ApplicationFix, Explanation: is.Explanation,
+		Summary: is.Summary, Evidence: is.Evidence, Diagnosis: is.Diagnosis, ApplicationFix: is.ApplicationFix, Explanation: is.Explanation, Catalog: is.Catalog,
 		ResolvingBy: is.ResolvingBy, Resolution: is.Resolution, SinceMS: is.SinceMS, CreatedAt: is.CreatedAt, UpdatedAt: is.UpdatedAt,
 	}
 	if f := is.Fix; f != nil {
@@ -107,7 +109,7 @@ func (q *Queue) HintIssue(app string, e telemetry.Event) (string, bool) {
 		return "", false
 	}
 	for _, is := range (*snap)[app] {
-		if r, ok := causes[is.cause]; ok && r.counts(e, is.subject) {
+		if r, ok := causes[is.cause]; ok && r.counts(e, is) {
 			return is.id, true
 		}
 	}
@@ -118,6 +120,7 @@ func (q *Queue) HintIssue(app string, e telemetry.Event) (string, bool) {
 type hintIssue struct {
 	id, subject string
 	cause       Cause
+	names       []string // a Catalog change's removed task names
 }
 
 // publishHints swaps in a fresh snapshot of the open and resolving Issues
@@ -128,7 +131,11 @@ func (q *Queue) publishHints() {
 	for i := len(q.issues) - 1; i >= 0; i-- {
 		is := q.issues[i]
 		if is.State == IssueOpen || is.State == IssueResolving {
-			snap[is.Application] = append(snap[is.Application], hintIssue{id: is.ID, subject: is.Subject, cause: is.Cause})
+			h := hintIssue{id: is.ID, subject: is.Subject, cause: is.Cause}
+			if is.Catalog != nil {
+				h.names = is.Catalog.removedNames()
+			}
+			snap[is.Application] = append(snap[is.Application], h)
 		}
 	}
 	q.hints.Store(&snap)
@@ -143,6 +150,7 @@ func (q *Queue) FixedByApplication(app, id string, at time.Time) (AgentIssue, er
 	if !q.On() {
 		return AgentIssue{}, ErrOff
 	}
+	q.drainCatalog()
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	i := q.issueIndex(id)
@@ -157,6 +165,11 @@ func (q *Queue) FixedByApplication(app, id string, at time.Time) (AgentIssue, er
 		return AgentIssue{}, ErrNotOpen
 	}
 	now := at.UnixMilli()
+	if is.Cause == CauseCatalogChanged {
+		// Nothing in aiport to confirm: the Application's word resolves it.
+		q.resolve(is, ByApplicationFix, now)
+		return is.ForAgent(), nil
+	}
 	is.State, is.ResolvingBy, is.SinceMS, is.UpdatedAt = IssueResolving, ByApplicationFix, now, now
 	q.saveIssue(is)
 	return is.ForAgent(), nil
