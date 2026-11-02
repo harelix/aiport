@@ -88,7 +88,7 @@ function useIssues(tick: number): Record<string, Issue[]> {
 }
 
 /** A short cause for an Issue, for the Applications list. */
-const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.summary;
+const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : i.summary;
 
 /* An Application's Issues, under its row: each with its short cause, a link
    to the Issue on the Changes page and "Copy fix for the coding agent". */
