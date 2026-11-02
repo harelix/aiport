@@ -44,7 +44,7 @@ type Draft struct {
 
 // demandDraft is the "Suggest to aiport" draft for one kind in demand.
 type demandDraft struct {
-	Kind string `json:"kind"`
+	Kind decide.Kind `json:"kind"`
 	Draft
 }
 
@@ -54,8 +54,8 @@ type demandDraft struct {
 func draftForDemand(d decide.Demand) Draft {
 	title := "Suggest to aiport: support a new kind of Change request"
 	kind := fmt.Sprintf("- Kind named by an Application (check it before sending): `%s`", d.Kind)
-	if capability.BuiltIn(d.Kind) {
-		title = "Suggest to aiport: Change requests of kind " + d.Kind
+	if capability.BuiltIn(string(d.Kind)) {
+		title = "Suggest to aiport: Change requests of kind " + string(d.Kind)
 		kind = fmt.Sprintf("- Kind: `%s`", d.Kind)
 	}
 	return Draft{
@@ -215,7 +215,7 @@ func (h *Handler) upstreamRoute(w http.ResponseWriter, r *http.Request, fail fun
 	}
 	var draft *Draft
 	for _, s := range h.demandDrafts(repo) {
-		if body.Suggest != "" && s.Kind == body.Suggest {
+		if body.Suggest != "" && string(s.Kind) == body.Suggest {
 			draft = &s.Draft
 		}
 	}

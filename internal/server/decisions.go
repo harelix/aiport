@@ -114,7 +114,7 @@ func (h *Handler) decisionsRoute(w http.ResponseWriter, r *http.Request, fail fu
 		fail(409, "adapting_off", decide.ErrOff.Error())
 		return true
 	}
-	it, ch, err := h.decisions.Decide(id, decide.Decision{Action: body.Action, Note: body.Note, Scope: body.Scope, Proposal: decide.Proposal{Alias: body.Alias, Target: body.Target, Model: body.Model}}, h.clock())
+	it, ch, err := h.decisions.Decide(id, decide.Decision{Action: decide.Action(body.Action), Note: body.Note, Scope: decide.Scope(body.Scope), Proposal: decide.Proposal{Alias: body.Alias, Target: body.Target, Model: body.Model}}, h.clock())
 	var invalid decide.Invalid
 	var blocked extension.Denied
 	switch {

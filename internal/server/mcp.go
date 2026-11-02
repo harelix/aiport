@@ -215,7 +215,7 @@ var mcpTools = []map[string]any{
 				"need":       map[string]any{"type": "string", "description": "one line saying what is needed"},
 				"details":    map[string]any{"type": "string", "description": "the details the Owner needs to make the Change"},
 				"why":        map[string]any{"type": "string", "description": "why the Application needs it"},
-				"scope":      map[string]any{"type": "string", "enum": []string{decide.ScopeApplication, decide.ScopeEvery}, "description": "application (only this Application) or every_application"},
+				"scope":      map[string]any{"type": "string", "enum": []string{string(decide.ScopeApplication), string(decide.ScopeEvery)}, "description": "application (only this Application) or every_application"},
 				"scope_case": map[string]any{"type": "string", "description": "the argument for that Scope"},
 				"filed_by":   map[string]any{"type": "string", "description": "optional: who is asking, such as the coding agent and the project"},
 			},

@@ -85,14 +85,14 @@ type Request struct {
 // note) once there is one.
 type Answer struct {
 	ID        string `json:"id"`
-	Kind      string `json:"kind"`
+	Kind      Kind   `json:"kind"`
 	Need      string `json:"need"`
 	Details   string `json:"details"`
 	Why       string `json:"why"`
-	Scope     string `json:"scope"`
+	Scope     Scope  `json:"scope"`
 	ScopeCase string `json:"scope_case"`
 	FiledBy   string `json:"filed_by,omitempty"`
-	Status    string `json:"status"`
+	Status    Status `json:"status"`
 	// Repeats counts how often the same request was filed again while it
 	// waited.
 	Repeats   int   `json:"repeats,omitempty"`
@@ -100,7 +100,7 @@ type Answer struct {
 	UpdatedAt int64 `json:"updated_at_ms"`
 	// GrantedScope is the Scope the Owner approved, which may be narrower or
 	// wider than the one asked for.
-	GrantedScope string `json:"granted_scope,omitempty"`
+	GrantedScope Scope  `json:"granted_scope,omitempty"`
 	Note         string `json:"note,omitempty"`
 	DecidedAt    int64  `json:"decided_at_ms,omitempty"`
 	ChangeID     string `json:"change_id,omitempty"`
@@ -152,7 +152,7 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 		return Answer{}, err
 	}
 	it := Item{
-		Source: FromRequest, Kind: r.Kind, Application: app, Subject: r.subject(), Scope: r.Scope,
+		Source: FromRequest, Kind: Kind(r.Kind), Application: app, Subject: r.subject(), Scope: Scope(r.Scope),
 		Need: r.Need, Details: r.Details, Why: r.Why, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,
 	}
 	if !capability.BuiltIn(r.Kind) {
@@ -251,7 +251,7 @@ func readRequest(body []byte) (Request, []Problem) {
 			problems = append(problems, Problem{f, "must be one line"})
 		case f == "kind" && !validKind(v):
 			problems = append(problems, Problem{f, "must be a short name of lowercase letters, digits and underscores, such as application_alias"})
-		case f == "scope" && v != ScopeApplication && v != ScopeEvery:
+		case f == "scope" && Scope(v) != ScopeApplication && Scope(v) != ScopeEvery:
 			problems = append(problems, Problem{f, "must be application or every_application"})
 		}
 	}

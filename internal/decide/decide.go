@@ -31,43 +31,54 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Where an item came from.
+// Source is where an item came from.
+type Source string
+
 const (
-	FromSuggestion = "suggestion" // aiport noticed a pattern in request history
-	FromRequest    = "request"    // an Application asked (Change request)
+	FromSuggestion Source = "suggestion" // aiport noticed a pattern in request history
+	FromRequest    Source = "request"    // an Application asked (Change request)
 )
 
-// Statuses. Only Pending items need a decision.
+// Status is where an item stands. Only Pending items need a decision.
+type Status string
+
 const (
-	Pending   = "pending"
-	Accepted  = "accepted"
-	Rejected  = "rejected"
-	Dismissed = "dismissed"
+	Pending   Status = "pending"
+	Accepted  Status = "accepted"
+	Rejected  Status = "rejected"
+	Dismissed Status = "dismissed"
 )
 
-// Actions the Owner can take on a pending item.
+// Action is what the Owner does with a pending item.
+type Action string
+
 const (
-	Accept  = "accept"
-	Reject  = "reject"
-	Dismiss = "dismiss"
+	Accept  Action = "accept"
+	Reject  Action = "reject"
+	Dismiss Action = "dismiss"
 )
 
-// Scopes: who a Change affects.
+// Scope is who a Change affects.
+type Scope string
+
 const (
-	ScopeApplication = "application"
-	ScopeEvery       = "every_application"
+	ScopeApplication Scope = "application"
+	ScopeEvery       Scope = "every_application"
 )
 
-// The built-in kinds of Change (see package capability).
+// Kind is the kind of Change an item is about. The built-in kinds are the
+// ones capability.Kinds lists; applyKind says how each is applied.
+type Kind string
+
 const (
-	KindApplicationAlias = capability.ApplicationAlias // an Alias only one Application sees; for every Application a shared Alias
-	KindBindApplication  = capability.BindApplication  // all of one Application's calls to one Connection; for every Application the protocol default
+	KindApplicationAlias Kind = capability.ApplicationAlias // an Alias only one Application sees; for every Application a shared Alias
+	KindBindApplication  Kind = capability.BindApplication  // all of one Application's calls to one Connection; for every Application the protocol default
 )
 
 // KindPairApplication tells the Owner that something keeps trying to connect
 // without a valid token and should be paired. It is informational: there is
 // nothing to apply, the Owner dismisses it.
-const KindPairApplication = "pair_application"
+const KindPairApplication Kind = "pair_application"
 
 // OpensApplications is where the dashboard sends the Owner for a
 // KindPairApplication Suggestion: the Applications panel, where Pairing is.
@@ -97,9 +108,9 @@ type Proposal struct {
 
 // Verdict is the Owner's decision on an item.
 type Verdict struct {
-	Action   string `json:"action"`
+	Action   Action `json:"action"`
 	Note     string `json:"note,omitempty"`
-	Scope    string `json:"scope,omitempty"`
+	Scope    Scope  `json:"scope,omitempty"`
 	By       string `json:"by"`
 	At       int64  `json:"at_ms"`
 	ChangeID string `json:"change_id,omitempty"`
@@ -111,15 +122,15 @@ type Verdict struct {
 // Item is one Suggestion or Change request in the queue.
 type Item struct {
 	ID          string `json:"id"`
-	Source      string `json:"source"`
-	Kind        string `json:"kind"`
+	Source      Source `json:"source"`
+	Kind        Kind   `json:"kind"`
 	Application string `json:"application"`
 	// Subject is what repeats of the same item share (for an unknown model,
 	// the model name).
 	Subject string `json:"subject"`
-	Status  string `json:"status"`
+	Status  Status `json:"status"`
 	Need    string `json:"need"`
-	Scope   string `json:"scope"`
+	Scope   Scope  `json:"scope"`
 	// A Change request's own text (plain text, never sent to a model): the
 	// details, why, the argument for its Scope and who filed it (free text,
 	// never used for identity).
@@ -147,9 +158,9 @@ type Item struct {
 // Scope granted, and the details of the Change where the proposal leaves
 // them open (non-empty fields override the proposal).
 type Decision struct {
-	Action   string
+	Action   Action
 	Note     string
-	Scope    string
+	Scope    Scope
 	Proposal Proposal
 	By       string // empty = config.Owner
 }
@@ -157,7 +168,9 @@ type Decision struct {
 // Filter selects items for List. Zero fields don't filter. Application
 // matches the Application that filed an item or any that joined it.
 type Filter struct {
-	Application, Status, Source string
+	Application string
+	Status      Status
+	Source      Source
 }
 
 // Store keeps items across restarts (SQLStore in the database).
@@ -267,7 +280,7 @@ func (q *Queue) submit(it Item, at int64) Item {
 
 // latest returns the index of the newest item like it (same source, kind,
 // Application and subject) with one of statuses (any status when none), or -1.
-func (q *Queue) latest(it Item, statuses ...string) int {
+func (q *Queue) latest(it Item, statuses ...Status) int {
 	for i := len(q.items) - 1; i >= 0; i-- {
 		c := q.items[i]
 		if c.Source != it.Source || c.Kind != it.Kind || c.Application != it.Application || c.Subject != it.Subject {
@@ -393,7 +406,7 @@ func (q *Queue) settle(id string, d Decision, at time.Time, judged *guarded) (It
 		}
 		if guardrails := c.ExtensionsFor(config.HookGuardrail); len(guardrails) > 0 {
 			now := &guarded{config: c, guardrails: fmt.Sprint(guardrails), change: extension.Change{
-				Item: it.ID, Source: it.Source, Application: it.Application, Kind: it.Kind, Scope: scope,
+				Item: it.ID, Source: string(it.Source), Application: it.Application, Kind: string(it.Kind), Scope: string(scope),
 				What: what, Alias: p.Alias, Target: p.Target, Model: p.Model, By: d.By,
 			}}
 			if !now.same(judged) {
@@ -433,55 +446,84 @@ func (q *Queue) index(id string) int {
 // change is the configuration edit that applies an accepted item.
 // The Scope decides the edit: for this Application an Alias or binding of
 // its own; for every Application a shared Alias or the protocol default.
-func change(c config.Config, it Item, p Proposal, scope string) (config.Edit, string, error) {
+func change(c config.Config, it Item, p Proposal, scope Scope) (config.Edit, string, error) {
 	if it.Informational {
 		return nil, "", Invalid{"this Suggestion has nothing to apply: pair the Application in the Applications panel, then dismiss it"}
 	}
 	if scope != ScopeApplication && scope != ScopeEvery {
 		return nil, "", Invalid{"scope must be application or every_application"}
 	}
-	switch it.Kind {
-	case KindApplicationAlias:
-		if p.Alias == "" || p.Target == "" || p.Model == "" {
-			return nil, "", Invalid{"choose the alias, the Connection and the model the alias should use"}
+	apply := applyKind[it.Kind]
+	if apply == nil {
+		return nil, "", Invalid{"aiport cannot apply this kind of Change yet"}
+	}
+	return apply(c, it, p, scope)
+}
+
+// applyKind is how each built-in kind of Change is applied: the one table of
+// kinds aiport can apply, next to capability.Kinds, which describes them to
+// Applications (init checks the two agree).
+var applyKind = map[Kind]func(c config.Config, it Item, p Proposal, scope Scope) (config.Edit, string, error){
+	KindApplicationAlias: aliasChange,
+	KindBindApplication:  bindChange,
+}
+
+func init() {
+	if len(applyKind) != len(capability.Kinds) {
+		panic("decide: applyKind and capability.Kinds list different kinds")
+	}
+	for _, k := range capability.Kinds {
+		if applyKind[Kind(k.Kind)] == nil {
+			panic("decide: no way to apply built-in kind " + k.Kind)
 		}
-		if scope == ScopeEvery {
-			what := "shared alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for every Application"
-			return config.AddAlias(config.Alias{Alias: p.Alias, Target: p.Target, Model: p.Model}), what, nil
-		}
+	}
+}
+
+// aliasChange: for this Application (and any that joined) an Alias of its
+// own; for every Application a shared Alias.
+func aliasChange(_ config.Config, it Item, p Proposal, scope Scope) (config.Edit, string, error) {
+	if p.Alias == "" || p.Target == "" || p.Model == "" {
+		return nil, "", Invalid{"choose the alias, the Connection and the model the alias should use"}
+	}
+	if scope == ScopeEvery {
+		what := "shared alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for every Application"
+		return config.AddAlias(config.Alias{Alias: p.Alias, Target: p.Target, Model: p.Model}), what, nil
+	}
+	apps := requesters(it)
+	edits := make([]config.Edit, len(apps))
+	for i, app := range apps {
+		edits[i] = config.AddOriginAlias(app, config.OriginAlias{Alias: p.Alias, Target: p.Target, Model: p.Model})
+	}
+	return each(edits), "alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for " + strings.Join(apps, ", "), nil
+}
+
+// bindChange: for this Application (and any that joined) a binding to one
+// Connection; for every Application that Connection's protocol default.
+func bindChange(c config.Config, it Item, p Proposal, scope Scope) (config.Edit, string, error) {
+	if p.Target == "" {
+		return nil, "", Invalid{"choose the Connection to bind to"}
+	}
+	if failingTarget(it) == p.Target {
+		return nil, "", Invalid{"choose another Connection than the failing one"}
+	}
+	if scope == ScopeApplication {
 		apps := requesters(it)
 		edits := make([]config.Edit, len(apps))
 		for i, app := range apps {
-			edits[i] = config.AddOriginAlias(app, config.OriginAlias{Alias: p.Alias, Target: p.Target, Model: p.Model})
+			edits[i] = config.BindOrigin(app, p.Target)
 		}
-		return each(edits), "alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for " + strings.Join(apps, ", "), nil
-	case KindBindApplication:
-		if p.Target == "" {
-			return nil, "", Invalid{"choose the Connection to bind to"}
-		}
-		if failingTarget(it) == p.Target {
-			return nil, "", Invalid{"choose another Connection than the failing one"}
-		}
-		if scope == ScopeApplication {
-			apps := requesters(it)
-			edits := make([]config.Edit, len(apps))
-			for i, app := range apps {
-				edits[i] = config.BindOrigin(app, p.Target)
-			}
-			return each(edits), "bind " + strings.Join(apps, ", ") + " → " + p.Target, nil
-		}
-		var t *config.Target
-		for i := range c.Targets {
-			if c.Targets[i].ID == p.Target {
-				t = &c.Targets[i]
-			}
-		}
-		if t == nil {
-			return nil, "", Invalid{"no Connection " + p.Target + " in configuration"}
-		}
-		return config.SetDefaultTarget(t.Protocol, t.ID), "default " + t.Protocol + " Connection → " + t.ID + " for every Application", nil
+		return each(edits), "bind " + strings.Join(apps, ", ") + " → " + p.Target, nil
 	}
-	return nil, "", Invalid{"aiport cannot apply this kind of Change yet"}
+	var t *config.Target
+	for i := range c.Targets {
+		if c.Targets[i].ID == p.Target {
+			t = &c.Targets[i]
+		}
+	}
+	if t == nil {
+		return nil, "", Invalid{"no Connection " + p.Target + " in configuration"}
+	}
+	return config.SetDefaultTarget(t.Protocol, t.ID), "default " + t.Protocol + " Connection → " + t.ID + " for every Application", nil
 }
 
 // requesters are the Applications a Change for Scope application is for:
