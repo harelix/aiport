@@ -60,6 +60,7 @@ type Handler struct {
 
 func New(c config.Config, s config.Secrets) http.Handler {
 	h := &Handler{auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
+	h.gateway.SetClock(h.clock)
 	h.initKeySources(c, s)
 	h.setRequesters(c)
 	h.setAuthorities(c)

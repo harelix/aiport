@@ -205,6 +205,16 @@ P95 uses nearest rank; latency sample counts are returned. Error rate excludes
 pre-admission rejections and counts upstream/gateway/incomplete/timeout outcomes;
 cancellations and rejections are shown separately. Cost/token totals are null.
 
+Model listings (management access and the `X-Aiport-CSRF: 1` header; both call
+providers with the free `GET {base}/models`, never a generating request):
+`GET /api/v1/targets/{id}/models[?refresh=1]` returns `{connection, listed,
+state, models, listed_at_ms}` (model ids only; `listed: false` means unknown);
+`GET /api/v1/serving?protocol=openai|anthropic&model=…[&refresh=1]` returns
+`{model, protocol, answer, serving, unknown}` over the enabled Connections of
+that protocol, where `answer` is `one`, `none`, `several` or `unknown` (a
+Connection whose listing failed is in `unknown`). Lists are kept in memory
+for two minutes; a failed listing is not kept.
+
 The public local root serves embedded login assets under a restrictive same-origin
 CSP. The UI sends its in-memory management token as bearer auth; no localStorage,
 query bootstrap token, external font, CDN or analytics is used. Config editing,
