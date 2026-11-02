@@ -114,7 +114,10 @@ type Item struct {
 	Evidence  *Evidence `json:"evidence,omitempty"`
 	Proposal  Proposal  `json:"proposal"`
 	// Repeats counts how often the same pending item was submitted again.
-	Repeats   int      `json:"repeats,omitempty"`
+	Repeats int `json:"repeats,omitempty"`
+	// AskedBy lists each Application that asked for this Change for every
+	// Application, with its own argument (merged requests).
+	AskedBy   []Asker  `json:"asked_by,omitempty"`
 	CreatedAt int64    `json:"created_at_ms"`
 	UpdatedAt int64    `json:"updated_at_ms"`
 	Decision  *Verdict `json:"decision,omitempty"`
@@ -131,7 +134,8 @@ type Decision struct {
 	By       string // empty = config.Owner
 }
 
-// Filter selects items for List. Zero fields don't filter.
+// Filter selects items for List. Zero fields don't filter. Application
+// matches the Application that filed an item or any that joined it.
 type Filter struct {
 	Application, Status, Source string
 }
@@ -250,7 +254,7 @@ func (q *Queue) List(f Filter) []Item {
 	out := []Item{}
 	for i := len(q.items) - 1; i >= 0; i-- {
 		it := q.items[i]
-		if (f.Application == "" || it.Application == f.Application) && (f.Status == "" || it.Status == f.Status) && (f.Source == "" || it.Source == f.Source) {
+		if (f.Application == "" || askedBy(it, f.Application)) && (f.Status == "" || it.Status == f.Status) && (f.Source == "" || it.Source == f.Source) {
 			out = append(out, it)
 		}
 	}

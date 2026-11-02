@@ -11,9 +11,18 @@ type Change = {
 export type Decision = {
   id: string; source: string; kind: string; application: string; need: string; scope: string;
   details?: string; why?: string; scope_case?: string; filed_by?: string; repeats?: number;
+  asked_by?: Asker[];
   evidence?: {count: number; from_ms: number; to_ms: number; window_minutes: number};
   proposal: {alias?: string; target?: string; model?: string};
 };
+
+/** One Application that asked for a Change for every Application, with its own argument. */
+type Asker = {application: string; why: string; scope_case: string; filed_by?: string; repeats?: number; asked_at_ms: number};
+
+/** Demand for a kind of Change aiport cannot apply yet: anonymous counts only. */
+export type Demand = {kind: string; requests: number; applications: number; last_at_ms: number};
+
+const times = (n: number) => n + ' ' + (n === 1 ? 'time' : 'times');
 
 const scopeLabel = (s: string, app: string) => s === 'every_application' ? 'every Application' : 'only ' + app;
 
@@ -48,7 +57,7 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
       const who = scopeLabel(scope, item.application);
       onDecided(action === 'accept'
         ? (alias ? 'Approved for ' + who + ': the alias “' + name + '” → ' + target + '/' + model + '.' : scope === 'every_application' ? 'Approved: ' + target + ' is now the default Connection for its protocol.' : 'Approved: ' + item.application + ' now sends its calls to ' + target + '.') + ' You can revert it below.'
-        : action === 'reject' ? 'Rejected. ' + item.application + ' sees your note when it lists its requests.'
+        : action === 'reject' ? 'Rejected. ' + ((item.asked_by?.length || 0) > 1 ? 'Each Application that asked sees' : item.application + ' sees') + ' your note when it lists its requests.'
         : 'Dismissed. aiport stays quiet about this for 7 days unless the evidence doubles.');
     } catch (e) {
       const err = e as Error & {code?: string; extension?: string; reason?: string};
@@ -59,11 +68,12 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
     }
   };
   const ev = item.evidence;
+  const askers = item.asked_by || [], merged = askers.length > 1;
   const ready = !!target && (!alias || (!!name.trim() && !!model.trim()));
   return <div className="decision">
-    <div className="need">{request && <span className="badge">Change request from {item.application}</span>} {item.need}</div>
+    <div className="need">{request && <span className="badge">{merged ? 'Asked by ' + askers.length + ' Applications' : 'Change request from ' + item.application}</span>} {item.need}</div>
     {ev && <div className="evidence">Evidence: {ev.count} requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only request metadata was used.</div>}
-    {request && <dl className="request-text">
+    {request && !merged && <dl className="request-text">
       <dt>Kind</dt><dd>{item.kind}{item.kind !== 'application_alias' && item.kind !== 'bind_application' ? ' (not supported)' : ''}</dd>
       <dt>Details</dt><dd>{item.details}</dd>
       <dt>Why</dt><dd>{item.why}</dd>
@@ -71,6 +81,17 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
       {item.filed_by && <><dt>Filed by (as stated)</dt><dd>{item.filed_by}</dd></>}
       {!!item.repeats && <><dt>Asked again</dt><dd>{item.repeats} more {item.repeats === 1 ? 'time' : 'times'}</dd></>}
     </dl>}
+    {merged && <>
+      <dl className="request-text">
+        <dt>Kind</dt><dd>{item.kind}</dd>
+        <dt>Details</dt><dd>{item.details}</dd>
+        <dt>Asked for</dt><dd>every Application</dd>
+      </dl>
+      <ul className="askers" aria-label="Each Application's argument">{askers.map(a => <li key={a.application}>
+        <strong>{a.application}</strong>{a.filed_by ? ' (filed by ' + a.filed_by + ', as stated)' : ''}{a.repeats ? ' · asked again ' + times(a.repeats) : ''}
+        <dl className="request-text"><dt>Why</dt><dd>{a.why}</dd><dt>Argument for every Application</dt><dd>{a.scope_case}</dd></dl>
+      </li>)}</ul>
+    </>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this item still waits. Reject it, or change what the guardrail checks and approve again.</div>}
     {(alias || item.kind === 'bind_application') && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
@@ -92,13 +113,13 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
 
 /** Changes: Suggestions waiting for a decision (only when there are any), then every configuration edit made through aiport, newest first, with Revert. */
 export default function Changes({tick, onChange, targets = []}: {tick: number; onChange: () => void; targets?: string[]}) {
-  const [pending, setPending] = useState<Decision[]>([]);
+  const [pending, setPending] = useState<Decision[]>([]), [demand, setDemand] = useState<Demand[]>([]);
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [reload, setReload] = useState(0);
   useEffect(() => {
     send('GET', 'changes').then(d => { setChanges(d.changes || []); setRevertable(!!d.revertable); }).catch(e => setError(e.message));
-    send('GET', 'decisions').then(d => setPending(d.items || [])).catch(() => setPending([]));
+    send('GET', 'decisions').then(d => { setPending(d.items || []); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
   }, [tick, reload]);
   const revert = async (c: Change) => {
     setBusy(c.id); setError(''); setMessage('');
@@ -117,6 +138,12 @@ export default function Changes({tick, onChange, targets = []}: {tick: number; o
   return <>{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
     <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history and Change requests from Applications</span></div>
     {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided}/>)}
+  </section>}{!!demand.length && <section className="panel" aria-label="Demand for things aiport cannot do yet">
+    <div className="panel-heading"><h2>Asked for, not supported yet</h2><span>Change requests aiport cannot apply · kept and counted, no decision needed</span></div>
+    <div className="table-scroll"><table>
+      <thead><tr><th>Kind</th><th>Requests</th><th>Applications</th><th>Last asked</th></tr></thead>
+      <tbody>{demand.map(d => <tr key={d.kind}><td>{d.kind}</td><td>{d.requests}</td><td>{d.applications}</td><td>{when(d.last_at_ms)}</td></tr>)}</tbody>
+    </table></div>
   </section>}<section className="panel">
     <div className="panel-heading"><h2>Applied changes</h2><span>Newest first · kept across restarts</span></div>
     {error && <div className="notice error" role="alert">{error}</div>}

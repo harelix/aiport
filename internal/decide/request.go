@@ -115,7 +115,8 @@ var requestFields = []string{"kind", "need", "details", "why", "scope", "scope_c
 // a request with problems (Incomplete, listing every one) and a request a
 // policy Extension refused (extension.Denied, with its reason). A built-in
 // kind waits for the Owner; any other kind is kept as NotSupported. An
-// identical request still waiting is counted again instead of added.
+// identical request still waiting is counted again instead of added, and a
+// request for every Application joins a matching one from any Application.
 func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 	if !q.On() {
 		return Answer{}, ErrOff
@@ -154,14 +155,18 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 	if !builtIn(r.Kind) {
 		it.Status = NotSupported
 	}
+	if it.Scope == ScopeEvery {
+		return answerFor(q.fileForEvery(it, at.UnixMilli()), app), nil
+	}
 	return answer(q.submit(it, at.UnixMilli())), nil
 }
 
-// Requests lists Application app's own Change requests, newest first.
+// Requests lists Application app's own Change requests, newest first,
+// including those for every Application it joined.
 func (q *Queue) Requests(app string) []Answer {
 	out := []Answer{}
 	for _, it := range q.List(Filter{Application: app, Source: FromRequest}) {
-		out = append(out, answer(it))
+		out = append(out, answerFor(it, app))
 	}
 	return out
 }
@@ -171,7 +176,7 @@ func (q *Queue) Requests(app string) []Answer {
 func (q *Queue) RequestOf(app, id string) (Answer, error) {
 	for _, it := range q.List(Filter{Application: app, Source: FromRequest}) {
 		if it.ID == id {
-			return answer(it), nil
+			return answerFor(it, app), nil
 		}
 	}
 	return Answer{}, ErrNotFound
