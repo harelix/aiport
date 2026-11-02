@@ -273,6 +273,9 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 			if errors.As(err, &timeout) && timeout.Timeout() {
 				fail(refusal.UpstreamTimeout)
 			} else {
+				if o := observation(r); o != nil {
+					o.Event.ConnectionError = ConnectionError(err)
+				}
 				fail(refusal.UpstreamUnavailable)
 			}
 		}
@@ -299,6 +302,11 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 		w.Header()[key] = append([]string(nil), values...)
 	}
 	w.WriteHeader(response.StatusCode)
+	// An error body is also kept (bounded) to find the provider's error type.
+	var failed *errorBody
+	if response.StatusCode >= 400 {
+		failed = &errorBody{}
+	}
 	timer := time.AfterFunc(ms(g.limits.StreamIdleTimeoutMS), func() { cancel(); _ = response.Body.Close() })
 	defer timer.Stop()
 	buffer := make([]byte, 32<<10)
@@ -309,6 +317,7 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 				elapsed := time.Since(o.Start).Milliseconds()
 				o.Event.TTFBMS = &elapsed
 			}
+			failed.add(buffer[:n])
 			timer.Reset(ms(g.limits.StreamIdleTimeoutMS))
 			_ = rc.SetWriteDeadline(time.Now().Add(ms(g.limits.StreamIdleTimeoutMS)))
 			if _, err = w.Write(buffer[:n]); err != nil {
@@ -321,6 +330,9 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 			}
 		}
 		if readErr == io.EOF {
+			if o := observation(r); o != nil && failed != nil {
+				o.Event.UpstreamErrorType = ErrorType(failed.data)
+			}
 			return
 		}
 		if readErr != nil {
@@ -401,7 +413,23 @@ type ProbeResult struct {
 	LatencyMS int64  `json:"latency_ms"`
 	Message   string `json:"message"`
 	CheckedAt int64  `json:"checked_at_ms"`
+	// Why a failed check failed, as in Activity: a fixed connection error
+	// class, the provider's short error type (never its message), and the
+	// Owner's advice.
+	ConnectionError   string          `json:"connection_error,omitempty"`
+	UpstreamErrorType string          `json:"upstream_error_type,omitempty"`
+	Reason            *refusal.Advice `json:"reason,omitempty"`
 }
+
+// advised attaches the Owner's advice to a failed check.
+func (p ProbeResult) advised(a *refusal.Advice) ProbeResult {
+	if !p.OK && a != nil {
+		p.Reason = a
+	}
+	return p
+}
+
+func owner(r refusal.Refusal) *refusal.Advice { a := r.Owner; return &a }
 
 // Probe checks one connection with an authenticated, non-generating request:
 // GET {base}/models, which both OpenAI- and Anthropic-protocol APIs (and most
@@ -419,15 +447,15 @@ func (g *Gateway) Probe(ctx context.Context, targetID string) ProbeResult {
 		return res(false, "unknown", 0, "No connection with this id.")
 	}
 	if t.Disabled {
-		return res(false, "disabled", 0, "This connection is disabled.")
+		return res(false, "disabled", 0, "This connection is disabled.").advised(owner(refusal.TargetDisabled))
 	}
 	secret := g.key(targetID)
 	if t.APIKeyEnv != "" && secret == "" {
-		return res(false, "no_key", 0, "No API key yet. Add one to check this connection.")
+		return res(false, "no_key", 0, "No API key yet. Add one to check this connection.").advised(owner(refusal.UpstreamKeyMissing))
 	}
 	u, err := url.Parse(t.URL())
 	if err != nil {
-		return res(false, "unreachable", 0, "The connection URL is invalid.")
+		return res(false, "unreachable", 0, "The connection URL is invalid.").advised(owner(refusal.TargetInvalid))
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + "/models"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -440,13 +468,34 @@ func (g *Gateway) Probe(ctx context.Context, targetID string) ProbeResult {
 	setUpstreamAuth(req.Header, t.Protocol, secret)
 	resp, err := g.transport.RoundTrip(req)
 	if err != nil {
+		class, msg := ConnectionError(err), "Cannot reach "+u.Host
 		if ctx.Err() != nil {
-			return res(false, "unreachable", 0, "No answer before the check timed out.")
+			class, msg = refusal.ConnectTimeout, "No answer before the check timed out"
 		}
-		return res(false, "unreachable", 0, "Cannot reach "+u.Host+".")
+		a, _ := refusal.ConnectionAdvice(class)
+		if detail, ok := strings.CutPrefix(a.Summary, "Cannot reach the provider: "); ok && ctx.Err() == nil {
+			msg += ": " + detail
+		}
+		r := res(false, "unreachable", 0, msg+".").advised(&a)
+		r.ConnectionError = class
+		return r
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	kind := ""
+	if resp.StatusCode >= 400 {
+		kind = ErrorType(body)
+	}
+	// detail names the status and the provider's error type, if any.
+	detail := fmt.Sprintf("HTTP %d", resp.StatusCode)
+	if kind != "" {
+		detail += ", " + kind
+	}
+	failed := func(state, msg string) ProbeResult {
+		r := res(false, state, resp.StatusCode, msg).advised(refusal.Explain(refusal.Failure{Status: resp.StatusCode, Outcome: "upstream_error", UpstreamErrorType: kind}))
+		r.UpstreamErrorType = kind
+		return r
+	}
 	switch s := resp.StatusCode; {
 	case s >= 200 && s < 300:
 		r := res(true, "ok", s, "Reachable, and the key was accepted.")
@@ -463,12 +512,12 @@ func (g *Gateway) Probe(ctx context.Context, targetID string) ProbeResult {
 		}
 		return r
 	case s == 401 || s == 403:
-		return res(false, "key_rejected", s, fmt.Sprintf("Reachable, but the provider rejected the key (HTTP %d).", s))
+		return failed("key_rejected", "Reachable, but the provider rejected the key ("+detail+").")
 	case s == 404 || s == 405:
 		return res(true, "no_model_list", s, "Reachable, but it has no model list to check the key against.")
 	case s == 429:
 		return res(true, "ok", s, "Reachable and the key was accepted, but you are rate-limited right now.")
 	default:
-		return res(false, "provider_error", s, fmt.Sprintf("The provider answered with HTTP %d.", s))
+		return failed("provider_error", "The provider answered with an error ("+detail+").")
 	}
 }

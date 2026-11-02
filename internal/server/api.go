@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"aiport/internal/config"
+	"aiport/internal/refusal"
 	"aiport/internal/telemetry"
 )
 
@@ -69,7 +70,7 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 		id := strings.TrimPrefix(r.URL.Path, "/api/v1/requests/")
 		if h.collector != nil {
 			if row, ok := h.collector.Get(id); ok {
-				writeJSON(w, 200, row)
+				writeJSON(w, 200, explained(row))
 				return true
 			}
 		}
@@ -152,8 +153,23 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 		next = base64.RawURLEncoding.EncodeToString(value)
 		rows = rows[:limit]
 	}
-	writeJSON(w, 200, map[string]any{"requests": rows, "next_cursor": next, "telemetry": h.telemetryHealth()})
+	list := make([]activityRow, len(rows))
+	for i, row := range rows {
+		list[i] = explained(row)
+	}
+	writeJSON(w, 200, map[string]any{"requests": list, "next_cursor": next, "telemetry": h.telemetryHealth()})
 	return true
+}
+
+// activityRow is a request as Activity shows it: its metadata and, when it
+// failed, why and what fixes it (computed, never stored).
+type activityRow struct {
+	telemetry.Event
+	Reason *refusal.Advice `json:"reason,omitempty"`
+}
+
+func explained(e telemetry.Event) activityRow {
+	return activityRow{Event: e, Reason: refusal.Explain(refusal.Failure{Route: e.Route, Status: e.Status, Outcome: e.Outcome, RefusalCode: e.RefusalCode, UpstreamErrorType: e.UpstreamErrorType, ConnectionError: e.ConnectionError})}
 }
 func (h *Handler) telemetryHealth() map[string]any {
 	if h.collector == nil {

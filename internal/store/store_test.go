@@ -91,8 +91,8 @@ func TestADatabaseFromBeforeTheMigrationsWereFoldedStillOpens(t *testing.T) {
 }
 
 func TestANewDatabaseHasEveryTable(t *testing.T) {
-	if SchemaVersion() != 5 {
-		t.Fatalf("want 5 migrations, have %d", SchemaVersion())
+	if SchemaVersion() != 6 {
+		t.Fatalf("want 6 migrations, have %d", SchemaVersion())
 	}
 	db, err := Open(filepath.Join(t.TempDir(), "aiport.yaml.db"))
 	if err != nil {
@@ -128,22 +128,28 @@ func TestAVersion4DatabaseUpgrades(t *testing.T) {
 	}
 }
 
-// A database already at version 5 is not mistaken for a pre-release one.
+// A database already at version 5 is not mistaken for a pre-release one: it
+// keeps its rows and only gains migration 6, the failure reason columns.
 func TestAVersion5DatabaseOpensAsItIs(t *testing.T) {
 	path := atVersion(t, 5,
 		`INSERT INTO changes VALUES ('c', 1, 'w', 'Owner', '', '', 0, x'00', x'00')`,
-		`INSERT INTO rejected_pairings (id, code, name, description, rejected_at_ms) VALUES ('r', 'ABC-DEF', 'n', '', 1)`)
+		`INSERT INTO rejected_pairings (id, code, name, description, rejected_at_ms) VALUES ('r', 'ABC-DEF', 'n', '', 1)`,
+		`INSERT INTO requests (id, started_at_ms, origin_id, route, method, http_status, outcome, latency_ms, usage_status, cost_status) VALUES ('q', 1, 'o', '/v1/messages', 'POST', 503, 'rejected', 1, 'unknown', 'unknown')`)
 	db, err := Open(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	defer db.Close()
-	if count(t, db, "changes") != 1 || count(t, db, "rejected_pairings") != 1 {
+	if count(t, db, "changes") != 1 || count(t, db, "rejected_pairings") != 1 || count(t, db, "requests") != 1 {
 		t.Fatal("rows lost")
 	}
 	var v int
-	if err := db.QueryRow(`SELECT version FROM schema_version`).Scan(&v); err != nil || v != 5 {
+	if err := db.QueryRow(`SELECT version FROM schema_version`).Scan(&v); err != nil || v != SchemaVersion() {
 		t.Fatalf("schema version %d (%v)", v, err)
+	}
+	var code, kind, conn string
+	if err := db.QueryRow(`SELECT refusal_code, upstream_error_type, connection_error FROM requests WHERE id = 'q'`).Scan(&code, &kind, &conn); err != nil || code+kind+conn != "" {
+		t.Fatalf("reason columns: %q %q %q (%v)", code, kind, conn, err)
 	}
 }
 

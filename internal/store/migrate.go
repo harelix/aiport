@@ -180,6 +180,14 @@ var migrations = []string{
 		rejected_at_ms INTEGER NOT NULL
 	);
 	CREATE INDEX rejected_pairings_time ON rejected_pairings(rejected_at_ms DESC);`,
+
+	// 6: why a request failed, as fixed identifiers only: aiport's own
+	// refusal code, the provider's short error type, and a connection error
+	// class. Never message text, prompts, headers or keys. Additive: older
+	// rows read as empty.
+	`ALTER TABLE requests ADD COLUMN refusal_code TEXT NOT NULL DEFAULT '';
+	ALTER TABLE requests ADD COLUMN upstream_error_type TEXT NOT NULL DEFAULT '';
+	ALTER TABLE requests ADD COLUMN connection_error TEXT NOT NULL DEFAULT '';`,
 }
 
 // preRelease maps the schema version of a database written by a pre-release
@@ -194,7 +202,9 @@ var migrations = []string{
 //
 // A database an earlier build already moved to 4 is a released version-4
 // database and simply gains migration 5. Later migrations need no change
-// here: only versions 4 and 5 are ever looked at.
+// here: only versions 4 and 5 are ever looked at, and a database at 6 or
+// later is released (no pre-release build reached 6). A pre-release version
+// 5 moved back to 4 then gains migrations 5 and 6 in order.
 func preRelease(db *sql.DB, current int) (int, error) {
 	if current != 4 && current != 5 {
 		return current, nil

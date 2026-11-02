@@ -311,6 +311,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			writer.status = ref.Status
 			o.Event.Outcome = ref.Outcome
+			o.Event.RefusalCode = ref.Code
 			writeJSON(w, ref.Status, ref.Body(id))
 		}
 		h.gateway.Forward(writer, r.WithContext(proxy.WithObservation(r.Context(), o)), originID, localFail)

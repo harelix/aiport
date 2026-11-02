@@ -33,6 +33,13 @@ type Event struct {
 	BytesAfter        int    `json:"request_bytes_after,omitempty"`
 	// Feedback is the application's quality score for the response, 0–1.
 	Feedback *float64 `json:"feedback,omitempty"`
+	// Why a request failed, as fixed identifiers only (never message text,
+	// prompts, headers or keys): the code aiport answered with itself (from
+	// the refusal catalog), the provider's own short error type or code, and
+	// a fixed class for a connection that could not be made.
+	RefusalCode       string `json:"refusal_code,omitempty"`
+	UpstreamErrorType string `json:"upstream_error_type,omitempty"`
+	ConnectionError   string `json:"connection_error,omitempty"`
 }
 type Collector struct {
 	enabled bool
