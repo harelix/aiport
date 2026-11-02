@@ -11,7 +11,7 @@ import (
 
 // Approving commands during Fix it (harelix/aiport#26): a command the agent
 // wants to run inside its worktree waits on the dashboard for the Owner's
-// answer: Allow once, Allow this command for this run, or Deny. Anything
+// answer: Allow once, Allow until the next edit, or Deny. Anything
 // outside the worktree is denied without asking. A request left unanswered
 // stops the run, which keeps what it produced so far.
 
@@ -120,7 +120,7 @@ func TestTheOwnerApprovesTheCommandsOfAFixItRun(t *testing.T) {
 		t.Fatalf("an unknown answer: %d %v", w.Code, out)
 	}
 
-	// Allow this command for this run: its repeat is allowed without asking;
+	// Allow until the next edit: its repeat is allowed without asking;
 	// another command asks again.
 	f.answer(t, a["id"].(string), "allow_run")
 	if w, _ := call(f.h, "POST", "/api/v1/approvals/"+a["id"].(string), `{"answer":"deny"}`, issuesManagement, true); w.Code != 404 {
@@ -157,7 +157,7 @@ func TestTheOwnerApprovesTheCommandsOfAFixItRun(t *testing.T) {
 		t.Fatalf("diff: %s", text)
 	}
 
-	// Allow this command for this run covers that run only: the next run
+	// Allow until the next edit covers that run only: the next run
 	// asks again. Stopping a waiting run ends the request.
 	if w, out := call(f.h, "POST", "/api/v1/issues/"+f.id+"/fix/discard", "", issuesManagement, true); w.Code != 200 {
 		t.Fatalf("discard: %d %v", w.Code, out)
