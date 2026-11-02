@@ -195,6 +195,25 @@ func SetMayRequestChanges(id string, allowed bool) Edit {
 	}
 }
 
+// SetBinding binds one Application to a Connection: all its calls go there
+// (empty = unbound, back to the protocol defaults). Validation refuses a
+// missing Connection.
+func SetBinding(id, target string) Edit {
+	return func(root *yaml.Node) error {
+		seq := mappingValue(root, "origins")
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return errors.New("application not found in configuration")
+		}
+		for _, item := range seq.Content {
+			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
+				setScalar(item, "target", target)
+				return nil
+			}
+		}
+		return errors.New("application not found in configuration")
+	}
+}
+
 // AddOriginAlias gives one Application its own Alias: a model name only it
 // sends, served by a Connection and model. Validation refuses a duplicate
 // alias or a missing Connection.

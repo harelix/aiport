@@ -9,7 +9,7 @@ type Change = {
 
 /** A Suggestion (later also a Change request) waiting for the Owner, as GET /api/v1/decisions lists it. */
 export type Decision = {
-  id: string; source: string; kind: string; application: string; need: string; scope: string;
+  id: string; source: string; kind: string; application: string; subject?: string; need: string; scope: string;
   evidence?: {count: number; from_ms: number; to_ms: number; window_minutes: number};
   proposal: {alias?: string; target?: string; model?: string};
 };
@@ -25,14 +25,17 @@ const when = (ms: number) => new Date(ms).toLocaleString();
 
 /** One pending Suggestion: the evidence, the Alias it proposes, and Approve / Dismiss. All text is shown as plain text. */
 function Pending({item, targets, onDecided}: {item: Decision; targets: string[]; onDecided: (message: string) => void}) {
-  const [target, setTarget] = useState(item.proposal.target || targets[0] || ''), [model, setModel] = useState(item.proposal.model || '');
+  const binding = item.kind === 'bind_application', choices = binding ? targets.filter(t => t !== item.subject) : targets;
+  const [target, setTarget] = useState(item.proposal.target || choices[0] || ''), [model, setModel] = useState(item.proposal.model || '');
   const [note, setNote] = useState(''), [busy, setBusy] = useState(''), [error, setError] = useState('');
   const decide = async (action: 'accept' | 'dismiss') => {
     setBusy(action); setError('');
     try {
-      await send('POST', 'decisions/' + encodeURIComponent(item.id), action === 'accept' ? {action, target, model, note} : {action, note});
+      await send('POST', 'decisions/' + encodeURIComponent(item.id), action === 'accept' ? (binding ? {action, target, note} : {action, target, model, note}) : {action, note});
       onDecided(action === 'accept'
-        ? 'Approved: ' + item.application + ' now has the alias “' + item.proposal.alias + '” → ' + target + '/' + model + '. You can revert it below.'
+        ? binding
+          ? 'Approved: all of ' + item.application + '’s calls now go to ' + target + '. You can revert it below.'
+          : 'Approved: ' + item.application + ' now has the alias “' + item.proposal.alias + '” → ' + target + '/' + model + '. You can revert it below.'
         : 'Dismissed. aiport stays quiet about this for 7 days unless the evidence doubles.');
     } catch (e) {
       setError((e as Error).message);
@@ -52,6 +55,15 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
       <label>Note (optional)<input value={note} onChange={e => setNote(e.target.value)} maxLength={2000}/></label>
       <div className="actions">
         <button className="primary" disabled={!!busy || !model.trim() || !target}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
+        <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
+      </div>
+    </form>}
+    {binding && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
+      <label>Failing Connection<input value={item.subject || ''} readOnly/></label>
+      <label>Bind {item.application} to<select value={target} onChange={e => setTarget(e.target.value)}>{choices.map(t => <option key={t}>{t}</option>)}</select></label>
+      <label>Note (optional)<input value={note} onChange={e => setNote(e.target.value)} maxLength={2000}/></label>
+      <div className="actions">
+        <button className="primary" disabled={!!busy || !target}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
         <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
       </div>
     </form>}

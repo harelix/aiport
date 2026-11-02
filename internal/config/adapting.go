@@ -12,6 +12,10 @@ type Adapting struct {
 	// UnknownModel: one Application got upstream 404s for one model at least
 	// Count times within the last WindowMinutes.
 	UnknownModel Threshold `yaml:"unknown_model,omitempty" json:"unknown_model"`
+	// FailingConnection: one Application's calls to one Connection failed
+	// (gateway errors, timeouts) at least Count times within the last
+	// WindowMinutes.
+	FailingConnection Threshold `yaml:"failing_connection,omitempty" json:"failing_connection"`
 }
 
 // Threshold is how much evidence a detector needs: Count matching requests
@@ -23,13 +27,16 @@ type Threshold struct {
 
 // DefaultAdapting is the loop's configuration when aiport.yaml says nothing.
 func DefaultAdapting() Adapting {
-	return Adapting{IntervalSeconds: 60, UnknownModel: Threshold{Count: 5, WindowMinutes: 60}}
+	return Adapting{IntervalSeconds: 60, UnknownModel: Threshold{Count: 5, WindowMinutes: 60}, FailingConnection: Threshold{Count: 5, WindowMinutes: 60}}
 }
 
 func (a Adapting) validate() error {
 	u := a.UnknownModel
 	if a.IntervalSeconds < 5 || a.IntervalSeconds > 86400 || u.Count < 1 || u.Count > 1_000_000 || u.WindowMinutes < 1 || u.WindowMinutes > 7*24*60 {
 		return errors.New("adapting: interval_seconds must be 5–86400, unknown_model.count 1–1000000 and unknown_model.window_minutes 1–10080")
+	}
+	if f := a.FailingConnection; f.Count < 1 || f.Count > 1_000_000 || f.WindowMinutes < 1 || f.WindowMinutes > 7*24*60 {
+		return errors.New("adapting: failing_connection.count must be 1–1000000 and failing_connection.window_minutes 1–10080")
 	}
 	return nil
 }

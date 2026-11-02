@@ -326,6 +326,8 @@ func change(it Item, p Proposal, scope string) (config.Edit, string, error) {
 		}
 		what := "alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for " + it.Application
 		return config.AddOriginAlias(it.Application, config.OriginAlias{Alias: p.Alias, Target: p.Target, Model: p.Model}), what, nil
+	case KindBindApplication:
+		return bindChange(it, p, scope)
 	}
 	return nil, "", Invalid{"aiport cannot apply this kind of Change yet"}
 }
@@ -360,6 +362,7 @@ func (q *Queue) Detect(at time.Time) []Item {
 	}
 	c := q.live.Config()
 	found := unknownModels(c, q.history, at)
+	found = append(found, failingConnections(c, q.history, at)...)
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	var out []Item
