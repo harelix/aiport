@@ -1,145 +1,99 @@
-<p align="center">
-  <img src="visuals/logo-256.png" alt="aiport logo" width="128" height="128">
+<div align="center">
+
+<img src="visuals/logo-256.png" alt="aiport logo" width="112" height="112">
+
+<h1>aiport</h1>
+
+<p><strong>A local AI gateway for the applications and coding agents on your machine.</strong><br>
+One place for provider keys, routing and request history, that notices when an application keeps failing and offers to fix it.</p>
+
+<p>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-5E81AC"></a>
+  <img alt="Go 1.27+" src="https://img.shields.io/badge/go-1.27%2B-88C0D0">
+  <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-EBCB8B">
 </p>
 
-# aiport
-
-A local AI gateway for the applications and coding agents on your machine: one
-place for provider keys, routing and request history, that notices when an
-application keeps failing and offers to fix it.
-
-<p align="center">
-  <img src="visuals/providers-sc.png" alt="The aiport dashboard: provider Connections with their keys saved, protocol defaults and connection checks" width="860">
+<p>
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="docs/manual.md">Manual</a> ·
+  <a href="docs/connect.md">Connect an application</a> ·
+  <a href="docs/configuration.md">Configuration</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-## Quickstart
+<img src="visuals/providers-sc.png" alt="The aiport dashboard: provider Connections with their keys saved, protocol defaults and connection checks" width="880">
 
-You need Go 1.27+ (`brew install go`, or https://go.dev/dl). Nothing else:
-dependencies are vendored and the dashboard is committed pre-built.
-
-```sh
-git clone https://github.com/harelix/aiport && cd aiport
-make build                 # -> bin/aiport, dashboard embedded
-./bin/aiport init          # choose providers and coding agents; writes aiport.yaml
-./bin/aiport serve         # prints the dashboard URL and management token
-```
-
-Open http://127.0.0.1:8787/, paste the management token, and set a password.
-Add your provider keys on **Settings**, then **Check connection** on each card
-(one free `GET /models`, nothing generated). Start any local provider (Ollama,
-llama.cpp) yourself.
+</div>
 
 ## Why aiport
 
-- **Applications never hold provider keys.** Each one pairs for its own local
-  token, approved by you; aiport adds the real key on the way out.
-- **Native forwarding.** Chat Completions, Responses and Messages are passed
-  through byte for byte in the provider's own format; aiport does no
-  translation, so nothing is lost between SDK and provider.
-- **It adapts to its Applications, with your approval.** aiport watches its
-  request history. When an error keeps happening for one Application it opens
-  an **Issue** with the evidence and a fix on each side: a Change in aiport
-  you approve with one click, and an instruction for the Application's coding
-  agent. It can also ask your installed coding agent to **Explain** the root
-  cause or **Fix it** in a separate worktree, ending in a diff you keep or
-  discard.
-- **Applications know what they can use.** `GET /v1/models` lists the task
-  names and models each Application can use (its **Catalog**), an
-  `X-Aiport-Catalog` header on every answer tells it when you change them,
-  and a change that takes something away reaches its coding agent as an
-  Issue. You can remove any Connection: aiport re-points what used it as one
-  revertable Change.
-- **Local and private.** It listens on loopback only, refuses cross-site
-  requests, and records request metadata, never prompts or responses.
+| | |
+|---|---|
+| **Keys stay in aiport** | Each application pairs for its own local token, approved by you. aiport adds the real provider key on the way out. |
+| **Native forwarding** | Chat Completions, Responses and Messages pass through byte for byte, in the provider's own format. Nothing is translated, so nothing is lost. |
+| **Adapts, with your approval** | When an application keeps failing, aiport opens an Issue with the evidence and a fix on each side: a Change you approve in one click, and instructions for the application's coding agent. |
+| **Applications know what they can use** | `GET /v1/models` lists each application's own task names and models (its Catalog), and an `X-Aiport-Catalog` header tells it when you change them. Remove any Connection: aiport re-points what used it as one revertable Change and tells every application it affects. |
+| **Local and private** | Loopback only, cross-site requests refused, and only request metadata is kept: never prompts or responses. |
 
-## Usage
+## How it works
 
-The [user manual](docs/manual.md) walks through every page of the dashboard. It
-is also built into the dashboard (the help button in the header). The main
-tasks:
-
-**Connect an application.** Open **Integrate** and copy the instruction at the
-top to the coding agent working on that application. The agent switches the
-application's SDK to aiport and pairs it; you approve the short code it shows.
-Any running gateway also describes itself without a token:
-
-```sh
-curl 'http://127.0.0.1:8787/_connect?format=markdown'   # guide for people and agents
-curl http://127.0.0.1:8787/_connect                     # JSON for programs
+```mermaid
+flowchart LR
+  A["Applications<br/>and coding agents"] -- "own aiport token" --> G(("aiport"))
+  G -- "provider key added" --> P["Providers<br/>OpenAI · Anthropic · Bedrock<br/>Ollama · llama.cpp"]
+  G -. "Issues and Suggestions" .-> O["You, in the dashboard"]
+  O -. "approve, revert" .-> G
 ```
 
-See [Connect](docs/connect.md) and the manual's
-[Integrate page](docs/manual.md#the-integrate-page-and-the-two-briefs) section.
+Applications call aiport with their own token. aiport routes each call to the provider you chose, keeps the metadata, and turns repeated failures into Issues you can fix from the dashboard, or hand to the application's coding agent.
 
-**Launch a coding agent through aiport.**
+## Quickstart
+
+You need **Go 1.27+** (`brew install go`, or [go.dev/dl](https://go.dev/dl)). Dependencies are vendored and the dashboard is pre-built, so nothing else is downloaded.
 
 ```sh
-./bin/aiport agent claude --model YOUR_ANTHROPIC_MODEL
-./bin/aiport agent codex --model YOUR_OPENAI_MODEL      # add --dry-run to inspect
+git clone https://github.com/harelix/aiport && cd aiport
+make build              # bin/aiport, dashboard included
+./bin/aiport init       # choose providers and coding agents; writes aiport.yaml
+./bin/aiport serve      # prints the dashboard address and management token
 ```
 
-The agent gets its own local token, never your provider keys, and its global
-settings are not edited. The Connection it uses must speak the agent's
-protocol.
+Open the dashboard address `serve` prints (**http://127.0.0.1:8787/** by default; `init --listen` picks another, and you can [use `aiport.localhost` instead](docs/manual.md#use-a-name-instead-of-127001)), paste the management token and set a password. Paste your provider keys on **Providers**, then **Check connection** on each card: it makes one free `GET /models` call and generates nothing. Start any local provider (Ollama, llama.cpp) yourself.
 
-**Decide on Changes.** **Changes** shows Issues, Suggestions and Change
-requests, with a badge only when one needs you. Every Change can be reverted.
-See [Changes](docs/manual.md#changes).
+## Using it
+
+- **Connect an application.** On **Integrate**, copy the instruction at the top to the coding agent working on the application. It switches the application's SDK to aiport and pairs it; you approve the short code it shows. See [Connect](docs/connect.md).
+- **Launch a coding agent through aiport.** `./bin/aiport agent claude --model MODEL` or `./bin/aiport agent codex --model MODEL` (add `--dry-run` to inspect). The agent gets its own token, never your provider keys.
+- **Decide on Changes.** Issues, Suggestions and Change requests wait on **Changes**, with a badge only when one needs you. Every Change can be reverted.
+
+The [manual](docs/manual.md) covers every page. It is also built into the dashboard: press the help button, or the ⓘ next to any section.
 
 ## Configuration
 
-`init` writes `aiport.yaml` and a private `aiport.yaml.env` (mode 0600) holding
-local tokens and the keys you paste in the dashboard. It never overwrites
-existing files. Provider keys never go into YAML.
+`init` writes `aiport.yaml` and a private `aiport.yaml.env` (mode 0600) for local tokens and the keys you paste in the dashboard. It never overwrites a file, and provider keys never go into YAML.
 
 ```sh
-./bin/aiport init --provider openai,anthropic --agent codex,claude   # no prompts
-./bin/aiport check                                                    # validate
+./bin/aiport init --provider openai,anthropic --agent codex,claude   # without prompts
+./bin/aiport check                                                    # validate the configuration
 ./bin/aiport auth token                                               # print the management token again
 ```
 
-Preset providers: `openai`, `anthropic`, `bedrock`, `meta`, `ollama`,
-`llamacpp`. `--base-url` overrides one provider's address, and `--region` sets
-the Bedrock region (default `us-east-1`). Request history is kept in SQLite
-next to the config (`telemetry.enabled`, `retention_days`, default 7). See the
-[configuration reference](docs/configuration.md), and
-[`aiport.example.yaml`](aiport.example.yaml).
+Provider presets: `openai`, `anthropic`, `bedrock`, `meta`, `ollama`, `llamacpp`. See the [configuration reference](docs/configuration.md) and [`aiport.example.yaml`](aiport.example.yaml).
 
-## What runs and what leaves the machine
+## Security and data
 
-- aiport sends calls only to the Connections you configured, with the key for
-  that Connection. It stores request metadata (time, Application, model,
-  status, latency), never prompts or responses.
-- **Agent runs** start a coding agent you installed (Claude Code, Codex or
-  Gemini CLI, through the Agent Client Protocol) in a git worktree of the
-  Application's repository, only when you click. Commands ask you first;
-  aiport never commits to your branch, merges or pushes. aiport only sees the
-  permission requests an agent sends, so an agent's own settings can allow
-  more. Read [What aiport cannot see](docs/manual.md#explain-by-a-coding-agent) before using them.
-- [Extensions](docs/extensions.md) you add are programs started by aiport to
-  take part in decisions about Change requests.
+- Calls go only to the providers you configured, with that provider's key. aiport stores request metadata (time, application, model, status, latency), never prompts or responses.
+- **Agent runs** start a coding agent you installed (Claude Code, Codex or Gemini CLI) in a separate git worktree, only when you click. Commands ask you first, and aiport never commits to your branch, merges or pushes. An agent's own settings can allow more than aiport sees: read [what aiport cannot see](docs/manual.md#explain-by-a-coding-agent) first.
+- [Extensions](docs/extensions.md) you add take part in decisions about Change requests.
 
 ## Limitations
 
-- Experimental. No provider and coding-agent combination has passed the live
-  [compatibility](docs/compatibility.md) gate yet.
-- Token counts and cost are not measured.
-- No translation between protocols: a Connection must speak the protocol of
-  the client calling it. Ollama or llama.cpp Chat compatibility does not make
-  them work with Codex.
-- Gemini runs' model calls do not go through aiport, and Codex runs use
-  Codex's own login.
-- No release archives yet; build from source (`make release` produces them).
+aiport is experimental. No provider and coding-agent combination has passed the live [compatibility](docs/compatibility.md) gate yet. Token counts and cost are not measured. A provider must speak the protocol of the client calling it, since aiport does not translate. Gemini runs' model calls do not go through aiport, and Codex runs use Codex's own login. There are no release downloads yet; build from source.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md): `make test`, `make check`,
-`make check-offline`, and a DCO sign-off on every commit. Larger changes start
-from [the design](aiport_DESIGN.md); the vocabulary is in the
-[glossary](GLOSSARY.md). Dependency licenses are in
-[THIRD_PARTY.md](THIRD_PARTY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Run `make test`, `make check` and `make check-offline`, and sign off every commit (DCO). Larger changes start from [the design](aiport_DESIGN.md); the vocabulary is in the [glossary](GLOSSARY.md), and dependency licenses are in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## License
 
-[Apache-2.0](LICENSE). The aiport name and logo are covered by
-[TRADEMARKS.md](TRADEMARKS.md).
+[Apache-2.0](LICENSE). The aiport name and logo are covered by [TRADEMARKS.md](TRADEMARKS.md).

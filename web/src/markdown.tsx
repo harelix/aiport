@@ -26,8 +26,47 @@ export function Inline({text}: {text: string}) {
 
 export const slug = (heading: string) => heading.toLowerCase().replace(/[`*]/g, '').replace(/[^a-z0-9 -]/g, '').trim().replace(/\s+/g, '-');
 
+/** One section of a markdown document: the text under heading, up to the next heading of the same or a higher level. */
+export function sectionOf(source: string, heading: string): string {
+  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  const start = lines.findIndex(l => /^#{1,4}\s/.test(l) && slug(l.replace(/^#+\s+/, '')) === slug(heading));
+  if (start < 0) return '';
+  const level = /^#+/.exec(lines[start])![0].length;
+  const body: string[] = [];
+  let fence = false;
+  for (const l of lines.slice(start + 1)) {
+    if (l.startsWith('```')) fence = !fence;
+    const h = !fence && /^(#{1,4})\s/.exec(l);
+    if (h && h[1].length <= level) break;
+    body.push(l);
+  }
+  return body.join('\n').trim();
+}
+
+/** The opening of a section: its first blocks before any sub-heading, at most max of them. */
+export function openingOf(section: string, max = 2): string {
+  const blocks: string[] = [];
+  for (const b of section.split(/\n\s*\n/)) {
+    if (/^#{1,4}\s/.test(b.trim()) || blocks.length >= max) break;
+    if (b.trim()) blocks.push(b.trim());
+  }
+  return blocks.join('\n\n');
+}
+
+/** The headings of a document, for a table of contents: [level (1 = ##), text]. */
+export function headingsOf(source: string, deepest = 2): [number, string][] {
+  const out: [number, string][] = [];
+  let fence = false;
+  for (const l of source.split('\n')) {
+    if (l.startsWith('```')) fence = !fence;
+    const h = !fence && /^(#{2,4})\s+(.*)$/.exec(l);
+    if (h && h[1].length - 1 <= deepest) out.push([h[1].length - 1, h[2]]);
+  }
+  return out;
+}
+
 /** Block markdown. */
-export function Markdown({source}: {source: string}) {
+export function Markdown({source, anchors = false}: {source: string; anchors?: boolean}) {
   const lines = source.replace(/\r\n/g, '\n').split('\n');
   const out: React.ReactNode[] = [];
   let i = 0;
@@ -44,7 +83,8 @@ export function Markdown({source}: {source: string}) {
     if (heading) {
       const level = Math.min(heading[1].length + 1, 5);
       const Tag = ('h' + level) as 'h2';
-      out.push(<Tag key={out.length} id={slug(heading[2])}><Inline text={heading[2]}/></Tag>);
+      const id = slug(heading[2]);
+      out.push(<Tag key={out.length} id={id}><Inline text={heading[2]}/>{anchors && <a className="heading-anchor" href={'#' + id} aria-label={'Link to ' + heading[2]} onClick={e => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({block: 'start'}); }}>#</a>}</Tag>);
       i++;
       continue;
     }
