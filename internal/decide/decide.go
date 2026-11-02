@@ -20,6 +20,7 @@ import (
 
 	"aiport/internal/capability"
 	"aiport/internal/config"
+	"aiport/internal/extension"
 	"aiport/internal/telemetry"
 )
 
@@ -262,19 +263,16 @@ func (q *Queue) List(f Filter) []Item {
 
 // Decide records the Owner's decision on pending item id at time at. Accept
 // applies the Change through config.Live (so it can be reverted) and returns
-// it; reject and dismiss change nothing in the configuration.
+// it, unless a guardrail Extension blocks it (extension.Denied, with its
+// reason; the item stays pending); reject and dismiss change nothing in the
+// configuration and run no Extension.
 func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change, error) {
 	if !q.On() {
 		return Item{}, config.Change{}, ErrOff
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	i := -1
-	for j := range q.items {
-		if q.items[j].ID == id {
-			i = j
-		}
-	}
+	i := q.index(id)
 	if i < 0 {
 		return Item{}, config.Change{}, ErrNotFound
 	}
@@ -310,9 +308,31 @@ func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change
 		if d.Proposal.Model != "" {
 			p.Model = d.Proposal.Model
 		}
-		edit, what, err := change(q.live.Config(), it, p, scope)
+		c := q.live.Config()
+		edit, what, err := change(c, it, p, scope)
 		if err != nil {
 			return Item{}, config.Change{}, err
+		}
+		// Guardrail Extensions run before the Change is applied, outside the
+		// lock so a slow one never holds up the queue; a block leaves the
+		// item waiting.
+		if len(c.ExtensionsFor(config.HookGuardrail)) > 0 {
+			q.mu.Unlock()
+			err := extension.Check(c, config.HookGuardrail, extension.Input{Change: &extension.Change{
+				Item: it.ID, Source: it.Source, Application: it.Application, Kind: it.Kind, Scope: scope,
+				What: what, Alias: p.Alias, Target: p.Target, Model: p.Model, By: by,
+			}})
+			q.mu.Lock()
+			if err != nil {
+				return Item{}, config.Change{}, err
+			}
+			if i = q.index(id); i < 0 {
+				return Item{}, config.Change{}, ErrNotFound
+			}
+			if q.items[i].Status != Pending {
+				return Item{}, config.Change{}, ErrDecided
+			}
+			it = q.items[i]
 		}
 		if _, ch, err = q.live.ChangeAs(by, what, edit); err != nil {
 			if errors.Is(err, config.ErrReadOnly) {
@@ -332,6 +352,16 @@ func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change
 	q.items[i] = it
 	q.save(it)
 	return it, ch, nil
+}
+
+// index returns the position of item id, or -1.
+func (q *Queue) index(id string) int {
+	for j := range q.items {
+		if q.items[j].ID == id {
+			return j
+		}
+	}
+	return -1
 }
 
 // change is the configuration edit that applies an accepted item.

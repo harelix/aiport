@@ -12,6 +12,7 @@ import (
 
 	"aiport/internal/capability"
 	"aiport/internal/config"
+	"aiport/internal/extension"
 )
 
 // Change requests: an Application asking for a Change. Both doors, the HTTP
@@ -111,7 +112,8 @@ var requestFields = []string{"kind", "need", "details", "why", "scope", "scope_c
 // at time at. It refuses, in this order: the loop turned off (ErrOff), a
 // caller that is not an Application (ErrNotApplication), an Application the
 // Owner has not allowed (ErrNotPermitted), too many requests (RateLimited),
-// and a request with problems (Incomplete, listing every one). A built-in
+// a request with problems (Incomplete, listing every one) and a request a
+// policy Extension refused (extension.Denied, with its reason). A built-in
 // kind waits for the Owner; any other kind is kept as NotSupported. An
 // identical request still waiting is counted again instead of added, and a
 // request for every Application joins a matching one from any Application.
@@ -127,14 +129,25 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 		return Answer{}, ErrNotPermitted
 	}
 	q.mu.Lock()
-	defer q.mu.Unlock()
-	if err := q.admit(app, at); err != nil {
+	err := q.admit(app, at)
+	q.mu.Unlock()
+	if err != nil {
 		return Answer{}, err
 	}
 	r, problems := readRequest(body)
 	if len(problems) > 0 {
 		return Answer{}, Incomplete{problems}
 	}
+	// Policy Extensions run after aiport's own checks and outside the lock,
+	// so a slow one never holds up the queue.
+	if err := extension.Check(q.live.Config(), config.HookPolicy, extension.Input{Request: &extension.Request{
+		Application: app, Kind: r.Kind, Supported: builtIn(r.Kind), Need: r.Need, Details: r.Details,
+		Why: r.Why, Scope: r.Scope, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,
+	}}); err != nil {
+		return Answer{}, err
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	it := Item{
 		Source: FromRequest, Kind: r.Kind, Application: app, Subject: r.subject(), Scope: r.Scope,
 		Need: r.Need, Details: r.Details, Why: r.Why, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,

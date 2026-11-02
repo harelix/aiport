@@ -117,9 +117,10 @@ func Describe(c config.Config) Document {
 			{"X-Aiport-Compression", "methods; status=applied|no_gain|failed; bytes_before=N; bytes_after=N", "Present when compression was requested. On failed or no_gain the original body was sent.", "available"},
 			{"X-Aiport-Model", "model id", "Model actually used after aliases or tier routing.", "planned"},
 			{"X-Aiport-Route", "key=value; ...", "Why that model/target was chosen.", "planned"},
+			{"X-Aiport-Hint", "one line of text", "On a provider 404 for the requested model, sent only to applications allowed to request changes: which change request (kind and endpoint) could fix it. The provider's body is passed through unchanged.", "available"},
 			{"X-Aiport-Source", "gateway or upstream", "Whether an error came from aiport or the provider.", "planned"},
 		},
-		ErrorFormat: `Gateway errors: {"error":{"code":"...","message":"...","request_id":"..."}}. Provider errors pass through unchanged (status, body, headers).`,
+		ErrorFormat: `Gateway errors: {"error":{"code":"...","message":"...","request_id":"...","hint":"..."}}. hint is optional: applications allowed to request changes get one on refusals a change could fix (target_unconfigured, target_disabled), naming the change request kind and endpoint. Status and code never depend on it. Provider errors pass through unchanged (status, body, headers).`,
 		Errors: []ErrorCode{
 			{401, "unauthorized", "Missing or invalid application token."},
 			{403, "invalid_host", "Host header is not the configured local address."},
@@ -136,6 +137,7 @@ func Describe(c config.Config) Document {
 			{404, "request_not_found", "No retained request with this id for this application."},
 			{403, "change_requests_not_allowed", "The owner has not allowed this application to request changes; the owner can enable it in the dashboard (Routing → Applications)."},
 			{400, "invalid_change_request", "The change request is incomplete or too large; error.problems lists every problem as {field, problem}."},
+			{403, "change_request_refused", "A policy Extension the owner added refused this change request; error.reason says why and error.extension names it."},
 			{429, "change_requests_rate_limited", "Too many change requests from this application in the last hour; retry after Retry-After seconds."},
 			{404, "change_request_not_found", "No change request with this id for this application."},
 			{400, "ambiguous_model", "Body must be one JSON object with a single model field when aliases apply."},
@@ -156,6 +158,7 @@ func Describe(c config.Config) Document {
 			{"effort_tiers", "planned", "Virtual model names routed to a model by X-Aiport-Effort or the native reasoning effort field."},
 			{"capabilities", "available", "GET /v1/aiport/capabilities with the application's own token: what aiport can do for it right now (protocols it can reach and their connection, its own aliases, its binding, whether it may request changes and which kinds of change: application_alias, bind_application). Answers only about the calling application and reflects applied changes at once."},
 			{"change_requests", "available", "POST /v1/aiport/requests with the application's own token asks the owner for a change: {\"kind\":\"application_alias|bind_application|...\",\"need\":\"one line\",\"details\":\"...\",\"why\":\"...\",\"scope\":\"application|every_application\",\"scope_case\":\"the argument for that scope\",\"filed_by\":\"optional, informational\"}; each field at most 2,000 characters, 6,000 in total, plain text never sent to a model. Only for applications the owner allowed (see capabilities). GET /v1/aiport/requests lists this application's own requests and GET /v1/aiport/requests/{id} one of them, with status (pending, accepted, rejected, not_supported), the scope granted and the owner's note. Kinds aiport cannot apply are kept as not_supported. 20 requests per application per hour."},
+			{"mcp", "available", "Model Context Protocol (Streamable HTTP, JSON responses) at POST /mcp, authenticated with Authorization: Bearer <the application's own token> (from AIPORT_APP_TOKEN; the owner's token is refused). Tools: aiport_capabilities, aiport_request_change and aiport_my_requests, answering exactly as GET /v1/aiport/capabilities and /v1/aiport/requests do. Project-level MCP entry: {\"type\":\"http\",\"url\":\"<this aiport>/mcp\",\"headers\":{\"Authorization\":\"Bearer ${AIPORT_APP_TOKEN}\"}}; never commit the token itself."},
 			{"pairing", "available", "POST /v1/aiport/pair {name}: an application asks for its own token; the owner approves the shown code in the dashboard; the application collects the token once from the poll path. Requests expire after 10 minutes."},
 		},
 		Integration: integration(base + "/v1"),
@@ -241,10 +244,21 @@ func integration(base string) Integration {
 			"**Errors.** A body of `{\"error\":{\"code\":...}}` with a code listed at `" + root + Path + "?format=markdown` came from aiport; anything else is the provider's own error, passed through. Retry only `429 concurrency_limit`, `502` and `504`, with backoff. On `401` the token is missing or no longer valid: pair again, do not retry.",
 			"**Log `X-Aiport-Request-Id`** from responses next to your own request logs; the owner finds the call in aiport's Activity page with it.",
 			"**Optional:** send `X-Aiport-Compress` to shrink large prompts, and `POST /v1/aiport/feedback` with the request id and a 0–1 score so the owner can see whether compression hurts answers. Do not rely on features marked `planned`.",
+			"**Let future sessions ask aiport for changes.** Add a project-level MCP entry to the application's repository (Claude Code: `.mcp.json`; other agents: their project MCP config) so coding agents there can reach aiport: `" + mcpEntry(root) + "`. It takes the token from the `AIPORT_APP_TOKEN` environment variable; never write the token itself into the file. Then add this line to the repository's `AGENTS.md`: \"" + AgentsLine + "\" Requesting changes needs the owner's permission: until the owner allows this application in the aiport dashboard (Routing → Applications), aiport answers `403 change_requests_not_allowed`; `GET " + root + "/v1/aiport/capabilities` shows whether it may.",
 			"**Verify.** Make one real call, check it succeeds, and ask the owner to confirm it appears under the application's name in aiport's Activity page. If it shows as `unknown`, the token is not the application's own.",
 		},
 		Note: "aiport stores no prompts or responses, only request metadata, and listens on this machine only. Full protocol reference: " + root + Path + "?format=markdown",
 	}
+}
+
+// AgentsLine is the line an integrating agent adds to the application's
+// AGENTS.md, so future sessions ask aiport instead of working around it.
+const AgentsLine = "This app's LLM calls go through aiport. If aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it."
+
+// mcpEntry is the project-level MCP server entry for this gateway. It names
+// the environment variable holding the token, never the token.
+func mcpEntry(root string) string {
+	return `{"mcpServers":{"aiport":{"type":"http","url":"` + root + `/mcp","headers":{"Authorization":"Bearer ${AIPORT_APP_TOKEN}"}}}}`
 }
 
 func integrating(w func(string, ...any), d Document) {

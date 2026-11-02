@@ -29,9 +29,12 @@ const scopeLabel = (s: string, app: string) => s === 'every_application' ? 'ever
 async function send(method: string, path: string, body?: unknown) {
   const r = await fetch('/api/v1/' + path, {method, credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-Aiport-CSRF': '1'}, body: body === undefined ? undefined : JSON.stringify(body)});
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error?.message || 'Request failed (' + r.status + ').');
+  if (!r.ok) throw Object.assign(new Error(d.error?.message || 'Request failed (' + r.status + ').'), {code: d.error?.code, extension: d.error?.extension, reason: d.error?.reason});
   return d;
 }
+
+/** A guardrail Extension's block of Approve: which Extension and why. */
+type Blocked = {extension: string; reason: string};
 
 const when = (ms: number) => new Date(ms).toLocaleString();
 
@@ -45,9 +48,10 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
   const [target, setTarget] = useState(item.proposal.target || targets[0] || ''), [model, setModel] = useState(item.proposal.model || '');
   const [name, setName] = useState(item.proposal.alias || ''), [scope, setScope] = useState(item.scope || 'application');
   const [note, setNote] = useState(''), [busy, setBusy] = useState(''), [error, setError] = useState('');
+  const [blocked, setBlocked] = useState<Blocked | null>(null);
   const no = request ? 'reject' : 'dismiss';
   const decide = async (action: 'accept' | 'reject' | 'dismiss') => {
-    setBusy(action); setError('');
+    setBusy(action); setError(''); setBlocked(null);
     try {
       await send('POST', 'decisions/' + encodeURIComponent(item.id), action === 'accept' ? {action, scope, alias: alias ? name : undefined, target, model: alias ? model : undefined, note} : {action, note});
       const who = scopeLabel(scope, item.application);
@@ -56,7 +60,9 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
         : action === 'reject' ? 'Rejected. ' + ((item.asked_by?.length || 0) > 1 ? 'Each Application that asked sees' : item.application + ' sees') + ' your note when it lists its requests.'
         : 'Dismissed. aiport stays quiet about this for 7 days unless the evidence doubles.');
     } catch (e) {
-      setError((e as Error).message);
+      const err = e as Error & {code?: string; extension?: string; reason?: string};
+      if (err.code === 'guardrail_blocked') setBlocked({extension: err.extension || 'a guardrail', reason: err.reason || ''});
+      else setError(err.message);
     } finally {
       setBusy('');
     }
@@ -87,6 +93,7 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
       </li>)}</ul>
     </>}
     {error && <div className="notice error" role="alert">{error}</div>}
+    {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this item still waits. Reject it, or change what the guardrail checks and approve again.</div>}
     {(alias || item.kind === 'bind_application') && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
       <label>Scope<select value={scope} onChange={e => setScope(e.target.value)}>
         <option value="application">Only {item.application}</option>

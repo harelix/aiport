@@ -10,6 +10,7 @@ import (
 
 	"aiport/internal/config"
 	"aiport/internal/decide"
+	"aiport/internal/extension"
 )
 
 // openDecisions sets up the decision queue, keeping its items in the same
@@ -100,7 +101,10 @@ func (h *Handler) decisionsRoute(w http.ResponseWriter, r *http.Request, fail fu
 	}
 	it, ch, err := h.decisions.Decide(id, decide.Decision{Action: body.Action, Note: body.Note, Scope: body.Scope, Proposal: decide.Proposal{Alias: body.Alias, Target: body.Target, Model: body.Model}}, h.clock())
 	var invalid decide.Invalid
+	var blocked extension.Denied
 	switch {
+	case errors.As(err, &blocked):
+		writeJSON(w, 409, map[string]any{"error": map[string]any{"code": "guardrail_blocked", "message": err.Error(), "request_id": w.Header().Get("X-Aiport-Request-Id"), "extension": blocked.Extension, "reason": blocked.Reason}})
 	case errors.Is(err, decide.ErrOff):
 		fail(409, "adapting_off", err.Error())
 	case errors.Is(err, decide.ErrNotFound):
