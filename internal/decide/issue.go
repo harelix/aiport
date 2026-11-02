@@ -463,6 +463,10 @@ func (q *Queue) trackUnknownModels(c config.Config, symptoms []*symptom, at time
 	q.revertedFixes(now)
 	var offered []Item
 	seen := map[int]*symptom{}
+	appSuccess := map[string]int64{} // each Application's last successful call in the window
+	for _, s := range symptoms {
+		appSuccess[s.app] = max(appSuccess[s.app], s.lastSuccess)
+	}
 	for _, s := range symptoms {
 		i := q.issueFor(s.app, CauseUnknownModel, s.model)
 		if i >= 0 {
@@ -520,7 +524,12 @@ func (q *Queue) trackUnknownModels(c config.Config, symptoms []*symptom, at time
 		if s != nil && len(s.errors) > 0 {
 			after = max(after, s.errors[len(s.errors)-1].StartedAt) // errors below the threshold still mean it goes on
 		}
-		if (s == nil || s.lastSuccess <= after) && now-after < window.Milliseconds() {
+		if is.State == IssueResolving && is.ResolvingBy == ByApplicationFix {
+			// The Application's word is not enough: its calls must succeed.
+			if !confirmedByApplication(s, appSuccess[is.Application], after) {
+				continue
+			}
+		} else if (s == nil || s.lastSuccess <= after) && now-after < window.Milliseconds() {
 			continue
 		}
 		q.resolve(is, now)
