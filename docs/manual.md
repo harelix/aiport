@@ -124,8 +124,11 @@ On **Providers**:
   `aiport.yaml`, and is never shown again. Local Connections need no key.
 - **Check connection** (or **Check all** per group) sends one authenticated
   `GET /models` to the provider. It generates nothing and costs nothing; it
-  shows whether the provider is reachable and accepted the key. A passing
-  check does not prove every model works.
+  shows whether the provider is reachable and accepted the key. A failed
+  check says why: the connection error (host name does not resolve,
+  connection refused, TLS failed, timed out), or the HTTP status with the
+  provider's own error type (for example `HTTP 401, authentication_error`),
+  and what to do. A passing check does not prove every model works.
 - **Make OpenAI default** / **Make Anthropic default** sets the Connection a
   protocol uses when nothing else picks one.
 
@@ -304,6 +307,17 @@ records in memory for that session.
 Every response carries `X-Aiport-Request-Id`. When an application logs it,
 you can find the exact call in Activity.
 
+**Why a request failed.** For a failed request, Activity shows the reason
+next to the status, for example `503 · Refused: no Connection for the
+Anthropic protocol`. **Details** shows the code, what it means, what to do
+and a link to the page that fixes it. aiport keeps only short codes for
+this: its own refusal code, a connection error class, and the provider's
+error type (such as `rate_limit_error`) when the provider sends one. It
+never keeps the provider's error message, the request or the response.
+When the latest request on a route failed for a reason in your
+configuration, Overview shows one line with the reason and the fix; it goes
+away once a request there succeeds.
+
 ## Changes
 
 aiport adapts to the Applications that use it, but only with your approval.
@@ -437,16 +451,39 @@ text**. Nothing is sent on its own.
   longer valid: it should pair again.
 - **Calls show as `unknown` in Activity.** The application is not sending its
   own token (for example a shared or old one). Pair it.
-- **`503 target_unconfigured`.** No Connection serves that protocol for this
-  Application: set a protocol default on Routing, or use an SDK for a
-  protocol that is configured. aiport does not translate.
-- **`503 target_disabled` or `upstream_key_missing`.** Enable the Connection,
-  or paste its key on Providers.
-- **`502 upstream_unavailable` / `504 upstream_timeout`.** The provider could
-  not be reached in time; **Check connection** on Providers.
-- **A provider `404` for a model.** The model name is not one the provider
-  knows. Add an Alias, or wait for the Suggestion aiport makes when it keeps
-  happening.
+Activity's **Details** names the reason for every failed request. The
+reasons, and where each is fixed:
+
+| Activity says | Code | What to do |
+| --- | --- | --- |
+| Refused: no Connection for the Anthropic (or OpenAI) protocol | `503 target_unconfigured` | Routing → Protocol defaults: pick a Connection for that protocol, or bind the Application to one on Integrate. aiport does not translate between protocols. |
+| Refused: the Connection is disabled | `503 target_disabled` | Enable it on Providers, or pick another default on Routing. |
+| Refused: the Connection's settings are invalid | `503 target_invalid` | Correct its base URL on Providers. |
+| Refused: the Connection does not speak the … protocol | `400 incompatible_protocol` | Routing → Protocol defaults: pick a Connection of that protocol. |
+| Refused: no API key for the Connection | `503 upstream_key_missing` | Paste the key on the Connection's card on Providers. |
+| Refused: too many requests at once | `429 concurrency_limit` | Retry; raise `proxy.max_concurrent` if it persists. |
+| Refused: the request is too large | `413 request_too_large` | Send less, or raise `proxy.max_request_bytes`. |
+| Refused: the request body could not be read | `400 request_read_failed` | The Application stopped sending; retry. |
+| Refused: unknown compression method | `400 unknown_compression` | Use a method from the Compression page. |
+| Refused: the model name is ambiguous | `400 ambiguous_model` | Send one JSON object with one `model` field. |
+| Cannot reach the provider: its host name does not resolve | `502 upstream_unavailable`, `dns_failure` | Check the base URL on Providers and the network. |
+| Cannot reach the provider: connection refused | `502 upstream_unavailable`, `connection_refused` | Start the local server (Ollama, llama.cpp) or fix the port; **Check connection**. |
+| Cannot reach the provider: the secure connection (TLS) failed | `502 upstream_unavailable`, `tls_error` | Check the scheme and host name of the base URL. |
+| Cannot reach the provider: connecting timed out / the connection was closed | `502 upstream_unavailable`, `timeout` / `connection_reset` | Check the network and the base URL; retry. |
+| Timed out: the provider did not answer in time | `504 upstream_timeout` | Retry; for slow local models raise `proxy.response_header_timeout_ms`. |
+| Provider error: the key was rejected | provider `401`/`403` (`authentication_error`, `invalid_api_key`, `permission_error`) | Replace the key on Providers, then **Check connection**. |
+| Provider error: unknown model | provider `404` (`not_found_error`, `model_not_found`) | Use a model the provider lists, or add an Alias. aiport also suggests one when it keeps happening. |
+| Provider error: rate-limited | provider `429` (`rate_limit_error`) | Wait, or ask the provider for a higher limit. |
+| Provider error: out of quota or credit | `insufficient_quota`, `billing_error` | Check the plan and billing with the provider. |
+| Provider error: the request was not accepted | provider `400` (`invalid_request_error`) | Check the model name and parameters the Application sends. |
+| Provider error: the provider failed | provider `5xx` (`overloaded_error`, `api_error`) | Retry later; check the provider's status page. |
+| The response broke off | `incomplete` | Retry; raise `proxy.stream_idle_timeout_ms` for long answers. |
+| Cancelled by the Application | `499 client_cancelled` | Nothing to fix. |
+
+A request refused with `401 unauthorized` never reaches Activity (it has no
+Application to attribute it to): see the entry above, and pair the
+Application on Integrate.
+
 - **`403 change_requests_not_allowed`.** Allow the Application on the
   Integrate page if you want its requests.
 - **`409 adapting_off`.** The adapting loop is turned off in the

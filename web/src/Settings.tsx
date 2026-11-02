@@ -2,6 +2,7 @@ import React, {FormEvent, useState} from 'react';
 import {Activity, Check, ChevronRight, Cloud, Copy, HardDrive, Plus} from 'lucide-react';
 import {AuthenticationSettings} from './AuthGate';
 import {ProviderLogo} from './ProviderLogo';
+import type {Reason} from './Reason';
 import {ApplicationsPanel} from './Applications';
 import KeyField, {KeySource, keyBadge} from './KeyField';
 
@@ -67,7 +68,7 @@ async function mutate(method: string, path: string, body?: object) {
 }
 
 /** Result of POST /api/v1/targets/{id}/check (a free GET /models probe). */
-type Check = {ok: boolean; state: string; http_status?: number; models?: number; latency_ms: number; message: string; checked_at_ms: number};
+type Check = {ok: boolean; state: string; http_status?: number; models?: number; latency_ms: number; message: string; checked_at_ms: number; connection_error?: string; upstream_error_type?: string; reason?: Reason};
 type CheckState = Check | 'running' | {error: string};
 
 const checkTone = (c: Check) => c.state === 'ok' ? 'good' : c.ok ? 'warn' : 'bad';
@@ -78,7 +79,7 @@ function CheckResult({state}: {state?: CheckState}) {
   if (!state) return null;
   if (state === 'running') return <p className="check-result" role="status">Checking…</p>;
   if ('error' in state) return <p className="check-result" role="alert"><span className="badge bad">Check failed</span> {state.error}</p>;
-  return <p className="check-result" role="status"><span className={'badge ' + checkTone(state)}>{checkLabel(state)}</span> {state.message}{state.models !== undefined && ' ' + state.models + ' model' + (state.models === 1 ? '' : 's') + ' listed.'} <small>{state.latency_ms} ms · {new Date(state.checked_at_ms).toLocaleTimeString()}</small></p>;
+  return <p className="check-result" role="status"><span className={'badge ' + checkTone(state)}>{checkLabel(state)}</span> {state.message}{state.models !== undefined && ' ' + state.models + ' model' + (state.models === 1 ? '' : 's') + ' listed.'} <small>{state.latency_ms} ms · {new Date(state.checked_at_ms).toLocaleTimeString()}</small>{state.reason && <span className="check-reason">{state.reason.explanation} {state.reason.fix && <><b>What to do:</b> {state.reason.fix}</>}</span>}</p>;
 }
 
 /** Region / endpoint / protocol fields shared by the add and edit forms. */

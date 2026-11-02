@@ -652,3 +652,11 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .wizard-heading .badge{flex-shrink:0}
 .wizard-follows{padding:0 24px 4px;margin:0}
 @media(max-width:650px){.apps-tools{justify-content:flex-start}.apps-filter{min-width:0;width:100%}.apps-list .panel-heading{flex-wrap:wrap}}
+.reason-line{color:var(--bad)}
+.reason{margin:0 24px 16px;padding:12px 16px;border:1px solid var(--line);border-left:3px solid var(--bad);border-radius:0 var(--radius-sm) var(--radius-sm) 0;font-size:13px;line-height:1.6;color:var(--text-2)}
+.reason strong{display:block;color:var(--text);font-weight:600}
+.reason p{margin:4px 0}
+.reason b{color:var(--text);font-weight:600}
+.reason small{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:6px}
+.check-reason{display:block;margin-top:4px;color:var(--text-2)}
+.check-reason b{color:var(--text);font-weight:600}
