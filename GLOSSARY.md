@@ -44,9 +44,17 @@ Owner approves or rejects it.
 aiport proposing a change itself, from patterns in its request history, with
 the evidence that led to it.
 
+**Issue**
+A problem aiport keeps seeing for one Application, with its evidence and the
+ways to resolve it: a fix in aiport (offered as a Suggestion) and a fix in
+the Application, for its Coding agent. An Issue closes itself when the
+Application's calls succeed again.
+
 **Change**
 An approved Change request or Suggestion once it is applied to aiport's
-configuration. Every Change can be reverted.
+configuration. Every Change can be reverted. aiport applies a Change on its
+own only when the Owner allowed automatic fixes, and a reverted automatic
+fix is never applied automatically again.
 
 **Scope**
 Who a Change affects: only the requesting Application, or every Application.
