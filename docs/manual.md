@@ -723,7 +723,10 @@ to a working Connection).
     same string, in the same directory: `echo 'a b'` is not `echo a b`),
     until the agent changes a file, whether it asked to or not: an edit
     can change what the command does, so it asks again after one. Another
-    command, or the same one in a later run, asks again.
+    command, or the same one in a later run, asks again. aiport only sees
+    the edits the agent asks about or reports: a command you allowed that
+    changes files itself (a code generator, a formatter) does not end the
+    allowance, so choose Allow once for commands that write files.
   - **Deny**: the agent is told no and goes on without it.
 
   The agent runs an allowed command itself, in its own process, in the
