@@ -105,7 +105,8 @@ listens on and Sign out (or "Authentication off" when it is turned off).
 - **Changes**: open Issues, what waits for your decision and every
   configuration Change made through aiport, with Revert.
 - **Tasks**: a queue of work for coding agents; you own intent and priority.
-- **Settings**: sign-in, authentication and the configuration file.
+- **Settings**: sign-in, authentication, the Connection and model that
+  explain Issues, and the configuration file.
 
 ## Connections and keys
 
@@ -434,6 +435,42 @@ with the fix offered again.
 
 The badge on Changes counts an Issue only while its fix waits for you.
 
+#### Explain
+
+**Explain** on an Issue (on Changes, and under the Application's row on
+Integrate) writes its root cause in a few sentences. Without a Coding agent
+connected to the Application, aiport asks a Connection and model you choose
+once in **Settings → Explanations** (`adapting.explain` in `aiport.yaml`,
+for example a local Connection serving `llama3:8b`). Until you choose one,
+Explain is disabled with a hint saying so.
+
+- **What is sent**: only the Issue's evidence: the cause, the status and the
+  provider's error type, the counts and time window, example request ids,
+  the model name, the Connection ids and aiport's diagnosis (which
+  Connections list the model, and the models they list). Never keys,
+  tokens, the Application's id or name, prompts, provider messages or
+  anything else an Application wrote.
+- **Streaming**: the words appear as the model writes them. When it
+  finishes, the explanation is saved with the Issue, kept across restarts,
+  and shown with who wrote it. **Explain again** replaces it; if writing
+  fails or takes longer than 2 minutes, nothing is saved and an earlier
+  explanation stays. One explanation per Application is written at a time.
+- **Carried to the Coding agent**: the saved explanation is the "Root
+  cause" paragraph at the start of "Copy fix for the Coding agent", and
+  `aiport_my_issues` (and `GET /v1/aiport/issues`) give it to the
+  Application's Coding agent, in that text and as `explanation`.
+- **Activity**: the call shows in Activity under the built-in Application
+  `aiport` (no configured Application may use that id), with its
+  Connection, model, status and latency, like any other call. A remote
+  Connection bills explanations to its key; a local one keeps them on this
+  machine.
+
+For scripts: `PUT /api/v1/adapting/explainer` with `{"connection": "local",
+"model": "llama3:8b"}` chooses who writes (a revertable Change; both empty
+turns Explain off), and `POST /api/v1/issues/{id}/explain` streams JSON
+lines: `start` (who writes), `text` (the next words), then `done` (the
+Issue with its saved explanation) or `error`.
+
 ### Automatic fixes
 
 Automatic fixes are off by default. Turn them on with the **Automatic
@@ -477,7 +514,8 @@ management token gets `403`):
 - The MCP tool `aiport_my_issues`, or `GET /v1/aiport/issues` (and
   `GET /v1/aiport/issues/{id}` for one), lists that Application's open and
   recent Issues: what is wrong, the evidence, the fix in the Application
-  (the same text as "Copy fix for the Coding agent") and whether the aiport
+  (the same text as "Copy fix for the Coding agent"), the root cause when
+  you had the Issue explained (`explanation`) and whether the aiport
   fix is proposed, applied, rejected or reverted. An Application never sees
   another Application's Issues (their ids answer `404`), and never your
   notes.
@@ -581,7 +619,7 @@ With adapting off, aiport detects no Suggestions and opens no Issues, Changes
 shows nothing new,
 Change requests and `/v1/aiport/issues` answer `409 adapting_off`, the
 Issue tools are not offered over MCP, capabilities carry no `open_issues`,
-no hints are sent, and `/_connect` and both briefs mark change requests,
+no hints are sent, Explain is unavailable, and `/_connect` and both briefs mark change requests,
 Issues, their MCP tools and `X-Aiport-Hint` as off with the reason. Forwarding is unchanged, and Revert
 still works on earlier Changes. See [configuration](configuration.md) for
 the detector thresholds and the check interval.

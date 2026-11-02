@@ -148,6 +148,9 @@ type Issue struct {
 	// ApplicationFix is the fix in the Application, for its Coding agent
 	// (written by ApplicationFix).
 	ApplicationFix string `json:"application_fix"`
+	// Explanation is the root cause in words, written on the Owner's click
+	// (Queue.Explain); nil until then.
+	Explanation *Explanation `json:"explanation,omitempty"`
 	// ResolvingBy is the fix aiport waits to see working while resolving.
 	ResolvingBy How         `json:"resolving_by,omitempty"`
 	Resolution  *Resolution `json:"resolution,omitempty"`
@@ -299,11 +302,20 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 // "Copy fix for the Coding agent" all show this text). It holds only ids,
 // model names, counts, times and request ids: never prompts, provider
 // messages, keys or tokens.
+//
+// A saved explanation comes right after the first paragraph, saying who
+// wrote it.
 func ApplicationFix(is Issue) string {
-	if r, ok := causes[is.Cause]; ok {
-		return r.applicationFix(is)
+	r, ok := causes[is.Cause]
+	if !ok {
+		return ""
 	}
-	return ""
+	s := r.applicationFix(is)
+	if e := is.Explanation; e != nil && e.Text != "" {
+		head, rest, _ := strings.Cut(s, "\n\n")
+		s = head + "\n\n" + explanationText(*e) + "\n\n" + rest
+	}
+	return s
 }
 
 func unknownModelFix(is Issue) string {

@@ -39,6 +39,8 @@ type AgentIssue struct {
 	Diagnosis   *Diagnosis `json:"diagnosis,omitempty"`
 	// ApplicationFix is what to change in the Application (ApplicationFix).
 	ApplicationFix string `json:"application_fix"`
+	// Explanation is the saved root cause (also in ApplicationFix).
+	Explanation *Explanation `json:"explanation,omitempty"`
 	// AiportFix is the fix in aiport's configuration, if one is offered or
 	// was made: proposed (waiting for the Owner), applied, rejected or
 	// reverted.
@@ -54,7 +56,7 @@ type AgentIssue struct {
 func (is Issue) ForAgent() AgentIssue {
 	a := AgentIssue{
 		ID: is.ID, Application: is.Application, Cause: is.Cause, Subject: is.Subject, State: is.State,
-		Summary: is.Summary, Evidence: is.Evidence, Diagnosis: is.Diagnosis, ApplicationFix: is.ApplicationFix,
+		Summary: is.Summary, Evidence: is.Evidence, Diagnosis: is.Diagnosis, ApplicationFix: is.ApplicationFix, Explanation: is.Explanation,
 		ResolvingBy: is.ResolvingBy, Resolution: is.Resolution, SinceMS: is.SinceMS, CreatedAt: is.CreatedAt, UpdatedAt: is.UpdatedAt,
 	}
 	if f := is.Fix; f != nil {

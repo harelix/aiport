@@ -25,6 +25,9 @@ func (f modelFinder) Serves(ctx context.Context, protocol, model string) decide.
 //	GET  /api/v1/issues?state=&application=  Issues, newest first; state is open (default: open and resolving), resolving, resolved, dismissed or all
 //	POST /api/v1/issues/{id}                 {action: accept|reject|dismiss, note, target, model}: decide the aiport fix
 //
+// The listing says whether Explain is available ("explain": available,
+// and who writes, or a hint); POST /api/v1/issues/{id}/explain is explainRoute.
+//
 // The caller has already verified management access.
 func (h *Handler) issuesRoute(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) bool {
 	if r.URL.Path == "/api/v1/issues" {
@@ -47,7 +50,7 @@ func (h *Handler) issuesRoute(w http.ResponseWriter, r *http.Request, fail func(
 		if h.decisions != nil {
 			issues = h.decisions.Issues(f)
 		}
-		writeJSON(w, 200, map[string]any{"adapting": h.decisions != nil && h.decisions.On(), "auto_fix": h.live.Config().Adapting.AutoFix, "issues": issues})
+		writeJSON(w, 200, map[string]any{"adapting": h.decisions != nil && h.decisions.On(), "auto_fix": h.live.Config().Adapting.AutoFix, "explain": h.explainStatus(), "issues": issues})
 		return true
 	}
 	id, ok := strings.CutPrefix(r.URL.Path, "/api/v1/issues/")

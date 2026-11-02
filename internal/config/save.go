@@ -306,6 +306,27 @@ func SetAutoFix(on bool) Edit {
 	}
 }
 
+// SetExplainer sets (or, when empty, removes) adapting.explain: the
+// Connection and model that write Issue explanations.
+func SetExplainer(e Explainer) Edit {
+	return func(root *yaml.Node) error {
+		adapting := ensureNode(root, "adapting", yaml.MappingNode)
+		if e.Connection == "" && e.Model == "" {
+			for i := 0; i+1 < len(adapting.Content); i += 2 {
+				if adapting.Content[i].Value == "explain" {
+					adapting.Content = append(adapting.Content[:i], adapting.Content[i+2:]...)
+					break
+				}
+			}
+			return nil
+		}
+		m := ensureNode(adapting, "explain", yaml.MappingNode)
+		setScalar(m, "connection", e.Connection)
+		setScalar(m, "model", e.Model)
+		return nil
+	}
+}
+
 // SetHostnames sets (or, when empty, removes) the local names aiport
 // answers to; the first one is the address aiport hands out.
 func SetHostnames(names []string) Edit {

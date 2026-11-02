@@ -268,7 +268,7 @@ var mcpIssueTools = []map[string]any{
 	{
 		"name":        "aiport_my_issues",
 		"title":       "This Application's Issues",
-		"description": "Problems aiport keeps seeing with this Application's calls (open, being resolved, and recently resolved), newest first: what is wrong, the evidence, application_fix (what to change in this Application) and whether an aiport fix is proposed, applied or reverted; give id for just one. Check it at the start of a session. Same as GET " + IssuesPath + " and GET " + IssuesPath + "/{id}.",
+		"description": "Problems aiport keeps seeing with this Application's calls (open, being resolved, and recently resolved), newest first: what is wrong, the evidence, application_fix (what to change in this Application, starting with the root cause when the Owner had it explained), explanation (that root cause and who wrote it) and whether an aiport fix is proposed, applied or reverted; give id for just one. Check it at the start of a session. Same as GET " + IssuesPath + " and GET " + IssuesPath + "/{id}.",
 		"inputSchema": map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{"id": map[string]any{"type": "string", "description": "optional: one Issue's id"}},

@@ -22,6 +22,7 @@ export type SettingsConfig = {
   origins: {id: string; name: string; target: string; token_env: string; aliases?: {alias: string; target: string; model: string}[]}[];
   defaults: {openai_target?: string; anthropic_target?: string};
   evaluation?: {connection?: string; model?: string};
+  adapting?: {disabled?: boolean; explain?: {connection?: string; model?: string}};
 };
 type KeyResult = {secret_status: Record<string, boolean>; secret_source: Record<string, KeySource>};
 
@@ -405,10 +406,50 @@ export function AgentsPage({config, providers}: Props) {
   </section>;
 }
 
-/** Settings page: this aiport install (sign-in, configuration file). */
-export default function SettingsPage({config, onChange}: Props) {
+/**
+ * Who writes Issue explanations when no Coding agent explains them: a Connection and model the Owner chooses once.
+ * Explain sends only an Issue's evidence (error codes, counts, window, request ids, model name, Connection ids,
+ * diagnosis); the call shows in Activity under the built-in Application "aiport".
+ */
+function ExplainerPanel({config, providers, onChange}: {config: SettingsConfig | null; providers: ProviderSpec[]; onChange: () => void}) {
+  const saved = config?.adapting?.explain || {};
+  const [connection, setConnection] = useState(saved.connection || ''), [model, setModel] = useState(saved.model || '');
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
+  const targets = (config?.targets || []).filter(t => !t.disabled || t.id === saved.connection);
+  const chosen = targets.find(t => t.id === connection);
+  const name = (id: string) => providers.find(p => p.id === id)?.name || id;
+  const dirty = connection !== (saved.connection || '') || model !== (saved.model || '');
+  async function save(e: FormEvent) {
+    e.preventDefault(); setBusy(true); setError(''); setMessage('');
+    try {
+      await mutate('PUT', 'adapting/explainer', {connection, model: connection ? model.trim() : ''});
+      setMessage(connection ? 'Saved. Explain on an Issue now asks ' + connection + '.' : 'Explain is off until you choose a Connection.'); onChange();
+    } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
+  return <section className="panel">
+    <div className="panel-heading"><h2>Explanations</h2><span>The model that explains an Issue when no Coding agent does</span></div>
+    <form className="conn-form defaults-form" onSubmit={save}>
+      <div className="form-row">
+        <label>Connection<select value={connection} onChange={e => setConnection(e.target.value)}>
+          <option value="">None (Explain is unavailable)</option>
+          {targets.map(t => <option key={t.id} value={t.id}>{name(t.provider)} · {t.id}</option>)}
+        </select></label>
+        <label>Model <small>Any model this Connection serves</small><input value={model} onChange={e => setModel(e.target.value)} disabled={!connection} required={!!connection} maxLength={256} placeholder={chosen?.location === 'local' ? 'llama3:8b' : 'model id'} spellCheck={false} autoComplete="off"/></label>
+      </div>
+      <small>Explain sends only the Issue’s evidence: error codes, counts, the time window, request ids, the model name, Connection ids and aiport’s diagnosis. Never keys, tokens or anything an Application wrote. The call shows in Activity under the Application <code>aiport</code>.</small>
+      {chosen?.location === 'remote' && <p className="conn-note notice-inline">Explanations are billed to the {name(chosen.provider)} key. Choose a local Connection to keep them on this machine.</p>}
+      {config?.adapting?.disabled && <p className="conn-note notice-inline">Adapting is turned off in the configuration, so Explain is unavailable.</p>}
+      <Status error={error} message={message}/>
+      <div className="form-actions"><button className="primary" disabled={busy || !dirty || (!!connection && !model.trim())}>{busy ? 'Saving…' : 'Save'}</button></div>
+    </form>
+  </section>;
+}
+
+/** Settings page: this aiport install (sign-in, explanations, configuration file). */
+export default function SettingsPage({config, providers, onChange}: Props) {
   return <>
     <AuthenticationSettings username={config?.auth.username || ''} onChange={onChange}/>
+    <ExplainerPanel key={JSON.stringify(config?.adapting?.explain || {})} config={config} providers={providers} onChange={onChange}/>
     <section className="panel setup">
       <p className="eyebrow">CONFIGURATION</p>
       <h2>One configuration file. Clear ownership.</h2>

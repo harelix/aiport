@@ -316,6 +316,9 @@ func (c Config) Validate() error {
 		if !identifier.MatchString(o.ID) || origins[o.ID] {
 			return fmt.Errorf("origin %d has an invalid or duplicate id", i+1)
 		}
+		if o.ID == BuiltinApplication {
+			return fmt.Errorf("origin %d cannot be called %q: that is aiport's own built-in Application", i+1, BuiltinApplication)
+		}
 		origins[o.ID] = true
 		if strings.TrimSpace(o.Name) == "" || len(o.Name) > 128 || strings.ContainsAny(o.Name, "\r\n\x00") {
 			return fmt.Errorf("origin %d name must contain 1–128 bytes of text", i+1)
@@ -367,6 +370,14 @@ func (c Config) Validate() error {
 		}
 		if !boundedModel(e.Model) {
 			return errors.New("evaluation.model must name the model to use (1–256 characters)")
+		}
+	}
+	if e := c.Adapting.Explain; e.Connection != "" || e.Model != "" {
+		if _, ok := targets[e.Connection]; !ok {
+			return errors.New("adapting.explain.connection must name a configured connection")
+		}
+		if !boundedModel(e.Model) {
+			return errors.New("adapting.explain.model must name the model to use (1–256 characters)")
 		}
 	}
 	if err := c.Adapting.validate(); err != nil {
