@@ -94,8 +94,9 @@ listens on and Sign out (or "Authentication off" when it is turned off).
   request. Only metadata is recorded: time, route, model, status, latency.
 - **Providers**: your Connections, grouped Local and Remote.
 - **Routing**: protocol defaults and the Applications table.
-- **Integrate**: connecting an application, with the instructions aiport
-  writes for coding agents.
+- **Integrate**: your Applications (waiting, approved and rejected),
+  onboarding a new one, and the instructions aiport writes for coding
+  agents.
 - **Compression**: opt-in request compression and whether it hurts answers
   (see [compression](compression.md)).
 - **Agents**: coding agents launched through `aiport agent`, each with its
@@ -162,8 +163,9 @@ An Application gets its token by **pairing**:
 
 1. It asks aiport (`POST /v1/aiport/pair` with its name; no token needed) and
    shows you a short code.
-2. The request appears on the **Integrate** page (and in the Applications
-   table on Routing) with that code. Check the application shows the same
+2. The request appears at the top of the Applications list on the
+   **Integrate** page (and in the Applications table on Routing) with that
+   code. Check the application shows the same
    code. Optionally choose a Connection to bind it to and tick **May request
    changes**, then **Approve**, or **Reject**.
 3. The application collects its token once. aiport adds it to the
@@ -174,20 +176,53 @@ Unapproved requests expire after 10 minutes. The Applications table on
 Routing lists every Application with its client id, Connection, own Aliases,
 and the **May request changes** toggle.
 
+A request you **Reject** is remembered: the Application learns it was
+rejected, and aiport keeps its name, description, code and the time (never a
+token), the newest 100, across restarts. See them on the Integrate page with
+the **Rejected** filter, where **Forget** removes one. A rejected
+Application may ask to pair again.
+
 ## The Integrate page and the two briefs
 
-The **Integrate** page is where you connect an application. You do not have
-to write instructions for the coding agent doing the work: aiport writes
-them itself, from this gateway's real address and configured protocols, and
-serves them at `/_connect`:
+The **Integrate** page is where you connect an application. On a wide
+screen it has two columns: your **Applications** and the onboarding wizard
+on the left, and a narrow strip with the **Instructions** on the right (on a
+narrow screen the strip moves below).
+
+### Applications
+
+- **Pairing requests waiting** are always at the top, each with its code,
+  **Approve** (optionally binding a Connection and allowing change requests)
+  and **Reject**.
+- The list shows each approved Application: name, client id, Connection (or
+  the protocol default), the **May request changes** toggle, its last call
+  (in the last 7 days, when activity recording is on) and its onboarding
+  progress, such as `3/5`.
+- The **Approved / Rejected / All** filter picks what the list shows.
+  Rejected Applications are hidden until you choose **Rejected** or **All**;
+  each shows when it was rejected, with **Forget**.
+- Select an Application to have the wizard follow it. **Onboard a new
+  application** makes the wizard follow a new one.
+
+### The instructions
+
+You do not have to write instructions for the coding agent doing the work:
+aiport writes them itself, from this gateway's real address and configured
+protocols, and serves them at `/_connect`. The strip shows two tiles,
+collapsed at first; each shows who the brief is for, **Copy whole brief**
+(the brief as markdown, to paste to the coding agent) and its address. Open
+a tile to see its steps and snippets, each with its own **Copy**.
 
 - **Application brief** (`/_connect?format=handover&for=application`): for
   the coding agent changing an application so its LLM calls go through
   aiport. It covers pairing, configuration (`AIPORT_BASE_URL`,
   `AIPORT_APP_TOKEN`), pointing the OpenAI or Anthropic SDK at aiport,
   removing provider keys from the application, model names and Aliases,
-  errors and retries, logging `X-Aiport-Request-Id`, and how to verify.
-- **Coding-agent brief** (`/_connect?format=handover&for=agent`): for coding
+  errors and retries, logging `X-Aiport-Request-Id`, and how to verify. Its
+  **Python / TypeScript / curl** picker switches the SDK snippets. Snippets
+  for a protocol this gateway has not configured are marked "not
+  configured".
+- **Coding agent brief** (`/_connect?format=handover&for=agent`): for coding
   agents working in that application's repository later. It covers the
   project MCP entry (which reads the token from `${AIPORT_APP_TOKEN}`, never
   the value), the line for the repository's `AGENTS.md`, the tools
@@ -202,8 +237,11 @@ serves them at `/_connect`:
 The quickest way: give the coding agent **one instruction** that points at
 `/_connect?format=markdown`. That document opens with a **Start here**
 section and holds everything for both parts, so the agent needs nothing
-else. The **Onboard an application** wizard at the top of the Integrate page
-walks you through it; the step to do now is highlighted, and each step ticks
+else. The **Onboard an application** wizard below the Applications list
+walks you through it. It is open while you have no Applications and
+whenever a pairing request waits; otherwise it is collapsed, and its header
+says where things stand ("1 pairing waiting", or the followed Application
+and its progress). The step to do now is highlighted, and each step ticks
 itself from live state:
 
 1. **Hand this to the coding agent.** Open the coding agent (Claude Code,
@@ -216,28 +254,18 @@ itself from live state:
    text, with your gateway's address, is also at the top of the markdown
    document and in the `/_connect` JSON as `agent_prompt`.
 2. **Approve the pairing.** The agent asks aiport to pair; the request shows
-   up in the wizard within seconds with a short code. Check it matches the
-   code the agent shows you, then **Approve** (optionally binding a
-   Connection and allowing change requests). Requests expire after 10
-   minutes. Once approved, the wizard follows that application.
+   up at the top of Applications within seconds with a short code. Check it
+   matches the code the agent shows you, then **Approve** (optionally
+   binding a Connection and allowing change requests). Requests expire after
+   10 minutes. Once approved, the wizard follows that application.
 3. **First call arrives.** The agent makes one real call; the step ticks
    when Activity has a call from the application (in the last 7 days).
 4. **Allow change requests** (optional), with the toggle in place. You still
    decide each request in Changes.
 5. **MCP entry in the repository** (optional): the agent adds it in step 1;
-   tick it by hand, or copy it from the Coding agent tab.
+   tick it by hand, or copy it from the **Coding agent brief** tile.
 
-Pick an existing application in the wizard's **Application** menu to see how
-far it got.
-
-### The briefs on the page
-
-- **Application** and **Coding agent** tabs show each brief. **Copy whole
-  brief** copies it as markdown to paste to the coding agent; you can also
-  give the agent the brief's address. Each snippet has its own **Copy**.
-- The **Python / TypeScript / curl** picker switches the SDK snippets.
-  Snippets for a protocol this gateway has not configured are marked "not
-  configured".
+Select an existing application in the list to see how far it got.
 
 ## Aliases
 

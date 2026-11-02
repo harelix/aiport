@@ -8,6 +8,8 @@ import {AppWindow} from 'lucide-react';
 export type Pairing = {code: string; name: string; description?: string; requested_at_ms: number; expires_at_ms: number};
 export type Origin = {id: string; name: string; target?: string; aliases?: {alias: string; target: string; model: string}[]; may_request_changes?: boolean};
 export type Target = {id: string; disabled?: boolean};
+/** A pairing request the Owner rejected, kept so it can still be seen (no secrets). */
+export type Rejected = {id: string; code: string; name: string; description?: string; rejected_at_ms: number};
 
 async function post(path: string, body?: object, method = 'POST') {
   const r = await fetch('/api/v1/' + path, {method, credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-Aiport-CSRF': '1'}, body: body ? JSON.stringify(body) : undefined});
@@ -71,6 +73,20 @@ export function usePairings(): [Pairing[], () => void] {
   }, [tick]);
   return [pairings, () => setTick(x => x + 1)];
 }
+
+/** Rejected pairing requests, newest first; refetched when tick changes. */
+export function useRejected(tick: number): [Rejected[], () => void] {
+  const [list, setList] = useState<Rejected[]>([]), [own, setOwn] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/v1/pairings?status=rejected', {credentials: 'same-origin', signal: controller.signal}).then(r => r.ok ? r.json() : {pairings: []}).then(d => setList(d.pairings || [])).catch(() => {});
+    return () => controller.abort();
+  }, [tick, own]);
+  return [list, () => setOwn(x => x + 1)];
+}
+
+/** Forget one rejected Application (it may ask to pair again either way). */
+export const forgetRejected = (id: string) => post('pairings/rejected/' + encodeURIComponent(id), undefined, 'DELETE');
 
 /** Pending pairings with Approve / Reject. */
 export function PairingList({pairings, targets, onDone}: {pairings: Pairing[]; targets: Target[]; onDone: () => void}) {

@@ -1,21 +1,25 @@
-import React, {useEffect, useState} from 'react';
-import {BookOpen, Check, CircleCheck, CircleDashed, Copy, ExternalLink} from 'lucide-react';
-import {MayRequestToggle, Origin, PairingList, Target, usePairings} from './Applications';
+import React, {useEffect, useRef, useState} from 'react';
+import {AppWindow, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, Plus, Terminal} from 'lucide-react';
+import {forgetRejected, MayRequestToggle, Origin, Pairing, PairingList, Rejected, Target, usePairings, useRejected} from './Applications';
 import {Inline} from './markdown';
 
-/* The Integrate page: the two briefs aiport serves at /_connect, made
-   interactive. Everything shown comes from the live /_connect document, so
-   the page always matches this gateway. */
+/* The Integrate page. Main column: the Applications (waiting pairings,
+   approved and, behind a filter, rejected ones) and the onboarding wizard,
+   which follows the Application selected in the list. Right column: the two
+   briefs aiport serves at /_connect, as collapsed tiles. Everything shown
+   comes from live state, so the page always matches this gateway. */
 
 type Snippet = {id: string; title: string; language: string; sdk?: string; protocol?: string; available: boolean; code: string};
 type Brief = {for: string; title: string; intro: string; steps: string[]; snippets: Snippet[]; note: string};
 type BriefLink = {for: string; title: string; audience: string; url: string};
 type ConnectDoc = {docs: string; agent_prompt: string; protocols: {name: string; available: boolean}[]; integration: Brief; agent_integration: Brief; briefs: BriefLink[]; adapting: boolean};
 type Language = 'python' | 'typescript' | 'curl';
-type Tab = 'application' | 'agent';
+type Filter = 'approved' | 'rejected' | 'all';
 
 const NEW = '';
+const STEPS = 5;
 const LANGUAGES: [Language, string][] = [['python', 'Python'], ['typescript', 'TypeScript'], ['curl', 'curl']];
+const FILTERS: [Filter, string][] = [['approved', 'Approved'], ['rejected', 'Rejected'], ['all', 'All']];
 const LANGUAGE_KEY = 'aiport.integrate.language';
 const COPIED_KEY = 'aiport.integrate.mcp-copied.';
 
@@ -25,6 +29,8 @@ function remember(key: string, value?: string): string {
     return localStorage.getItem(key) || '';
   } catch { return value || ''; }
 }
+
+const local = (url: string) => url.replace(/^https?:\/\/[^/]+/, '');
 
 export function CopyButton({text, label, onCopied}: {text: string; label: string; onCopied?: () => void}) {
   const [copied, setCopied] = useState(false);
@@ -43,26 +49,33 @@ function SnippetBlock({s, onCopied}: {s: Snippet; onCopied?: () => void}) {
   </figure>;
 }
 
-type Seen = 'loading' | 'off' | number | null;
+/** The latest call (last seven days) of each Application: a time, null for
+    none, or undefined while loading. off: activity recording is off. */
+type Calls = {off: boolean; at: Record<string, number | null | undefined>};
 
-/** Has aiport seen a call from this Application in the last seven days? */
-function useFirstCall(app: string, tick: number): Seen {
-  const [seen, setSeen] = useState<Seen>('loading');
+function useLastCalls(ids: string[], tick: number): Calls {
+  const [calls, setCalls] = useState<Calls>({off: false, at: {}});
+  const key = ids.join('\n');
   useEffect(() => {
-    if (!app) { setSeen(null); return; }
+    if (!ids.length) { setCalls({off: false, at: {}}); return; }
     const controller = new AbortController();
-    const q = new URLSearchParams({origin: app, hours: '168', limit: '1'});
+    const opts = {credentials: 'same-origin' as const, signal: controller.signal};
     Promise.all([
-      fetch('/api/v1/requests?' + q, {credentials: 'same-origin', signal: controller.signal}).then(r => r.ok ? r.json() : {requests: []}),
-      fetch('/api/v1/stats?hours=1', {credentials: 'same-origin', signal: controller.signal}).then(r => r.ok ? r.json() : {}) as Promise<{telemetry?: {state?: string}}>,
-    ]).then(([calls, stats]) => {
-      if (stats.telemetry?.state === 'disabled') setSeen('off');
-      else setSeen(calls.requests?.[0]?.started_at_ms ?? null);
-    }).catch(() => {});
+      fetch('/api/v1/stats?hours=1', opts).then(r => r.ok ? r.json() : {}) as Promise<{telemetry?: {state?: string}}>,
+      ...ids.map(id => fetch('/api/v1/requests?' + new URLSearchParams({origin: id, hours: '168', limit: '1'}), opts)
+        .then(r => r.ok ? r.json() : {requests: []}).then(d => [id, d.requests?.[0]?.started_at_ms ?? null] as const)),
+    ]).then(([stats, ...latest]) => setCalls({off: stats.telemetry?.state === 'disabled', at: Object.fromEntries(latest)})).catch(() => {});
     return () => controller.abort();
-  }, [app, tick]);
-  return seen;
+  }, [key, tick]);
+  return calls;
 }
+
+/** Which of the five onboarding steps are done for an Application. */
+function progress(o: Origin | undefined, opts: {handed: boolean; waiting: boolean; seen: number | null | undefined; adapting: boolean; mcp: boolean}): boolean[] {
+  return [!!o || opts.handed || opts.waiting, !!o, typeof opts.seen === 'number', !!o?.may_request_changes && opts.adapting, opts.mcp];
+}
+
+const mcpCopied = (id: string) => remember(COPIED_KEY + id) === '1';
 
 function Step({n, done, current, title, children}: {n: number; done: boolean; current: boolean; title: string; children: React.ReactNode}) {
   return <li className={'step' + (done ? ' done' : '') + (current ? ' current' : '')} aria-current={current ? 'step' : undefined}>
@@ -71,119 +84,230 @@ function Step({n, done, current, title, children}: {n: number; done: boolean; cu
   </li>;
 }
 
+const ago = (ms: number) => {
+  const m = Math.round((Date.now() - ms) / 60000);
+  return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 48 * 60 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' days ago';
+};
+
+function RejectedRow({x, onDone}: {x: Rejected; onDone: () => void}) {
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  async function forget() {
+    setBusy(true); setError('');
+    try { await forgetRejected(x.id); onDone(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <tr className="rejected-row">
+    <td><strong>{x.name}</strong>{x.description && <small className="muted">{x.description}</small>}</td>
+    <td><span className="pair-code small">{x.code}</span></td>
+    <td><span className="badge bad">Rejected</span></td>
+    <td title={new Date(x.rejected_at_ms).toLocaleString()}>{ago(x.rejected_at_ms)}</td>
+    <td className="row-actions"><button type="button" className="text-button" disabled={busy} onClick={forget} aria-label={'Forget ' + x.name}>Forget</button>{error && <small className="auth-error" role="alert">{error}</small>}</td>
+  </tr>;
+}
+
+/* The Applications list: waiting pairings first (always shown), then the
+   approved Applications; rejected ones only behind the filter. Selecting an
+   Application makes the wizard follow it. */
+function ApplicationsList({origins, targets, pairings, rejected, calls, app, onSelect, onNew, adapting, onDone, onForgot}: {
+  origins: Origin[]; targets: Target[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; app: string;
+  onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void;
+}) {
+  const [filter, setFilter] = useState<Filter>('approved');
+  const counts: Record<Filter, number> = {approved: origins.length, rejected: rejected.length, all: origins.length + rejected.length};
+  const showApproved = filter !== 'rejected', showRejected = filter !== 'approved';
+  const lastCall = (id: string) => calls.off ? 'Not recorded' : calls.at[id] === undefined ? '…' : calls.at[id] === null ? 'None in 7 days' : ago(calls.at[id] as number);
+  return <section className="panel apps-list" aria-labelledby="apps-heading">
+    <div className="panel-heading">
+      <h2 id="apps-heading"><AppWindow size={16} aria-hidden/> Applications</h2>
+      <div className="apps-tools">
+        <div className="segmented apps-filter" role="radiogroup" aria-label="Show applications">
+          {FILTERS.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={filter === value} className={filter === value ? 'on' : ''} onClick={() => setFilter(value)}>{label} <span className="count">{counts[value]}</span></button>)}
+        </div>
+        <button type="button" className="secondary with-icon" onClick={onNew} aria-pressed={app === NEW}><Plus size={14} aria-hidden/> Onboard a new application</button>
+      </div>
+    </div>
+    {pairings.length > 0 && <div className="waiting" role="region" aria-label="Pairing requests waiting">
+      <h3 className="waiting-heading"><span className="dot amber" aria-hidden/> {pairings.length === 1 ? '1 pairing waiting for approval' : pairings.length + ' pairings waiting for approval'}</h3>
+      <PairingList pairings={pairings} targets={targets} onDone={onDone}/>
+    </div>}
+    {showApproved && origins.length > 0 && <div className="table-scroll"><table aria-label="Approved applications">
+      <thead><tr><th>Application</th><th>Client id</th><th>Connection</th><th>May request changes</th><th>Last call</th><th>Onboarding</th></tr></thead>
+      <tbody>{origins.map(o => {
+        const done = progress(o, {handed: true, waiting: false, seen: calls.at[o.id], adapting, mcp: mcpCopied(o.id)}).filter(Boolean).length;
+        const selected = app === o.id;
+        return <tr key={o.id} className={'app-row' + (selected ? ' selected' : '')} onClick={e => { if (!(e.target as HTMLElement).closest('input,button,a,label')) onSelect(o.id); }}>
+          <td><button type="button" className="row-select" aria-pressed={selected} onClick={() => onSelect(o.id)} title="Follow this application in the onboarding wizard">{o.name}</button></td>
+          <td><code>{o.id}</code></td>
+          <td>{o.target ? <code>{o.target}</code> : <span className="muted">Protocol default</span>}</td>
+          <td><MayRequestToggle o={o} onDone={onDone}/></td>
+          <td title={typeof calls.at[o.id] === 'number' ? new Date(calls.at[o.id] as number).toLocaleString() : undefined}>{lastCall(o.id)}</td>
+          <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
+        </tr>;
+      })}</tbody>
+    </table></div>}
+    {showRejected && rejected.length > 0 && <div className="table-scroll rejected-table"><table aria-label="Rejected applications">
+      <thead><tr><th>Rejected application</th><th>Code</th><th>Status</th><th>Rejected</th><th><span className="sr-only">Actions</span></th></tr></thead>
+      <tbody>{rejected.map(x => <RejectedRow key={x.id} x={x} onDone={onForgot}/>)}</tbody>
+    </table></div>}
+    {!pairings.length && !(showApproved && origins.length) && !(showRejected && rejected.length) && <p className="quiet-empty">{filter === 'rejected'
+      ? 'No rejected applications. A pairing request you reject is listed here, so you can see who asked.'
+      : 'No applications yet. Onboard one below: hand the instruction to the coding agent of an application; when it pairs, its request appears here for you to approve.'}</p>}
+  </section>;
+}
+
 /* The onboarding wizard: what the Owner does, in order, to connect one
    application. Each step ticks itself from live state; the first step not
-   done is the one to do now. */
-function Wizard({origins, targets, app, setApp, adapting, prompt, docs, mcpCopied, setMcpCopied, tick, onChange, onAgentTab}: {
-  origins: Origin[]; targets: Target[]; app: string; setApp: (id: string) => void; adapting: boolean; prompt: string; docs: string;
-  mcpCopied: boolean; setMcpCopied: (v: boolean) => void; tick: number; onChange: () => void; onAgentTab: () => void;
+   done is the one to do now. Collapsible; its header says where things are. */
+function Wizard({origins, app, setApp, pairings, seen, off, adapting, prompt, docs, mcp, setMcp, open, setOpen, onDone, onAgentBrief}: {
+  origins: Origin[]; app: string; setApp: (id: string) => void; pairings: Pairing[]; seen: number | null | undefined; off: boolean; adapting: boolean;
+  prompt: string; docs: string; mcp: boolean; setMcp: (v: boolean) => void; open: boolean; setOpen: (v: boolean) => void; onDone: () => void; onAgentBrief: () => void;
 }) {
-  const [pairings, refresh] = usePairings();
   const [handed, setHanded] = useState(false);
-  const known = React.useRef(new Set(origins.map(x => x.id)));
+  const o = origins.find(x => x.id === app);
+  const steps = progress(o, {handed, waiting: pairings.length > 0, seen, adapting, mcp});
+  const current = steps.findIndex(x => !x), done = steps.filter(Boolean).length;
+  const summary = pairings.length ? (pairings.length === 1 ? '1 pairing waiting' : pairings.length + ' pairings waiting')
+    : o ? (current < 0 ? o.name + ' is onboarded' : o.name + ' · ' + done + '/' + STEPS)
+    : 'A new application';
+  return <section className="panel wizard" aria-labelledby="wizard-heading">
+    <div className="panel-heading wizard-heading">
+      <h2 id="wizard-heading"><button type="button" className="group-toggle" aria-expanded={open} aria-controls="wizard-body" onClick={() => setOpen(!open)}>
+        <ChevronRight size={16} strokeWidth={2} aria-hidden className="chevron"/>Onboard an application</button></h2>
+      <span className={'badge' + (pairings.length ? ' warn' : current < 0 && o ? ' good' : ' info')}>{summary}</span>
+    </div>
+    {open && <div id="wizard-body">
+      <p className="wizard-follows muted-small">Following <strong>{o ? o.name : 'a new application'}</strong>{o && <> · <button type="button" className="text-button" onClick={() => setApp(NEW)}>Onboard a new application instead</button></>}. Select an application in the list to follow it.</p>
+      <ol className="steps">
+        <Step n={1} done={steps[0]} current={current === 0} title="Hand this to the coding agent">
+          <p>Open the coding agent (Claude Code, Codex, Cursor…) <strong>in the application's repository</strong> and paste this instruction. It tells the agent to read <a href={local(docs)} target="_blank" rel="noreferrer"><code>{docs}</code></a>, which aiport writes from this gateway and which holds everything for both parts: wiring the application's LLM calls through aiport, and letting later sessions ask aiport for changes.</p>
+          <blockquote className="agent-prompt">{prompt}</blockquote>
+          <div className="button-row"><CopyButton text={prompt} label="Copy instruction" onCopied={() => setHanded(true)}/><CopyButton text={docs} label="Copy URL only"/></div>
+        </Step>
+        <Step n={2} done={steps[1]} current={current === 1} title="Approve the pairing">
+          {o ? <>Connected as <code>{o.id}</code>{o.target ? <>, bound to <code>{o.target}</code></> : ', using the protocol defaults'}.</>
+            : pairings.length > 0 ? <>The agent asked to pair: the request waits at the top of <strong>Applications</strong> above, with code{pairings.length > 1 ? 's' : ''} {pairings.map(p => <span key={p.code} className="pair-code small">{p.code}</span>)}. Check it matches the code the agent shows you, then approve it there; you can bind a Connection and allow change requests.</>
+            : <>Waiting for the agent to ask. Its request appears at the top of Applications within a few seconds, with a short code; requests expire after 10 minutes.</>}
+        </Step>
+        <Step n={3} done={steps[2]} current={current === 2} title="First call arrives">
+          {!o ? 'After pairing, the agent makes one real call through aiport.'
+            : off ? <>Activity recording is off (<code>telemetry.enabled: false</code>), so aiport cannot tell. Ask the agent whether its test call succeeded.</>
+            : seen === undefined ? 'Checking…'
+            : typeof seen === 'number' ? <>Latest call {new Date(seen).toLocaleString()}. The application now goes through aiport.</>
+            : 'No call from this application in the last 7 days yet. If its calls show as unknown in Activity, it is not sending its own token.'}
+        </Step>
+        <Step n={4} done={steps[3]} current={current === 3} title="Allow change requests (optional)">
+          {!o ? 'Once paired, decide whether coding agents in its repository may ask you for changes.'
+            : !adapting ? <>Adapting is turned off in the configuration (<code>adapting.disabled</code>), so no Application can request changes now.</>
+            : <><MayRequestToggle o={o} onDone={onDone}/> You still decide each request on the Changes page.</>}
+        </Step>
+        <Step n={5} done={steps[4]} current={current === 4} title="MCP entry in the repository (optional)">
+          <label className="check-label compact"><input type="checkbox" checked={mcp} onChange={e => setMcp(e.target.checked)}/>The agent adds it as part of step 1. To do it by hand, copy it from the <button type="button" className="text-button" onClick={onAgentBrief}>Coding agent brief</button>.</label>
+        </Step>
+      </ol>
+      {current < 0 && <p className="notice" role="status"><CircleCheck size={16} aria-hidden/> This application is onboarded.</p>}
+    </div>}
+  </section>;
+}
+
+/* One brief as a tile in the right strip: collapsed it shows the title,
+   who it is for, Copy whole brief and the URL; expanded, its steps and
+   snippets. */
+function BriefTile({id, title, short, icon, brief, link, open, setOpen, snippets, picker, onSnippetCopied}: {
+  id: string; title: string; short: string; icon: React.ReactNode; brief: Brief; link?: BriefLink; open: boolean; setOpen: (v: boolean) => void;
+  snippets: Snippet[]; picker?: React.ReactNode; onSnippetCopied?: (s: Snippet) => void;
+}) {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    if (!link) return;
+    fetch(local(link.url), {credentials: 'same-origin'}).then(r => r.ok ? r.text() : '').then(setText).catch(() => {});
+  }, [link?.url, brief]);
+  return <section className={'tile' + (open ? ' open' : '')} id={'tile-' + id} aria-labelledby={'tile-heading-' + id}>
+    <div className="tile-head">
+      <span className="group-icon" aria-hidden>{icon}</span>
+      <div className="tile-title">
+        <h3 id={'tile-heading-' + id}><button type="button" className="group-toggle" aria-expanded={open} aria-controls={'tile-body-' + id} onClick={() => setOpen(!open)}>
+          <ChevronRight size={15} strokeWidth={2} aria-hidden className="chevron"/>{title}</button></h3>
+        <p className="tile-audience" title={link?.audience}>{short}</p>
+      </div>
+    </div>
+    <div className="tile-actions">
+      <CopyButton text={text} label="Copy whole brief"/>
+      {link && <a className="tile-url" href={local(link.url)} target="_blank" rel="noreferrer" title="Open the brief"><code>{local(link.url)}</code><ExternalLink size={12} aria-hidden/></a>}
+    </div>
+    {open && <div className="brief tile-body" id={'tile-body-' + id}>
+      {link?.audience && <p className="muted-small">{link.audience}</p>}
+      <p><Inline text={brief.intro}/></p>
+      <ol>{brief.steps.map((s, i) => <li key={i}><Inline text={s}/></li>)}</ol>
+      <div className="snippets-heading"><h4>Snippets</h4>{picker}</div>
+      {snippets.map(s => <SnippetBlock key={s.id} s={s} onCopied={() => onSnippetCopied?.(s)}/>)}
+      <p className="muted-small"><Inline text={brief.note}/></p>
+    </div>}
+  </section>;
+}
+
+export default function IntegratePage({origins, targets, tick, onChange, onManual}: {origins: Origin[]; targets: Target[]; tick: number; onChange: () => void; onManual: () => void}) {
+  const [doc, setDoc] = useState<ConnectDoc | null>(null), [error, setError] = useState('');
+  const [language, setLanguage] = useState<Language>(() => (['python', 'typescript', 'curl'].includes(remember(LANGUAGE_KEY)) ? remember(LANGUAGE_KEY) : 'python') as Language);
+  const [app, setApp] = useState(NEW);
+  const [mcp, setMcpState] = useState(() => mcpCopied(NEW));
+  const [pairings, refreshPairings] = usePairings();
+  const [rejected, refreshRejected] = useRejected(tick);
+  const calls = useLastCalls(origins.map(o => o.id), tick);
+  // The wizard starts collapsed once an Application exists; null = not chosen yet.
+  const [wizardOpen, setWizardOpen] = useState<boolean | null>(null);
+  const [appTile, setAppTile] = useState(false), [agentTile, setAgentTile] = useState(false);
+  const wizardRef = useRef<HTMLDivElement>(null);
+  const known = useRef(new Set(origins.map(x => x.id)));
+  const waiting = pairings.length > 0;
+
+  useEffect(() => { setMcpState(mcpCopied(app)); }, [app]);
+  const setMcp = (v: boolean) => { remember(COPIED_KEY + app, v ? '1' : '0'); setMcpState(v); };
   // An application approved while onboarding "a new application" becomes the one followed.
   useEffect(() => {
     const added = origins.find(x => !known.current.has(x.id));
     origins.forEach(x => known.current.add(x.id));
     if (added && app === NEW) setApp(added.id);
   }, [origins]);
-  const seen = useFirstCall(app, tick);
-  const o = origins.find(x => x.id === app);
-  const done = () => { refresh(); onChange(); };
-  const steps = [!!o || handed || pairings.length > 0, !!o, typeof seen === 'number', !!o?.may_request_changes && adapting, mcpCopied];
-  const current = steps.findIndex(x => !x);
-  return <section className="panel wizard" aria-labelledby="wizard-heading">
-    <div className="panel-heading"><h2 id="wizard-heading">Onboard an application</h2>
-      <label className="inline-select">Application
-        <select value={app} onChange={e => setApp(e.target.value)}>
-          <option value={NEW}>A new application</option>
-          {origins.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
-        </select>
-      </label>
-    </div>
-    <ol className="steps">
-      <Step n={1} done={steps[0]} current={current === 0} title="Hand this to the coding agent">
-        <p>Open the coding agent (Claude Code, Codex, Cursor…) <strong>in the application's repository</strong> and paste this instruction. It tells the agent to read <a href={docs.replace(/^https?:\/\/[^/]+/, '')} target="_blank" rel="noreferrer"><code>{docs}</code></a>, which aiport writes from this gateway and which holds everything for both parts: wiring the application's LLM calls through aiport, and letting later sessions ask aiport for changes.</p>
-        <blockquote className="agent-prompt">{prompt}</blockquote>
-        <div className="button-row"><CopyButton text={prompt} label="Copy instruction" onCopied={() => setHanded(true)}/><CopyButton text={docs} label="Copy URL only"/></div>
-      </Step>
-      <Step n={2} done={steps[1]} current={current === 1} title="Approve the pairing">
-        {o ? <>Connected as <code>{o.id}</code>{o.target ? <>, bound to <code>{o.target}</code></> : ', using the protocol defaults'}.</>
-          : pairings.length > 0 ? <><p>The agent asked to pair. Check the code matches the one the agent shows you, then approve. You can bind a Connection and allow change requests here.</p><PairingList pairings={pairings} targets={targets} onDone={done}/></>
-          : <>Waiting for the agent to ask. Its request appears here within a few seconds, with a short code; requests expire after 10 minutes.</>}
-      </Step>
-      <Step n={3} done={steps[2]} current={current === 2} title="First call arrives">
-        {!o ? 'After pairing, the agent makes one real call through aiport.'
-          : seen === 'loading' ? 'Checking…'
-          : seen === 'off' ? <>Activity recording is off (<code>telemetry.enabled: false</code>), so aiport cannot tell. Ask the agent whether its test call succeeded.</>
-          : typeof seen === 'number' ? <>Latest call {new Date(seen).toLocaleString()}. The application now goes through aiport.</>
-          : 'No call from this application in the last 7 days yet. If its calls show as unknown in Activity, it is not sending its own token.'}
-      </Step>
-      <Step n={4} done={steps[3]} current={current === 3} title="Allow change requests (optional)">
-        {!o ? 'Once paired, decide whether coding agents in its repository may ask you for changes.'
-          : !adapting ? <>Adapting is turned off in the configuration (<code>adapting.disabled</code>), so no Application can request changes now.</>
-          : <><MayRequestToggle o={o} onDone={done}/> You still decide each request on the Changes page.</>}
-      </Step>
-      <Step n={5} done={steps[4]} current={current === 4} title="MCP entry in the repository (optional)">
-        <label className="check-label compact"><input type="checkbox" checked={mcpCopied} onChange={e => setMcpCopied(e.target.checked)}/>The agent adds it as part of step 1. To do it by hand, copy it from the <button type="button" className="text-button" onClick={onAgentTab}>Coding agent tab</button>.</label>
-      </Step>
-    </ol>
-    {current < 0 && <p className="notice" role="status"><CircleCheck size={16} aria-hidden/> This application is onboarded.</p>}
-  </section>;
-}
-
-function BriefPanel({brief, link, snippets, picker, onSnippetCopied}: {brief: Brief; link?: BriefLink; snippets: Snippet[]; picker?: React.ReactNode; onSnippetCopied?: (s: Snippet) => void}) {
-  const [text, setText] = useState('');
-  useEffect(() => {
-    if (!link) return;
-    fetch(link.url.replace(/^https?:\/\/[^/]+/, ''), {credentials: 'same-origin'}).then(r => r.ok ? r.text() : '').then(setText).catch(() => {});
-  }, [link?.url, brief]);
-  return <section className="panel" aria-labelledby={'brief-' + brief.for}>
-    <div className="panel-heading"><h2 id={'brief-' + brief.for}>{link?.title || brief.title}</h2><CopyButton text={text} label="Copy whole brief"/></div>
-    <p className="muted handover-intro">{link?.audience} Paste it to the coding agent, or point it at <a href={link?.url.replace(/^https?:\/\/[^/]+/, '')} target="_blank" rel="noreferrer"><code>{link?.url}</code></a>.</p>
-    <div className="brief">
-      <p><Inline text={brief.intro}/></p>
-      <ol>{brief.steps.map((s, i) => <li key={i}><Inline text={s}/></li>)}</ol>
-      <div className="snippets-heading"><h3>Snippets</h3>{picker}</div>
-      {snippets.map(s => <SnippetBlock key={s.id} s={s} onCopied={() => onSnippetCopied?.(s)}/>)}
-      <p className="muted-small"><Inline text={brief.note}/></p>
-    </div>
-  </section>;
-}
-
-export default function IntegratePage({origins, targets, tick, onChange, onManual}: {origins: Origin[]; targets: Target[]; tick: number; onChange: () => void; onManual: () => void}) {
-  const [doc, setDoc] = useState<ConnectDoc | null>(null), [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('application');
-  const [language, setLanguage] = useState<Language>(() => (['python', 'typescript', 'curl'].includes(remember(LANGUAGE_KEY)) ? remember(LANGUAGE_KEY) : 'python') as Language);
-  const [app, setApp] = useState(NEW);
-  const [copied, setCopied] = useState(() => remember(COPIED_KEY + NEW) === '1');
-  useEffect(() => { setCopied(remember(COPIED_KEY + app) === '1'); }, [app]);
-  const markCopied = (v: boolean) => { remember(COPIED_KEY + app, v ? '1' : '0'); setCopied(v); };
+  // A pairing request that arrives opens the wizard, so it is never missed.
+  const wasWaiting = useRef(false);
+  useEffect(() => { if (waiting && !wasWaiting.current) setWizardOpen(true); wasWaiting.current = waiting; }, [waiting]);
   useEffect(() => {
     fetch('/_connect', {credentials: 'same-origin'}).then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(setDoc).catch(() => setError('Could not load the instructions from /_connect.'));
   }, [tick]);
-  const pick = (l: Language) => { setLanguage(l); remember(LANGUAGE_KEY, l); };
+
   if (error) return <p className="auth-error" role="alert">{error}</p>;
   if (!doc) return <p className="muted">Loading…</p>;
+  const open = wizardOpen ?? (origins.length === 0 || waiting);
+  const follow = (id: string) => { setApp(id); setWizardOpen(true); requestAnimationFrame(() => wizardRef.current?.scrollIntoView({behavior: 'smooth', block: 'nearest'})); };
+  const done = () => { refreshPairings(); refreshRejected(); onChange(); };
+  const pick = (l: Language) => { setLanguage(l); remember(LANGUAGE_KEY, l); };
   const link = (f: string) => doc.briefs.find(b => b.for === f);
-  const app_ = doc.integration, agent = doc.agent_integration;
+  const appBrief = doc.integration, agentBrief = doc.agent_integration;
   // Configured protocols first, so the snippet that works here comes first.
-  const sdkSnippets = app_.snippets.filter(s => s.sdk && s.language === language).sort((a, b) => Number(b.available) - Number(a.available));
+  const sdkSnippets = appBrief.snippets.filter(s => s.sdk && s.language === language).sort((a, b) => Number(b.available) - Number(a.available));
   const picker = <div className="segmented languages" role="radiogroup" aria-label="Language">
     {LANGUAGES.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={language === value} className={language === value ? 'on' : ''} onClick={() => pick(value)}>{label}</button>)}
   </div>;
-  return <>
-    <Wizard origins={origins} targets={targets} app={app} setApp={setApp} adapting={doc.adapting} prompt={doc.agent_prompt} docs={doc.docs} mcpCopied={copied} setMcpCopied={markCopied} tick={tick} onChange={onChange} onAgentTab={() => setTab('agent')}/>
-    <p className="muted integrate-intro"><BookOpen size={14} aria-hidden/> The two briefs below are what the agent reads, shown here so you can check them or copy parts by hand. aiport writes them from this gateway's live address and protocols (<code>{doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}</code>). <button type="button" className="text-button" onClick={onManual}>Read the manual</button></p>
-    <div className="task-filters integrate-tabs" role="tablist" aria-label="Brief">
-      <button role="tab" id="tab-application" aria-controls="panel-application" aria-selected={tab === 'application'} className={tab === 'application' ? 'active' : ''} onClick={() => setTab('application')}>Application</button>
-      <button role="tab" id="tab-agent" aria-controls="panel-agent" aria-selected={tab === 'agent'} className={tab === 'agent' ? 'active' : ''} onClick={() => setTab('agent')}>Coding agent</button>
+  const openAgentBrief = () => { setAgentTile(true); requestAnimationFrame(() => document.getElementById('tile-agent')?.scrollIntoView({behavior: 'smooth', block: 'start'})); };
+
+  return <div className="integrate-layout">
+    <div className="integrate-main">
+      <ApplicationsList origins={origins} targets={targets} pairings={pairings} rejected={rejected} calls={calls} app={app} adapting={doc.adapting}
+        onSelect={follow} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected}/>
+      <div ref={wizardRef}>
+        <Wizard origins={origins} app={app} setApp={setApp} pairings={pairings} seen={app ? calls.at[app] : null} off={calls.off} adapting={doc.adapting}
+          prompt={doc.agent_prompt} docs={doc.docs} mcp={mcp} setMcp={setMcp} open={open} setOpen={setWizardOpen} onDone={done} onAgentBrief={openAgentBrief}/>
+      </div>
     </div>
-    <div role="tabpanel" id={'panel-' + tab} aria-labelledby={'tab-' + tab}>
-      {tab === 'application'
-        ? <BriefPanel brief={app_} link={link('application')} picker={picker} snippets={[...app_.snippets.filter(s => !s.sdk), ...sdkSnippets]}/>
-        : <BriefPanel brief={agent} link={link('agent')} snippets={agent.snippets} onSnippetCopied={s => { if (s.id === 'mcp') markCopied(true); }}/>}
-    </div>
-    <p className="muted-small integrate-foot">Reference: <a href="/_connect?format=markdown" target="_blank" rel="noreferrer"><code>/_connect?format=markdown</code> <ExternalLink size={12} aria-hidden/></a></p>
-  </>;
+    <aside className="integrate-strip" aria-labelledby="strip-heading">
+      <div className="strip-head">
+        <h2 id="strip-heading">Instructions</h2>
+        <p className="muted-small">What the coding agent reads, written by aiport from this gateway's address and protocols ({doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}). <button type="button" className="text-button" onClick={onManual}>Read the manual</button></p>
+      </div>
+      <BriefTile id="application" title="Application brief" short="For the agent wiring the application's LLM calls through aiport." icon={<Terminal size={17} strokeWidth={1.75}/>}
+        brief={appBrief} link={link('application')} open={appTile} setOpen={setAppTile} picker={picker} snippets={[...appBrief.snippets.filter(s => !s.sdk), ...sdkSnippets]}/>
+      <BriefTile id="agent" title="Coding agent brief" short="For agents working in its repository later: MCP entry, AGENTS.md, Change requests." icon={<Bot size={17} strokeWidth={1.75}/>}
+        brief={agentBrief} link={link('agent')} open={agentTile} setOpen={setAgentTile} snippets={agentBrief.snippets} onSnippetCopied={s => { if (s.id === 'mcp') setMcp(true); }}/>
+      <p className="muted-small strip-foot">Reference: <a href="/_connect?format=markdown" target="_blank" rel="noreferrer"><code>/_connect?format=markdown</code> <ExternalLink size={12} aria-hidden/></a></p>
+    </aside>
+  </div>;
 }
