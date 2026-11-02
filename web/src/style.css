@@ -721,5 +721,7 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 /* A command waiting for the Owner's answer during Fix it (harelix/aiport#26). */
 .approval{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:0 var(--radius-sm) var(--radius-sm) 0;background:var(--panel);font-size:13px}
 .approval p{margin:0}
-.approval-command{margin:0;padding:6px 10px;border-radius:var(--radius-sm);background:var(--inset);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto}
+.approval-command{margin:0;padding:6px 10px;border-radius:var(--radius-sm);background:var(--inset);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
+.run-warnings{margin:0;padding:6px 10px 6px 26px;border-radius:var(--radius-sm);border:1px solid var(--warn, var(--line));display:grid;gap:2px}
+.run-mode{color:var(--text-2)}
 .approval .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}

@@ -43,9 +43,11 @@ export type Issue = {
 
 /** What a Fix it run left: its branch, diff summary and, once kept, the commit aiport made on that branch. */
 export type BranchFix = {branch: string; base: string; worktree?: string; agent: string; run: string;
-  state: 'running' | 'ready' | 'stopped_waiting' | 'empty' | 'kept' | 'discarded' | 'stopped'; summary?: string; files?: string[]; commit?: string; note?: string; started_at_ms: number; at_ms: number};
-/** Whether Fix it is available for an Application (fix_by in GET /api/v1/issues): which agent, or a hint why not. */
-export type FixStatus = {available: boolean; hint?: string; agent?: string; agent_name?: string; model_calls?: ModelCalls; limit_ms?: number};
+  state: 'running' | 'ready' | 'stopped_waiting' | 'timed_out' | 'empty' | 'kept' | 'discarded' | 'stopped'; summary?: string; files?: string[]; commit?: string; note?: string; started_at_ms: number; at_ms: number};
+/** Whether Fix it is available for an Application (fix_by in GET /api/v1/issues): which agent and for which Issue causes, or a hint why not. */
+export type FixStatus = {available: boolean; hint?: string; agent?: string; agent_name?: string; model_calls?: ModelCalls; limit_ms?: number; causes?: string[]; cause_hint?: string};
+/** Branch fix states whose diff waits in its worktree for Keep or Discard. */
+const REVIEWABLE = ['ready', 'stopped_waiting', 'timed_out'];
 
 /** An Issue's explanation and who wrote it: a Connection and model the Owner chose, or a Coding agent. */
 export type Explanation = {text: string; source: 'connection' | 'coding_agent'; connection?: string; model?: string; agent?: string; at_ms?: number};
@@ -59,7 +61,11 @@ export type ExplainStatus = {available: boolean; hint?: string; source?: string;
 /** Where an Agent run's model calls go. */
 export type ModelCalls = {through_aiport: boolean; connection?: string; model?: string; note?: string};
 /** An Agent run, as the runner describes it ("run" event, GET /api/v1/runs). */
-export type AgentRun = {id: string; application: string; issue: string; mode: string; agent: string; agent_name: string; model_calls: ModelCalls; state: string; error?: string; started_at_ms: number; limit_ms: number};
+export type AgentRun = {id: string; application: string; issue: string; mode: string; agent: string; agent_name: string; model_calls: ModelCalls; state: string; error?: string; started_at_ms: number; limit_ms: number;
+  /** The agent's session mode aiport chose, when the agent offers modes. */
+  session_mode?: string;
+  /** Agent settings in the run's directory that allow without asking (aiport cannot see what they allow). */
+  warnings?: string[]};
 /** A command a Fix it run asks to run, waiting for the Owner (GET /api/v1/approvals). The command is the agent's text: plain text only. */
 export type Approval = {id: string; run: string; application: string; issue: string; command: string; title: string; asked_at_ms: number; expires_at_ms: number};
 
@@ -74,11 +80,11 @@ function ApprovalCard({approval, onAnswered}: {approval: Approval; onAnswered: (
   };
   const minutes = Math.max(0, Math.round((approval.expires_at_ms - approval.asked_at_ms) / 60000));
   return <div className="approval" role="group" aria-label="Command waiting for your answer">
-    <p><strong>The agent asks to run a command</strong> in its worktree:</p>
-    <pre className="approval-command">{approval.command}</pre>
+    <p><strong>The agent asks to run a command</strong> in its worktree (the whole command; invisible characters are shown as escapes such as {'\\u202e'}):</p>
+    <pre className="approval-command" tabIndex={0} aria-label="The whole command">{approval.command}</pre>
     <div className="actions">
       <button type="button" className="primary small" disabled={!!busy} onClick={() => answer('allow_once')}>Allow once</button>
-      <button type="button" className="secondary small" disabled={!!busy} onClick={() => answer('allow_run')} title="Allow this exact command again, in this run only">Allow this command for this run</button>
+      <button type="button" className="secondary small" disabled={!!busy} onClick={() => answer('allow_run')} title="Allow this exact command again in this run, until the agent changes a file">Allow until the next edit</button>
       <button type="button" className="secondary small" disabled={!!busy} onClick={() => answer('deny')}>Deny</button>
       <span className="caption">Unanswered for {minutes} min, the run stops and keeps what it changed for your review.</span>
     </div>
@@ -116,6 +122,11 @@ function RunPanel({run, steps, busy, branch}: {run: AgentRun; steps: RunStep[]; 
       {busy && <button type="button" className="secondary small" disabled={stopping} onClick={stop}>{stopping ? 'Stopping…' : 'Stop'}</button>}
     </div>
     <p className={'caption' + (run.model_calls.through_aiport ? '' : ' run-own-login')}>{callsLine(run.model_calls)}</p>
+    {run.session_mode && <p className="caption run-mode">Session mode: {run.session_mode}</p>}
+    {!!run.warnings?.length && <div className="notice-inline" role="note">
+      <strong>The repository's agent settings allow some things without asking.</strong> aiport never sees those, so it cannot ask you about them:
+      <ul className="run-warnings">{run.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+    </div>}
     {shown.length > 0 && <ol className="run-steps" aria-live="polite">
       {shown.map((s, i) => <li key={i} className={'run-step run-' + s.kind + (s.verdict ? ' run-' + s.verdict : '')}>
         {s.kind === 'permission' ? <>{s.verdict === 'allowed' ? 'Allowed' : 'Denied'}: {s.text}{s.reason ? <small> · {s.reason}</small> : null}</>
@@ -136,6 +147,34 @@ export function IssueExplanation({issue, explain: all, onExplained}: {issue: Iss
   const explain = all?.by?.[issue.application] || all;
   const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [by, setBy] = useState('');
   const [agentRun, setAgentRun] = useState<AgentRun | null>(null), [steps, setSteps] = useState<RunStep[]>([]);
+  // An Explain Agent run goes on without this page: follow it again from its log (GET /api/v1/issues/{id}/run)
+  // when the page opens while it runs, or when the stream broke off; it saves its explanation itself.
+  const follow = async (alive: () => boolean) => {
+    let following = false;
+    while (alive()) {
+      const d = await fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/run', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (!alive() || !d?.run || d.run.mode !== 'explain') break;
+      if (!following && d.run.state !== 'running') break;
+      following = true;
+      const log: (RunStep & {kind: string})[] = d.log || [];
+      setBusy(true); setAgentRun(d.run); setBy(writer({source: 'coding_agent', agent: d.run.agent, agent_name: d.run.agent_name}));
+      setText(log.filter(u => u.kind === 'text').map(u => u.text).join(''));
+      setSteps(log.filter(u => u.kind !== 'text' && u.kind !== 'status'));
+      if (d.run.state !== 'running') {
+        setBusy(false);
+        if (d.run.state === 'done') onExplained(); else setError('The Agent run ended (' + d.run.state + ')' + (d.run.error ? ': ' + d.run.error : '') + '; nothing was saved.');
+        return;
+      }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    if (following) setBusy(false);
+  };
+  useEffect(() => {
+    if (explain?.source !== 'coding_agent') return;
+    let alive = true;
+    follow(() => alive);
+    return () => { alive = false; };
+  }, [issue.id, explain?.source]);
   const run = async () => {
     setBusy(true); setError(''); setText(''); setBy(''); setAgentRun(null); setSteps([]);
     try {
@@ -161,10 +200,12 @@ export function IssueExplanation({issue, explain: all, onExplained}: {issue: Iss
         }
       }
       if (failed) throw new Error(failed);
+      if (!done && explain?.source === 'coding_agent') { setBusy(false); await follow(() => true); return; }
       if (!done) throw new Error('The explanation broke off; nothing was saved.');
       onExplained();
     } catch (e) {
       setError((e as Error).message);
+      if (e instanceof TypeError && explain?.source === 'coding_agent') { setError(''); await follow(() => true); } // the connection broke: the run goes on
     } finally {
       setBusy(false);
     }
@@ -204,7 +245,7 @@ export function IssueFix({issue, explain, onChanged}: {issue: Issue; explain: Ex
   const [run, setRun] = useState<AgentRun | null>(null), [steps, setSteps] = useState<RunStep[]>([]);
   const [diff, setDiff] = useState<{diff: string; truncated: boolean} | null>(null);
   const [approvals, setApprovals] = useState<Approval[]>([]);
-  const running = b?.state === 'running', ready = b?.state === 'ready' || b?.state === 'stopped_waiting';
+  const running = b?.state === 'running', ready = !!b && REVIEWABLE.includes(b.state);
   // While the run goes, follow its log; once it has ended, reload the Issue for its diff.
   useEffect(() => {
     if (!running) return;
@@ -239,14 +280,17 @@ export function IssueFix({issue, explain, onChanged}: {issue: Issue; explain: Ex
       setBusy('');
     }
   };
-  const canStart = status?.available && issue.state === 'open' && !running && !ready;
+  // Fix it changes the Application's code: only for causes that can be there.
+  const forCause = !status?.causes || status.causes.includes(issue.cause);
+  const canStart = status?.available && forCause && issue.state === 'open' && !running && !ready;
   if (!b && !status?.available) return status?.hint ? <p className="caption fix-hint">{status.hint}</p> : null;
+  if (!b && !forCause) return status?.cause_hint ? <p className="caption fix-hint">{status.cause_hint}</p> : null;
   return <div className="branch-fix">
     {running && run && <RunPanel run={run} steps={steps} busy branch={b?.branch}/>}
     {running && approvals.map(a => <ApprovalCard key={a.id} approval={a} onAnswered={() => { setApprovals(l => l.filter(x => x.id !== a.id)); onChanged(); }}/>)}
     {running && !run && <p className="caption" role="status">Starting {status?.agent_name || b?.agent} in a worktree on {b?.branch}…</p>}
     {ready && <div className="fix-review">
-      {b!.state === 'stopped_waiting' && <p className="caption">{b!.note}</p>}
+      {b!.state !== 'ready' && b!.note && <p className="caption">{b!.note}</p>}
       <p><strong>Review the change</strong> on branch <code>{b!.branch}</code>: {b!.summary}. Nothing is committed yet; your branch and working copy are untouched.</p>
       {diff && <DiffView diff={diff.diff} truncated={diff.truncated}/>}
       <div className="actions">
