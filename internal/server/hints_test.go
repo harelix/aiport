@@ -25,7 +25,10 @@ var (
 	hintDenied  = strings.Repeat("d", 40)
 )
 
-func hintsServer(t *testing.T) *Handler {
+func hintsServer(t *testing.T) *Handler { return hintsServerWith(t, "") }
+
+// hintsServerWith is hintsServer with extra top-level YAML appended.
+func hintsServerWith(t *testing.T, extra string) *Handler {
 	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct{ Model string }
@@ -57,7 +60,7 @@ origins:
     token_env: HINT_DENIED_TOKEN
     aliases:
       - {alias: old, target: off, model: x}
-`
+` + extra
 	path := filepath.Join(t.TempDir(), "aiport.yaml")
 	if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
 		t.Fatal(err)
@@ -148,5 +151,45 @@ func TestAnUpstreamUnknownModelGetsAHintHeaderAndAnUnchangedBody(t *testing.T) {
 	}
 	if ok := infer(h, hintAllowed, "/v1/chat/completions", "fine"); ok.Code != 200 || ok.Header().Get("X-Aiport-Hint") != "" {
 		t.Fatalf("a successful call carries no hint: %d %q", ok.Code, ok.Header().Get("X-Aiport-Hint"))
+	}
+}
+
+func TestWithAdaptingOffForwardingIsAsBeforeForEveryApplication(t *testing.T) {
+	h := hintsServerWith(t, "adapting: {disabled: true}\n")
+	for _, token := range []string{hintAllowed, hintDenied} {
+		w := infer(h, token, "/v1/chat/completions", "nope")
+		if w.Code != 404 || w.Body.String() != providerNotFound || w.Header().Get("X-Aiport-Hint") != "" {
+			t.Fatalf("with adapting off the provider's 404 must pass through with no hint: %d %q %s", w.Code, w.Header().Get("X-Aiport-Hint"), w.Body)
+		}
+		refused := infer(h, token, "/v1/messages", "claude-x")
+		if refused.Code != 503 || gatewayError(t, refused)["code"] != "target_unconfigured" {
+			t.Fatalf("status or code changed: %d %s", refused.Code, refused.Body)
+		}
+		if _, ok := gatewayError(t, refused)["hint"]; ok {
+			t.Fatalf("with adapting off a refusal must not hint at change requests: %s", refused.Body)
+		}
+	}
+	w, caps := call(h, "GET", "/v1/aiport/capabilities", "", hintAllowed, false)
+	if w.Code != 200 {
+		t.Fatalf("capabilities: %d %s", w.Code, w.Body)
+	}
+	if kinds, _ := caps["change_kinds"].([]any); len(kinds) != 0 {
+		t.Fatalf("with adapting off capabilities must list no change kinds: %s", w.Body)
+	}
+}
+
+func TestForbiddingAnApplicationToRequestChangesStopsItsHintsAtOnce(t *testing.T) {
+	h := hintsServer(t)
+	if w := infer(h, hintAllowed, "/v1/chat/completions", "nope"); w.Header().Get("X-Aiport-Hint") == "" {
+		t.Fatalf("an allowed Application gets a hint: %d %s", w.Code, w.Body)
+	}
+	if w, _ := call(h, "PATCH", "/api/v1/origins/helper", `{"may_request_changes":false}`, strings.Repeat("m", 40), true); w.Code != 200 {
+		t.Fatalf("forbid: %d %s", w.Code, w.Body)
+	}
+	if w := infer(h, hintAllowed, "/v1/chat/completions", "nope"); w.Header().Get("X-Aiport-Hint") != "" {
+		t.Fatalf("a forbidden Application still gets a hint: %q", w.Header().Get("X-Aiport-Hint"))
+	}
+	if w := infer(h, hintAllowed, "/v1/messages", "claude-x"); strings.Contains(w.Body.String(), "hint") {
+		t.Fatalf("a forbidden Application still gets a refusal hint: %s", w.Body)
 	}
 }

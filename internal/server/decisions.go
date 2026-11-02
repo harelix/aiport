@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ func (h *Handler) openDecisions() {
 	}
 	q, err := decide.New(h.live, history, kept)
 	if err != nil {
+		// The store's errors name what failed, never tokens or request text.
+		log.Printf("aiport: %v; decisions are kept for this session only", err)
 		q, _ = decide.New(h.live, history, nil)
 	}
 	h.failedAuth = telemetry.NewFailedAuth()
@@ -34,23 +37,32 @@ func (h *Handler) openDecisions() {
 	h.decisions = q
 }
 
-// Detect runs one detection pass over request history at time at.
+// Detect runs one background pass at time at, as the ticker does: it
+// forgets decided items older than request history, then detects over
+// request history.
 func (h *Handler) Detect(at time.Time) {
 	if h.decisions != nil {
+		h.decisions.Prune(at)
 		h.decisions.Detect(at)
 	}
 }
 
 // StartAdapting runs detection on a background ticker until stop is closed,
-// at the interval configured at start. It does nothing when the adapting loop
-// is off or the handler has no decision queue. Detection never runs during a
-// request.
+// at the configured interval. The ticker runs even while the adapting loop is
+// off and each pass checks whether it is on, so turning it on in aiport.yaml
+// needs no restart. It does nothing when the handler has no decision queue.
+// Detection never runs during a request.
 func (h *Handler) StartAdapting(stop <-chan struct{}) {
-	c := h.snapshot()
-	if h.decisions == nil || c.Adapting.Disabled {
+	if h.decisions == nil {
 		return
 	}
-	go h.decisions.Run(stop, time.Duration(c.Adapting.IntervalSeconds)*time.Second, h.clock)
+	every := func() time.Duration {
+		if h.adaptEvery > 0 {
+			return h.adaptEvery
+		}
+		return time.Duration(h.snapshot().Adapting.IntervalSeconds) * time.Second
+	}
+	go h.decisions.Run(stop, every, h.clock)
 }
 
 // decisionsRoute serves the items waiting for the Owner in Changes:
@@ -102,14 +114,16 @@ func (h *Handler) decisionsRoute(w http.ResponseWriter, r *http.Request, fail fu
 		fail(409, "adapting_off", decide.ErrOff.Error())
 		return true
 	}
-	it, ch, err := h.decisions.Decide(id, decide.Decision{Action: body.Action, Note: body.Note, Scope: body.Scope, Proposal: decide.Proposal{Alias: body.Alias, Target: body.Target, Model: body.Model}}, h.clock())
+	it, ch, err := h.decisions.Decide(id, decide.Decision{Action: decide.Action(body.Action), Note: body.Note, Scope: decide.Scope(body.Scope), Proposal: decide.Proposal{Alias: body.Alias, Target: body.Target, Model: body.Model}}, h.clock())
 	var invalid decide.Invalid
 	var blocked extension.Denied
 	switch {
 	case errors.As(err, &blocked):
-		writeJSON(w, 409, map[string]any{"error": map[string]any{"code": "guardrail_blocked", "message": err.Error(), "request_id": w.Header().Get("X-Aiport-Request-Id"), "extension": blocked.Extension, "reason": blocked.Reason}})
+		writeError(w, 409, "guardrail_blocked", err.Error(), map[string]any{"extension": blocked.Extension, "reason": blocked.Reason})
 	case errors.Is(err, decide.ErrOff):
 		fail(409, "adapting_off", err.Error())
+	case errors.Is(err, decide.ErrChanged):
+		fail(409, "decision_conflict", err.Error())
 	case errors.Is(err, decide.ErrNotFound):
 		fail(404, "decision_not_found", "Nothing waits for a decision with this id")
 	case errors.Is(err, decide.ErrDecided):

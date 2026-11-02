@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -132,13 +133,25 @@ func decideOn(t *testing.T, h *Handler, management, id, body string) (int, map[s
 	return w.Code, out
 }
 
-func appAliases(h *Handler, app string) []config.OriginAlias {
-	for _, o := range h.snapshot().Origins {
-		if o.ID == app {
-			return o.Aliases
-		}
+// liveConfig is the running configuration as the dashboard reads it.
+func liveConfig(t *testing.T, h *Handler, management string) config.Config {
+	t.Helper()
+	w, _ := call(h, "GET", "/api/v1/config", "", management, false)
+	var out struct {
+		Config config.Config `json:"config"`
 	}
-	return nil
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+		t.Fatalf("read the running configuration: %d %s", w.Code, w.Body)
+	}
+	return out.Config
+}
+
+// appAliases are Application app's own Aliases in the running configuration.
+// Every test server here uses the same management token.
+func appAliases(t *testing.T, h *Handler, app string) []config.OriginAlias {
+	t.Helper()
+	o, _ := liveConfig(t, h, strings.Repeat("m", 40)).Application(app)
+	return o.Aliases
 }
 
 // Approving a Suggestion creates the Alias for that Application only, live at
@@ -162,10 +175,10 @@ func TestApproveSuggestionCreatesRevertableAlias(t *testing.T) {
 	if code != 200 || out["change_id"] == "" {
 		t.Fatalf("accept: %d %v", code, out)
 	}
-	if got := appAliases(h, "nightly-report"); len(got) != 1 || got[0] != (config.OriginAlias{Alias: "fast", Target: "local", Model: "llama3"}) {
+	if got := appAliases(t, h, "nightly-report"); len(got) != 1 || got[0] != (config.OriginAlias{Alias: "fast", Target: "local", Model: "llama3"}) {
 		t.Fatalf("alias not live for nightly-report: %v", got)
 	}
-	if got := appAliases(h, "other"); len(got) != 0 || len(h.snapshot().Aliases) != 0 {
+	if got := appAliases(t, h, "other"); len(got) != 0 || len(liveConfig(t, h, management).Aliases) != 0 {
 		t.Fatal("the alias reached another Application or every Application")
 	}
 	if _, list := pendingDecisions(t, h, management); len(list) != 0 {
@@ -186,8 +199,27 @@ func TestApproveSuggestionCreatesRevertableAlias(t *testing.T) {
 	if w, _ := call(h, "POST", "/api/v1/changes/"+changes[0]["id"].(string)+"/revert", "", management, true); w.Code != 200 {
 		t.Fatalf("revert: %d %s", w.Code, w.Body)
 	}
-	if got, _ := os.ReadFile(path); string(got) != string(before) || len(appAliases(h, "nightly-report")) != 0 {
+	if got, _ := os.ReadFile(path); string(got) != string(before) || len(appAliases(t, h, "nightly-report")) != 0 {
 		t.Fatalf("revert did not remove the alias:\n%s", got)
+	}
+}
+
+// Only dismissing starts the quiet period: a rejected Suggestion is
+// suggested again on the next detection pass while the pattern lasts.
+func TestARejectedSuggestionIsNotQuiet(t *testing.T) {
+	at := suggestionsNow
+	h, management := suggestionsServer(t, filepath.Join(t.TempDir(), "aiport.yaml"), "", seededHistory(), &at)
+	h.Detect(at)
+	_, list := pendingDecisions(t, h, management)
+	if len(list) != 1 {
+		t.Fatalf("want one Suggestion: %v", list)
+	}
+	if code, out := decideOn(t, h, management, list[0]["id"].(string), `{"action":"reject","note":"wrong idea"}`); code != 200 {
+		t.Fatalf("reject: %d %v", code, out)
+	}
+	h.Detect(at)
+	if _, again := pendingDecisions(t, h, management); len(again) != 1 || again[0]["id"] == list[0]["id"] {
+		t.Fatalf("a rejected Suggestion stayed quiet: %v", again)
 	}
 }
 
@@ -255,6 +287,37 @@ func TestAdaptingOff(t *testing.T) {
 	}
 }
 
+// Turning the adapting loop on in configuration starts detection without a
+// restart: the background ticker runs from the start and checks each time.
+func TestTurningAdaptingOnStartsDetectionWithoutARestart(t *testing.T) {
+	at := suggestionsNow
+	h, management := suggestionsServer(t, filepath.Join(t.TempDir(), "aiport.yaml"), "adapting: {disabled: true}\n", seededHistory(), &at)
+	h.adaptEvery = 5 * time.Millisecond
+	stop := make(chan struct{})
+	defer close(stop)
+	h.StartAdapting(stop)
+	time.Sleep(30 * time.Millisecond)
+	if on, list := pendingDecisions(t, h, management); on || len(list) != 0 {
+		t.Fatalf("loop off, yet adapting=%v items=%v", on, list)
+	}
+	// No dashboard endpoint turns the loop on; the Owner edits aiport.yaml,
+	// which reaches aiport as a Change.
+	if _, _, err := h.live.Change("turn adapting on", replaceConfig(suggestionsYAML)); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		on, list := pendingDecisions(t, h, management)
+		if on && len(list) == 1 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no detection after turning the loop on: adapting=%v items=%v", on, list)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // Requests forwarded with the loop on and off get identical bytes back, and
 // detection, run separately afterwards, finds the pattern in those requests.
 func TestForwardingUnchangedByAdapting(t *testing.T) {
@@ -287,6 +350,7 @@ func TestForwardingUnchangedByAdapting(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			w.Header().Del("X-Aiport-Request-Id")
+			w.Header().Del("Date") // the provider's clock, not aiport's doing
 			got = append(got, fmt.Sprint(w.Code, w.Header(), w.Body.String()))
 		}
 		h.collector.Close(time.Second)

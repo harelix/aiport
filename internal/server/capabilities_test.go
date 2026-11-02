@@ -222,8 +222,8 @@ func TestCapabilitiesReflectChangesAtOnce(t *testing.T) {
 	}
 
 	// Reverting the Change is reflected too.
-	if _, _, err := h.live.Revert(change.ID); err != nil {
-		t.Fatal(err)
+	if w, _ := call(h, "POST", "/api/v1/changes/"+change.ID+"/revert", "", capsManagement, true); w.Code != 200 {
+		t.Fatalf("revert: %d %s", w.Code, w.Body)
 	}
 	_, out = call(h, "GET", CapabilitiesPath, "", capsNightly, false)
 	if out["binding"] != nil || len(out["aliases"].([]any)) != 1 {

@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {ArrowUpRight, History, Lightbulb, Puzzle, Undo2} from 'lucide-react';
 import {type Upstream, UpstreamAction} from './Upstream';
+import {DecisionSoundToggle} from './decisionSound';
 
 /** One applied Change to aiport's configuration, as GET /api/v1/changes lists it. */
 type Change = {
@@ -159,7 +160,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
       <tbody>{demand.map(d => <tr key={d.kind}><td>{d.kind}</td><td>{d.requests}</td><td>{d.applications}</td><td>{when(d.last_at_ms)}</td></tr>)}</tbody>
     </table></div>
     {upstream && !!upstream.suggestions.length && <ul className="askers" aria-label="Suggest to aiport">{upstream.suggestions.map(s => <li key={s.kind}>
-      <strong>{s.kind}</strong> <UpstreamAction label="Suggest to aiport" draft={s} what={{suggest: s.kind}} upstream={upstream}/>
+      <strong>{s.kind}</strong> <span className="caption">kind named by an Application</span> <UpstreamAction label="Suggest to aiport" draft={s} what={{suggest: s.kind}} upstream={upstream}/>
     </li>)}</ul>}
   </section>}{upstream && !!upstream.shares.length && <section className="panel" aria-label="Extensions">
     <div className="panel-heading"><h2><Puzzle size={16} aria-hidden/> Extensions</h2><span>Listed in aiport.yaml · share one upstream for others to use</span></div>
@@ -167,7 +168,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
       <strong>{s.extension}</strong> ({s.hook}) <UpstreamAction label="Share upstream" draft={s} what={{share: s.extension}} upstream={upstream}/>
     </li>)}</ul>
   </section>}<section className="panel">
-    <div className="panel-heading"><h2>Applied changes</h2><span>Newest first · kept across restarts</span></div>
+    <div className="panel-heading"><h2>Applied changes</h2><div className="header-actions"><span className="caption">Newest first · kept across restarts</span><DecisionSoundToggle/></div></div>
     {error && <div className="notice error" role="alert">{error}</div>}
     {message && <div className="notice" role="status">{message}</div>}
     {changes && !changes.length && <div className="empty"><span className="empty-icon"><History size={20} strokeWidth={1.75} aria-hidden/></span><h3>No changes yet</h3><p>Configuration edits made through aiport appear here, with the file before and after kept so you can revert them.</p></div>}

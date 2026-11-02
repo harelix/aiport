@@ -85,7 +85,7 @@ func TestChangeRevertAfterRestart(t *testing.T) {
 		t.Fatalf("revert did not restore the file byte for byte:\n%s", got)
 	}
 	// Live at once: the reverted connection is gone from the running config.
-	for _, target := range second.snapshot().Targets {
+	for _, target := range liveConfig(t, second, management).Targets {
 		if target.ID == "box" {
 			t.Fatal("reverted connection still live")
 		}

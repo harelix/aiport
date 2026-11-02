@@ -29,7 +29,7 @@ type Asker struct {
 // apply yet: kinds and anonymous counts only, never names or request text,
 // so it can be shared (as a "Suggest to aiport" issue, for example).
 type Demand struct {
-	Kind string `json:"kind"`
+	Kind Kind `json:"kind"`
 	// Requests counts every request for the kind, repeats included.
 	Requests int `json:"requests"`
 	// Applications counts the different Applications that asked.
@@ -69,8 +69,8 @@ func (q *Queue) fileForEvery(it Item, at int64) Item {
 }
 
 // everySubject is what matching requests for every Application share.
-func everySubject(kind, details string) string {
-	sum := sha256.Sum256([]byte(kind + "\x00" + strings.Join(strings.Fields(strings.ToLower(details)), " ")))
+func everySubject(kind Kind, details string) string {
+	sum := sha256.Sum256([]byte(string(kind) + "\x00" + strings.Join(strings.Fields(strings.ToLower(details)), " ")))
 	return "every:" + hex.EncodeToString(sum[:8])
 }
 
@@ -109,8 +109,8 @@ func (q *Queue) Demand() []Demand {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	byKind := map[string]*Demand{}
-	apps := map[string]map[string]bool{}
+	byKind := map[Kind]*Demand{}
+	apps := map[Kind]map[string]bool{}
 	for _, it := range q.items {
 		if it.Source != FromRequest || it.Status != NotSupported {
 			continue

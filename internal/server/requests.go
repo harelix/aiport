@@ -9,6 +9,7 @@ import (
 
 	"aiport/internal/decide"
 	"aiport/internal/extension"
+	"aiport/internal/refusal"
 )
 
 // RequestsPath is where an Application files and reads its own Change
@@ -21,17 +22,17 @@ import (
 // The MCP tools aiport_request_change and aiport_my_requests answer through
 // the same decide.Queue calls (File, Requests, RequestOf) and the same
 // refusal codes (requestRefusal).
-const RequestsPath = "/v1/aiport/requests"
+const RequestsPath = refusal.RequestsPath
 
 // serveRequests handles RequestsPath for an authenticated caller; it only
 // ever files for, and answers about, the Application whose token was sent.
-func (h *Handler) serveRequests(w http.ResponseWriter, r *http.Request, originID string, fail func(int, string, string)) {
+func (h *Handler) serveRequests(w http.ResponseWriter, r *http.Request, applicationID string, fail func(int, string, string)) {
 	id, one := strings.CutPrefix(r.URL.Path, RequestsPath+"/")
 	if one && (id == "" || strings.Contains(id, "/")) {
 		fail(404, "change_request_not_found", "No change request with this id for this Application")
 		return
 	}
-	if _, ok := h.capabilities(originID); !ok {
+	if !h.isApplication(applicationID) {
 		fail(403, "application_token_required", decide.ErrNotApplication.Error())
 		return
 	}
@@ -41,21 +42,21 @@ func (h *Handler) serveRequests(w http.ResponseWriter, r *http.Request, originID
 	}
 	switch {
 	case one && r.Method == http.MethodGet:
-		a, err := h.decisions.RequestOf(originID, id)
+		a, err := h.decisions.RequestOf(applicationID, id)
 		if err != nil {
 			fail(404, "change_request_not_found", "No change request with this id for this Application")
 			return
 		}
 		writeJSON(w, 200, a)
 	case !one && r.Method == http.MethodGet:
-		writeJSON(w, 200, map[string]any{"requests": h.decisions.Requests(originID)})
+		writeJSON(w, 200, map[string]any{"requests": h.decisions.Requests(applicationID)})
 	case !one && r.Method == http.MethodPost:
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, decide.MaxBody))
 		if err != nil {
 			fail(413, "request_too_large", "A change request body must be at most 64 KiB")
 			return
 		}
-		a, err := h.decisions.File(originID, body, h.clock())
+		a, err := h.decisions.File(applicationID, body, h.clock())
 		if err != nil {
 			h.requestRefusal(w, err, fail)
 			return
@@ -88,9 +89,9 @@ func (h *Handler) requestRefusal(w http.ResponseWriter, err error, fail func(int
 		w.Header().Set("Retry-After", strconv.Itoa(int(limited.RetryAfter.Seconds())+1))
 		fail(429, "change_requests_rate_limited", err.Error())
 	case errors.As(err, &denied):
-		writeJSON(w, 403, map[string]any{"error": map[string]any{"code": "change_request_refused", "message": err.Error(), "request_id": w.Header().Get("X-Aiport-Request-Id"), "extension": denied.Extension, "reason": denied.Reason}})
+		writeError(w, 403, "change_request_refused", err.Error(), map[string]any{"extension": denied.Extension, "reason": denied.Reason})
 	case errors.As(err, &incomplete):
-		writeJSON(w, 400, map[string]any{"error": map[string]any{"code": "invalid_change_request", "message": err.Error(), "request_id": w.Header().Get("X-Aiport-Request-Id"), "problems": incomplete.Problems}})
+		writeError(w, 400, "invalid_change_request", err.Error(), map[string]any{"problems": incomplete.Problems})
 	default:
 		fail(500, "change_request_failed", "The change request could not be filed")
 	}

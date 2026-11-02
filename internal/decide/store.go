@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-// SQLStore keeps the decision queue's items in the database (Store). The table is created by store migration 5.
+// SQLStore keeps the decision queue's items in the database (Store). The table is created by store migration 4.
 type SQLStore struct{ DB *sql.DB }
 
 // Load returns every kept item, oldest first.
@@ -29,6 +29,16 @@ func (s SQLStore) Load() ([]Item, error) {
 		return nil, errors.New("cannot read decisions")
 	}
 	return out, nil
+}
+
+// Delete forgets the items with the given ids.
+func (s SQLStore) Delete(ids []string) error {
+	for _, id := range ids {
+		if _, err := s.DB.Exec(`DELETE FROM decisions WHERE id = ?`, id); err != nil {
+			return errors.New("cannot delete decision")
+		}
+	}
+	return nil
 }
 
 // Save stores a new item or replaces a kept one (by ID).

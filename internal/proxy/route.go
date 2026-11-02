@@ -88,15 +88,15 @@ func (rt routes) resolve(origin, protocol, model string) (Route, *refusal.Refusa
 	return route, nil
 }
 
-// Reachable reports which Connection would serve a request from origin on
-// protocol ("openai" or "anthropic") when no Alias applies: its binding, or
-// the protocol default. ok is false when routing would refuse the call. It
+// Reachable reports which Connection would serve a request from Application
+// application on protocol ("openai" or "anthropic") when no Alias applies:
+// its binding, or the protocol default. ok is false when routing would refuse the call. It
 // answers from the same routing table as Forward, so the two never disagree.
-func (g *Gateway) Reachable(origin, protocol string) (connection string, ok bool) {
+func (g *Gateway) Reachable(application, protocol string) (connection string, ok bool) {
 	g.targetsMu.RLock()
 	rt := g.routes
 	g.targetsMu.RUnlock()
-	route, ref := rt.resolve(origin, protocol, "")
+	route, ref := rt.resolve(application, protocol, "")
 	if ref != nil {
 		return "", false
 	}

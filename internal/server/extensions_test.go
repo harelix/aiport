@@ -154,8 +154,8 @@ func TestAGuardrailBlockKeepsApproveFromApplying(t *testing.T) {
 	if after, _ := os.ReadFile(path); string(after) != string(before) {
 		t.Fatalf("a blocked Change was written:\n%s", after)
 	}
-	if len(appAliases(h, "helper")) != 0 {
-		t.Fatalf("a blocked Change is live: %v", appAliases(h, "helper"))
+	if len(appAliases(t, h, "helper")) != 0 {
+		t.Fatalf("a blocked Change is live: %v", appAliases(t, h, "helper"))
 	}
 	if a := answerOf(t, h, reqHelper, id); a["status"] != "pending" {
 		t.Fatalf("a blocked request is no longer waiting: %v", a)
@@ -193,7 +193,7 @@ func TestAGuardrailThatFailsBlocks(t *testing.T) {
 			if tc.reason != "" && !strings.Contains(errorMessage(out), tc.reason) {
 				t.Fatalf("%s: the block does not say why: %q", tc.name, errorMessage(out))
 			}
-			if applied := len(appAliases(h, "helper")) == 1; applied != (tc.code == 200) {
+			if applied := len(appAliases(t, h, "helper")) == 1; applied != (tc.code == 200) {
 				t.Fatalf("%s: applied=%v", tc.name, applied)
 			}
 		})

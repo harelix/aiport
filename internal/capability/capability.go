@@ -27,13 +27,23 @@ var Kinds = []Kind{
 	{BindApplication, "Send all of this Application's calls to one Connection. For every Application it becomes the protocol's default Connection."},
 }
 
+// BuiltIn reports whether kind is one of the built-in Change kinds.
+func BuiltIn(kind string) bool {
+	for _, k := range Kinds {
+		if k.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // Protocols are the wire protocols aiport speaks, in a stable order.
 var Protocols = []string{"openai", "anthropic"}
 
 // Router says which Connection would serve an Application on a protocol;
 // the gateway's routing module implements it.
 type Router interface {
-	Reachable(origin, protocol string) (connection string, ok bool)
+	Reachable(application, protocol string) (connection string, ok bool)
 }
 
 type Protocol struct {
@@ -72,18 +82,17 @@ type Capabilities struct {
 // NotPermitted explains an empty ChangeKinds list.
 const NotPermitted = "This Application may not request changes. The Owner can allow it in the aiport dashboard (Routing → Applications)."
 
+// AdaptingOff explains an empty ChangeKinds list while the Owner has turned
+// adapting off: no Change requests are accepted from any Application.
+const AdaptingOff = "The Owner has turned adapting off in aiport: no Application may request changes now."
+
 const permitted = "This Application may request the listed kinds of Change. The Owner approves or rejects each request."
 
-// For answers for the Application with id origin in configuration c, with
-// routing from r. ok is false when c has no such Application.
-func For(c config.Config, origin string, r Router) (caps Capabilities, ok bool) {
-	var app *config.Origin
-	for i := range c.Origins {
-		if c.Origins[i].ID == origin {
-			app = &c.Origins[i]
-		}
-	}
-	if app == nil {
+// For answers for the Application with id application in configuration c,
+// with routing from r. ok is false when c has no such Application.
+func For(c config.Config, application string, r Router) (caps Capabilities, ok bool) {
+	app, ok := c.Application(application)
+	if !ok {
 		return Capabilities{}, false
 	}
 	caps = Capabilities{
@@ -105,7 +114,9 @@ func For(c config.Config, origin string, r Router) (caps Capabilities, ok bool) 
 		binding := app.Target
 		caps.Binding = &binding
 	}
-	if app.MayRequestChanges {
+	if c.Adapting.Disabled {
+		caps.MayRequestChanges, caps.Note = false, AdaptingOff
+	} else if app.MayRequestChanges {
 		caps.ChangeKinds = append(caps.ChangeKinds, Kinds...)
 		caps.Note = permitted
 	}

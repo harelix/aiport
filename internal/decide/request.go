@@ -31,8 +31,8 @@ const (
 	// included); larger bodies are refused before they are read.
 	MaxBody = 64 << 10
 	// RequestsPerHour is how many Change requests one Application may file
-	// in an hour, counting refused ones, so a looping agent cannot flood the
-	// queue.
+	// in an hour, so a looping agent cannot flood the queue. Only requests
+	// that pass aiport's checks and the policy Extensions count.
 	RequestsPerHour = 20
 )
 
@@ -85,14 +85,14 @@ type Request struct {
 // note) once there is one.
 type Answer struct {
 	ID        string `json:"id"`
-	Kind      string `json:"kind"`
+	Kind      Kind   `json:"kind"`
 	Need      string `json:"need"`
 	Details   string `json:"details"`
 	Why       string `json:"why"`
-	Scope     string `json:"scope"`
+	Scope     Scope  `json:"scope"`
 	ScopeCase string `json:"scope_case"`
 	FiledBy   string `json:"filed_by,omitempty"`
-	Status    string `json:"status"`
+	Status    Status `json:"status"`
 	// Repeats counts how often the same request was filed again while it
 	// waited.
 	Repeats   int   `json:"repeats,omitempty"`
@@ -100,7 +100,7 @@ type Answer struct {
 	UpdatedAt int64 `json:"updated_at_ms"`
 	// GrantedScope is the Scope the Owner approved, which may be narrower or
 	// wider than the one asked for.
-	GrantedScope string `json:"granted_scope,omitempty"`
+	GrantedScope Scope  `json:"granted_scope,omitempty"`
 	Note         string `json:"note,omitempty"`
 	DecidedAt    int64  `json:"decided_at_ms,omitempty"`
 	ChangeID     string `json:"change_id,omitempty"`
@@ -121,7 +121,7 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 	if !q.On() {
 		return Answer{}, ErrOff
 	}
-	o, ok := application(q.live.Config(), app)
+	o, ok := q.live.Config().Application(app)
 	if !ok {
 		return Answer{}, ErrNotApplication
 	}
@@ -129,7 +129,7 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 		return Answer{}, ErrNotPermitted
 	}
 	q.mu.Lock()
-	err := q.admit(app, at)
+	err := q.admit(app, at, false)
 	q.mu.Unlock()
 	if err != nil {
 		return Answer{}, err
@@ -141,18 +141,21 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 	// Policy Extensions run after aiport's own checks and outside the lock,
 	// so a slow one never holds up the queue.
 	if err := extension.Check(q.live.Config(), config.HookPolicy, extension.Input{Request: &extension.Request{
-		Application: app, Kind: r.Kind, Supported: builtIn(r.Kind), Need: r.Need, Details: r.Details,
+		Application: app, Kind: r.Kind, Supported: capability.BuiltIn(r.Kind), Need: r.Need, Details: r.Details,
 		Why: r.Why, Scope: r.Scope, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,
 	}}); err != nil {
 		return Answer{}, err
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if err := q.admit(app, at, true); err != nil {
+		return Answer{}, err
+	}
 	it := Item{
-		Source: FromRequest, Kind: r.Kind, Application: app, Subject: r.subject(), Scope: r.Scope,
+		Source: FromRequest, Kind: Kind(r.Kind), Application: app, Subject: r.subject(), Scope: Scope(r.Scope),
 		Need: r.Need, Details: r.Details, Why: r.Why, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,
 	}
-	if !builtIn(r.Kind) {
+	if !capability.BuiltIn(r.Kind) {
 		it.Status = NotSupported
 	}
 	if it.Scope == ScopeEvery {
@@ -182,8 +185,9 @@ func (q *Queue) RequestOf(app, id string) (Answer, error) {
 	return Answer{}, ErrNotFound
 }
 
-// admit counts one request from app at time at against the rate limit.
-func (q *Queue) admit(app string, at time.Time) error {
+// admit checks the rate limit for a request from app at time at and, when
+// spend is set, counts the request against it. The caller holds q.mu.
+func (q *Queue) admit(app string, at time.Time, spend bool) error {
 	if q.filed == nil {
 		q.filed = map[string][]int64{}
 	}
@@ -198,26 +202,10 @@ func (q *Queue) admit(app string, at time.Time) error {
 	if len(kept) >= RequestsPerHour {
 		return RateLimited{RetryAfter: time.Duration(kept[0]+hour-now) * time.Millisecond}
 	}
-	q.filed[app] = append(kept, now)
+	if spend {
+		q.filed[app] = append(kept, now)
+	}
 	return nil
-}
-
-func application(c config.Config, id string) (config.Origin, bool) {
-	for _, o := range c.Origins {
-		if o.ID == id {
-			return o, true
-		}
-	}
-	return config.Origin{}, false
-}
-
-func builtIn(kind string) bool {
-	for _, k := range capability.Kinds {
-		if k.Kind == kind {
-			return true
-		}
-	}
-	return false
 }
 
 // readRequest decodes body and lists every problem with it.
@@ -263,7 +251,7 @@ func readRequest(body []byte) (Request, []Problem) {
 			problems = append(problems, Problem{f, "must be one line"})
 		case f == "kind" && !validKind(v):
 			problems = append(problems, Problem{f, "must be a short name of lowercase letters, digits and underscores, such as application_alias"})
-		case f == "scope" && v != ScopeApplication && v != ScopeEvery:
+		case f == "scope" && Scope(v) != ScopeApplication && Scope(v) != ScopeEvery:
 			problems = append(problems, Problem{f, "must be application or every_application"})
 		}
 	}

@@ -9,19 +9,29 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"aiport/internal/capability"
 	"aiport/internal/decide"
 	"aiport/internal/extension"
 )
 
+// Limits on a draft the Owner edited before filing it.
+const (
+	maxDraftTitle = 256
+	maxDraftBody  = 60000
+)
+
 // Upstream: "Suggest to aiport" turns demand for a kind of Change aiport
-// cannot apply yet into a prefilled GitHub issue for aiport itself. Drafts
-// are built from kinds and anonymous counts only, never configuration
-// values, tokens, paths, Application names or request text.
+// cannot apply yet into a prefilled GitHub issue for aiport itself (a demand
+// draft). Drafts are built from kinds and anonymous counts only, never
+// configuration values, tokens, paths, Application names or request text.
+// The kind of a request aiport cannot apply is still written by an
+// Application, so it stays out of the title and is marked in the body; the
+// Owner checks and may edit every draft before opening, copying or filing it.
 
 // Draft is a prefilled GitHub issue the Owner may open or file.
 type Draft struct {
@@ -32,20 +42,28 @@ type Draft struct {
 	URL string `json:"url,omitempty"`
 }
 
-// Suggestion is the "Suggest to aiport" draft for one kind in demand.
-type upstreamSuggestion struct {
-	Kind string `json:"kind"`
+// demandDraft is the "Suggest to aiport" draft for one kind in demand.
+type demandDraft struct {
+	Kind decide.Kind `json:"kind"`
 	Draft
 }
 
-// suggestDraft is the issue for one kind in demand.
-func suggestDraft(d decide.Demand) Draft {
+// draftForDemand is the issue for one kind in demand. Only a built-in kind,
+// which aiport itself names, appears as is; any other kind was named by an
+// Application and is marked so the Owner checks it.
+func draftForDemand(d decide.Demand) Draft {
+	title := "Suggest to aiport: support a new kind of Change request"
+	kind := fmt.Sprintf("- Kind named by an Application (check it before sending): `%s`", d.Kind)
+	if capability.BuiltIn(string(d.Kind)) {
+		title = "Suggest to aiport: Change requests of kind " + string(d.Kind)
+		kind = fmt.Sprintf("- Kind: `%s`", d.Kind)
+	}
 	return Draft{
-		Title: fmt.Sprintf("Suggest to aiport: support Change requests of kind %s", d.Kind),
+		Title: title,
 		Body: fmt.Sprintf("Applications asked an aiport gateway for a kind of Change it cannot apply yet.\n\n"+
-			"- Kind: `%s`\n- Requests: %d\n- Applications: %d\n\n"+
+			"%s\n- Requests: %d\n- Applications: %d\n\n"+
 			"aiport prefilled this issue with the kind and anonymous counts only: no configuration, keys, paths, Application names or request text.\n\n"+
-			"## What would help\n\n<!-- Optional: describe in your own words what this kind should do. -->\n", d.Kind, d.Requests, d.Applications),
+			"## What would help\n\n<!-- Optional: describe in your own words what this kind should do. -->\n", kind, d.Requests, d.Applications),
 	}
 }
 
@@ -90,16 +108,16 @@ func issueURL(repo string, d Draft) string {
 	return "https://github.com/" + repo + "/issues/new?" + q.Encode()
 }
 
-// suggestions are the "Suggest to aiport" drafts, one per kind in demand.
-func (h *Handler) suggestions(repo string) []upstreamSuggestion {
-	out := []upstreamSuggestion{}
+// demandDrafts are the "Suggest to aiport" drafts, one per kind in demand.
+func (h *Handler) demandDrafts(repo string) []demandDraft {
+	out := []demandDraft{}
 	if h.decisions == nil {
 		return out
 	}
 	for _, d := range h.decisions.Demand() {
-		draft := suggestDraft(d)
+		draft := draftForDemand(d)
 		draft.URL = issueURL(repo, draft)
-		out = append(out, upstreamSuggestion{Kind: d.Kind, Draft: draft})
+		out = append(out, demandDraft{Kind: d.Kind, Draft: draft})
 	}
 	return out
 }
@@ -112,10 +130,10 @@ func (h *Handler) ghPath() (string, error) {
 	return exec.LookPath("gh")
 }
 
-// ghEnv is what gh gets from aiport's environment: enough to find its own
+// ghEnv is what gh gets from aiport's environment besides the minimal one
+// every program aiport runs gets (extension.Environ): enough to find its own
 // login, never aiport's tokens or provider keys.
-var ghEnv = []string{"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "XDG_CONFIG_HOME", "GH_CONFIG_DIR", "GH_HOST",
-	"SystemRoot", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PATHEXT"}
+var ghEnv = []string{"XDG_CONFIG_HOME", "GH_CONFIG_DIR", "GH_HOST", "APPDATA", "LOCALAPPDATA"}
 
 // fileWithGh files draft d as a new issue on repo with the Owner's own gh
 // login and returns the new issue's address.
@@ -124,12 +142,7 @@ func fileWithGh(gh, repo string, d Draft) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, gh, "issue", "create", "--repo", repo, "--title", d.Title, "--body-file", "-")
 	cmd.Stdin = strings.NewReader(d.Body)
-	cmd.Env = []string{}
-	for _, k := range ghEnv {
-		if v, ok := os.LookupEnv(k); ok {
-			cmd.Env = append(cmd.Env, k+"="+v)
-		}
-	}
+	cmd.Env = append([]string{}, extension.Environ(ghEnv...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -152,27 +165,30 @@ func fileWithGh(gh, repo string, d Draft) (string, error) {
 
 // upstreamRoute serves the drafts and files them with gh:
 //
-//	GET  /api/v1/upstream         {repository, gh, suggestions: [{kind, title, body, url}]}
-//	POST /api/v1/upstream/issues  {suggest: kind, confirm: true} → {url}
+//	GET  /api/v1/upstream         {repository, gh, suggestions: [{kind, title, body, url}], shares: [...]}
+//	POST /api/v1/upstream/issues  {suggest: kind | share: Extension, confirm: true, title?, body?} → {url}
 //
-// Nothing is sent unless the Owner confirmed. The caller has already
-// verified management access.
+// title and body are the draft as the Owner checked and edited it (both or
+// neither; without them the prefilled draft is filed). Nothing is sent unless
+// the Owner confirmed. The caller has already verified management access.
 func (h *Handler) upstreamRoute(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) bool {
 	repo := h.snapshot().Upstream.Repo()
 	switch r.URL.Path {
 	case "/api/v1/upstream":
 		if r.Method != "GET" {
+			w.Header().Set("Allow", "GET")
 			fail(405, "method_not_allowed", "Use GET")
 			return true
 		}
 		_, ghErr := h.ghPath()
-		writeJSON(w, 200, map[string]any{"repository": repo, "gh": ghErr == nil && repo != "", "suggestions": h.suggestions(repo), "shares": h.shares(repo)})
+		writeJSON(w, 200, map[string]any{"repository": repo, "gh": ghErr == nil && repo != "", "suggestions": h.demandDrafts(repo), "shares": h.shares(repo)})
 		return true
 	case "/api/v1/upstream/issues":
 	default:
 		return false
 	}
 	if r.Method != "POST" {
+		w.Header().Set("Allow", "POST")
 		fail(405, "method_not_allowed", "Use POST")
 		return true
 	}
@@ -181,19 +197,25 @@ func (h *Handler) upstreamRoute(w http.ResponseWriter, r *http.Request, fail fun
 		return true
 	}
 	var body struct {
-		Suggest string `json:"suggest"`
-		Share   string `json:"share"`
-		Confirm bool   `json:"confirm"`
+		Suggest string  `json:"suggest"`
+		Share   string  `json:"share"`
+		Confirm bool    `json:"confirm"`
+		Title   *string `json:"title"`
+		Body    *string `json:"body"`
 	}
-	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxDraftBody+4096))
 	d.DisallowUnknownFields()
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") || d.Decode(&body) != nil || d.Decode(&struct{}{}) != io.EOF || (body.Suggest == "") == (body.Share == "") {
-		fail(400, "invalid_upstream_issue", "Send a JSON object with either suggest (a kind) or share (an Extension), and confirm")
+		fail(400, "invalid_upstream_issue", "Send a JSON object with either suggest (a kind) or share (an Extension), confirm, and optionally the edited title and body")
+		return true
+	}
+	if (body.Title == nil) != (body.Body == nil) || body.Title != nil && (strings.TrimSpace(*body.Title) == "" || utf8.RuneCountInString(*body.Title) > maxDraftTitle || strings.ContainsAny(*body.Title, "\r\n") || strings.TrimSpace(*body.Body) == "" || len(*body.Body) > maxDraftBody) {
+		fail(400, "invalid_upstream_issue", "An edited draft needs a one-line title of at most 256 characters and a body of at most 60,000 bytes")
 		return true
 	}
 	var draft *Draft
-	for _, s := range h.suggestions(repo) {
-		if body.Suggest != "" && s.Kind == body.Suggest {
+	for _, s := range h.demandDrafts(repo) {
+		if body.Suggest != "" && string(s.Kind) == body.Suggest {
 			draft = &s.Draft
 		}
 	}
@@ -215,6 +237,9 @@ func (h *Handler) upstreamRoute(w http.ResponseWriter, r *http.Request, fail fun
 	case repo == "":
 		fail(409, "upstream_unknown", "Set upstream.repository in aiport.yaml to file upstream")
 		return true
+	}
+	if body.Title != nil {
+		draft = &Draft{Title: strings.TrimSpace(*body.Title), Body: *body.Body}
 	}
 	gh, err := h.ghPath()
 	if err != nil {

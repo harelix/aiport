@@ -75,7 +75,7 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `defaults` | Optional `openai_target` and `anthropic_target`; matching target protocols required |
 | `aliases` | List of `target`, `alias`, `model`; unique alias per target; model strings 1–256 bytes |
 | `telemetry.enabled` | true; request metadata is saved to `<config>.db` (SQLite) |
-| `telemetry.retention_days` | 7; range 1–3650 |
+| `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests are kept (dismissed ones at least 7 days, the quiet period); Changes themselves are never pruned |
 | `telemetry.queue_capacity` | 4096; range 1–65536 |
 | `telemetry.batch_size` | 100; range 1–queue capacity |
 | `telemetry.flush_interval_ms` | 250; range 1–60000 |
@@ -87,6 +87,8 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `adapting.unknown_model.window_minutes` | 60; range 1–10080; how far back those 404s are counted |
 | `adapting.unknown_token.count` | 10; range 1–1000000; requests refused for a missing or unknown token that lead to an informational Suggestion to pair the Application (only counts per minute are kept, never the token) |
 | `adapting.unknown_token.window_minutes` | 60; range 1–10080; how far back those refusals are counted |
+| `adapting.failing_connection.count` | 5; range 1–1000000; failed calls (gateway errors, timeouts and upstream 5xx; never cancellations or refusals) from one Application to one Connection that lead to a Suggestion to bind the Application to a working Connection |
+| `adapting.failing_connection.window_minutes` | 60; range 1–10080; how far back those failures are counted |
 
 IDs and provider labels contain 1–64 ASCII alphanumerics, underscores or hyphens,
 starting with an alphanumeric. Protocol is `openai` or `anthropic`. Provider is a

@@ -123,3 +123,36 @@ func TestUnsupportedKindsShowTheirDemand(t *testing.T) {
 		}
 	}
 }
+
+// Narrowing a merged request for every Application to Scope application
+// gives the Change to every Application that asked, as one revertable Change.
+func TestNarrowingAMergedRequestAppliesToEveryApplicationThatAsked(t *testing.T) {
+	h, path := requestsServer(t)
+	id := file(t, h, reqHelper, everyApplication("Code completion needs a quick model.", "Every coding tool here wants a fast model."))
+	if other := file(t, h, reqWriter, everyApplication("Drafts are short.", "Writers and coders both benefit.")); other != id {
+		t.Fatalf("not merged: %s and %s", id, other)
+	}
+	code, out := decideOn(t, h, reqManagement, id, `{"action":"accept","scope":"application","alias":"fast","target":"local","model":"llama3"}`)
+	if code != 200 {
+		t.Fatalf("accept: %d %v", code, out)
+	}
+	c := readConfig(t, path)
+	for _, o := range c.Origins {
+		has := len(o.Aliases) == 1 && o.Aliases[0].Alias == "fast" && o.Aliases[0].Model == "llama3"
+		if asked := o.ID == "helper" || o.ID == "writer"; has != asked {
+			t.Fatalf("%s: asked=%v, has the Alias=%v (%v)", o.ID, asked, has, o.Aliases)
+		}
+	}
+	if len(c.Aliases) != 0 {
+		t.Fatalf("a narrowed Change added a shared Alias: %v", c.Aliases)
+	}
+	for _, tok := range []string{reqHelper, reqWriter} {
+		if a := answerOf(t, h, tok, id); a["status"] != "accepted" || a["granted_scope"] != "application" {
+			t.Fatalf("answer: %v", a)
+		}
+	}
+	_, changes := call(h, "GET", "/api/v1/changes", "", reqManagement, false)
+	if list, _ := changes["changes"].([]any); len(list) != 1 {
+		t.Fatalf("want one revertable Change, got %v", changes)
+	}
+}

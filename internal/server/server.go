@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"aiport/internal/config"
@@ -43,15 +44,21 @@ type Handler struct {
 	decisions        *decide.Queue          // Suggestions waiting for the Owner; nil in bare test handlers
 	failedAuth       *telemetry.FailedAuth  // failed authentications per minute (counts only, never tokens); nil in bare test handlers
 	now              func() time.Time       // nil = time.Now; tests set a fixed clock
+	adaptEvery       time.Duration          // 0 = adapting.interval_seconds; tests set a short one
 	gh               func() (string, error) // finds the gh CLI; nil = look it up on PATH; tests set a fake
 	pair             pairings
-	assets           http.Handler
-	auth             *localauth.Manager
+	// requesters are the Applications that may request changes right now
+	// (none while adapting is off), rebuilt on every config change so the
+	// forwarding path checks a set instead of copying the configuration.
+	requesters atomic.Pointer[map[string]bool]
+	assets     http.Handler
+	auth       *localauth.Manager
 }
 
 func New(c config.Config, s config.Secrets) http.Handler {
 	h := &Handler{auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, authority: c.Listen, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
 	h.initKeySources(c, s)
+	h.setRequesters(c)
 	return h
 }
 
@@ -65,21 +72,32 @@ func (h *Handler) clock() time.Time {
 // snapshot returns a copy of the live configuration safe to read without locks.
 func (h *Handler) snapshot() config.Config { return h.live.Config() }
 
-// mayRequestChanges reports whether the Owner allows this Application to
-// request changes.
-func (h *Handler) mayRequestChanges(originID string) bool {
-	for _, o := range h.snapshot().Origins {
-		if o.ID == originID {
-			return o.MayRequestChanges
+// mayRequestChanges reports whether this Application may request changes
+// now: the Owner allows it and adapting is on. It is cheap enough for the
+// forwarding path.
+func (h *Handler) mayRequestChanges(applicationID string) bool {
+	set := h.requesters.Load()
+	return set != nil && (*set)[applicationID]
+}
+
+// setRequesters rebuilds the set mayRequestChanges reads from c.
+func (h *Handler) setRequesters(c config.Config) {
+	set := map[string]bool{}
+	if !c.Adapting.Disabled {
+		for _, o := range c.Origins {
+			if o.MayRequestChanges {
+				set[o.ID] = true
+			}
 		}
 	}
-	return false
+	h.requesters.Store(&set)
 }
 
 // applyLive makes a changed configuration live everywhere: routing, API keys
 // and the local tokens clients authenticate with. Listener, auth settings,
 // proxy limits and telemetry still need a restart.
 func (h *Handler) applyLive(c config.Config) {
+	h.setRequesters(c)
 	h.gateway.Apply(c)
 	if h.keys.Env == nil {
 		return
@@ -127,9 +145,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	fail := func(status int, code, message string) {
-		writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message, "request_id": id}})
-	}
+	fail := func(status int, code, message string) { writeError(w, status, code, message, nil) }
 	if r.Host != h.authority {
 		fail(403, "invalid_host", "Host is not the configured local address")
 		return
@@ -281,6 +297,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	fail(404, "unsupported_path", "This path is not available")
 }
+
+// writeError answers with aiport's error body: code, message, the request id
+// (from the X-Aiport-Request-Id header) and any extra fields, such as the
+// problems with a Change request or the Extension that refused it.
+func writeError(w http.ResponseWriter, status int, code, message string, extra map[string]any) {
+	e := map[string]any{"code": code, "message": message, "request_id": w.Header().Get("X-Aiport-Request-Id")}
+	for k, v := range extra {
+		e[k] = v
+	}
+	writeJSON(w, status, map[string]any{"error": e})
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
