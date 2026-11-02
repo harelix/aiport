@@ -6,11 +6,11 @@ import {AppWindow, Check, Copy} from 'lucide-react';
    instructions to a coding agent. */
 
 type Pairing = {code: string; name: string; description?: string; requested_at_ms: number; expires_at_ms: number};
-type Origin = {id: string; name: string; target?: string; aliases?: {alias: string; target: string; model: string}[]};
+type Origin = {id: string; name: string; target?: string; aliases?: {alias: string; target: string; model: string}[]; may_request_changes?: boolean};
 type Target = {id: string; disabled?: boolean};
 
-async function post(path: string, body?: object) {
-  const r = await fetch('/api/v1/' + path, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-Aiport-CSRF': '1'}, body: body ? JSON.stringify(body) : undefined});
+async function post(path: string, body?: object, method = 'POST') {
+  const r = await fetch('/api/v1/' + path, {method, credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-Aiport-CSRF': '1'}, body: body ? JSON.stringify(body) : undefined});
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error?.message || 'Request failed (' + r.status + ').');
   return data;
@@ -19,10 +19,10 @@ async function post(path: string, body?: object) {
 const minutesLeft = (ms: number) => Math.max(0, Math.ceil((ms - Date.now()) / 60000));
 
 function PairingRow({p, targets, onDone}: {p: Pairing; targets: Target[]; onDone: () => void}) {
-  const [target, setTarget] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [target, setTarget] = useState(''), [mayRequest, setMayRequest] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   async function act(action: 'approve' | 'reject') {
     setBusy(true); setError('');
-    try { await post('pairings/' + encodeURIComponent(p.code) + '/' + action, action === 'approve' ? {target} : undefined); onDone(); }
+    try { await post('pairings/' + encodeURIComponent(p.code) + '/' + action, action === 'approve' ? {target, may_request_changes: mayRequest} : undefined); onDone(); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   return <li className="pairing">
@@ -37,11 +37,27 @@ function PairingRow({p, targets, onDone}: {p: Pairing; targets: Target[]; onDone
         <option value="">Protocol default</option>
         {targets.filter(t => !t.disabled).map(t => <option key={t.id} value={t.id}>{t.id}</option>)}
       </select>
+      <label className="check-label" title="Lets this application ask you for changes to aiport. You decide on each request.">
+        <input type="checkbox" checked={mayRequest} onChange={e => setMayRequest(e.target.checked)}/>May request changes
+      </label>
       <button type="button" className="primary" disabled={busy} onClick={() => act('approve')}>Approve</button>
       <button type="button" className="text-button" disabled={busy} onClick={() => act('reject')}>Reject</button>
     </div>
     {error && <p className="auth-error" role="alert">{error}</p>}
   </li>;
+}
+
+function MayRequestToggle({o, onDone}: {o: Origin; onDone: () => void}) {
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  async function toggle(allowed: boolean) {
+    setBusy(true); setError('');
+    try { await post('origins/' + encodeURIComponent(o.id), {may_request_changes: allowed}, 'PATCH'); onDone(); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <>
+    <label className="check-label"><input type="checkbox" checked={!!o.may_request_changes} disabled={busy} onChange={e => toggle(e.target.checked)} aria-label={'May ' + o.name + ' request changes'}/>{o.may_request_changes ? 'Allowed' : 'Not allowed'}</label>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+  </>;
 }
 
 export function ApplicationsPanel({origins, targets, onChange}: {origins: Origin[]; targets: Target[]; onChange: () => void}) {
@@ -58,8 +74,8 @@ export function ApplicationsPanel({origins, targets, onChange}: {origins: Origin
     {pairings.length > 0 && <ul className="pairings">{pairings.map(p => <PairingRow key={p.code} p={p} targets={targets} onDone={done}/>)}</ul>}
     {origins.length > 0
       ? <div className="table-scroll"><table>
-          <thead><tr><th>Application</th><th>Client id</th><th>Connection</th><th>Own aliases</th></tr></thead>
-          <tbody>{origins.map(o => <tr key={o.id}><td>{o.name}</td><td><code>{o.id}</code></td><td>{o.target || 'Protocol default'}</td><td>{o.aliases?.length ? o.aliases.map(a => a.alias + ' → ' + a.model).join(', ') : '—'}</td></tr>)}</tbody>
+          <thead><tr><th>Application</th><th>Client id</th><th>Connection</th><th>Own aliases</th><th>May request changes</th></tr></thead>
+          <tbody>{origins.map(o => <tr key={o.id}><td>{o.name}</td><td><code>{o.id}</code></td><td>{o.target || 'Protocol default'}</td><td>{o.aliases?.length ? o.aliases.map(a => a.alias + ' → ' + a.model).join(', ') : '—'}</td><td><MayRequestToggle o={o} onDone={done}/></td></tr>)}</tbody>
         </table></div>
       : !pairings.length && <p className="quiet-empty">No applications yet. Hand the instructions below to the coding agent of an application; when it pairs, its request appears here for you to approve.</p>}
   </section>;
