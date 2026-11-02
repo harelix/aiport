@@ -23,6 +23,9 @@ export type Decision = {
   opens?: string;
   /** The Issue this Suggestion is the aiport fix for: shown with that Issue, not on its own. */
   issue?: string;
+  status?: 'pending' | 'accepted' | 'rejected' | 'dismissed' | 'withdrawn' | 'not_supported';
+  /** The Owner's decision, on decided items. */
+  decision?: {action: string; note?: string; scope?: string; by: string; at_ms: number; change_id?: string};
 };
 
 /** An Issue: a problem aiport keeps seeing for one Application, as GET /api/v1/issues lists it. */
@@ -352,7 +355,10 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
     }
   };
   return <div className="decision issue" id={issueAnchor(issue.id)} tabIndex={-1}>
-    <div className="need"><span className={'badge' + (issue.state === 'resolving' ? ' good' : '')}>{issue.state === 'resolving' ? 'Resolving' : 'Issue'}</span> {issue.summary}</div>
+    <div className="decision-head">
+      <h3 className="need">{issue.summary}</h3>
+      <div className="decision-meta"><span className={'badge' + (issue.state === 'resolving' ? ' good' : ' warn')}>{issue.state === 'resolving' ? 'Resolving' : 'Open'}</span><span className="badge">{issue.application}</span></div>
+    </div>
     <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>
     {issue.diagnosis?.summary && <div className="evidence">Diagnosis: {issue.diagnosis.summary}</div>}
     {automatic && <div className="evidence"><strong>aiport fixed this automatically:</strong> the alias “{fix!.proposal.alias}” → {fix!.proposal.target}/{fix!.proposal.model} for only {issue.application}. <button className="text-button" disabled={!!busy} onClick={revert} aria-label={'Revert the automatic fix for ' + issue.application}><Undo2 size={14} aria-hidden/> {busy === 'revert' ? 'Reverting…' : 'Revert'}</button></div>}
@@ -408,6 +414,9 @@ type Asker = {application: string; why: string; scope_case: string; filed_by?: s
 /** Demand for a kind of Change aiport cannot apply yet: anonymous counts only. */
 export type Demand = {kind: string; requests: number; applications: number; last_at_ms: number};
 
+/** The first sentence of an Application's request text: what it asks for, shown above the form; the rest is under Details. */
+const firstSentence = (text: string) => { const m = text.match(/^.*?[.!?](?=\s|$)/s); return (m ? m[0] : text).trim(); };
+
 const times = (n: number) => n + ' ' + (n === 1 ? 'time' : 'times');
 
 const scopeLabel = (s: string, app: string) => s === 'every_application' ? 'every Application' : 'only ' + app;
@@ -459,29 +468,35 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
   const ev = item.evidence;
   const askers = item.asked_by || [], merged = askers.length > 1;
   const ready = !!target && (!alias || (!!name.trim() && !!model.trim()));
+  const supported = item.kind === 'application_alias' || item.kind === 'bind_application' || !!item.informational;
   return <div className="decision">
-    <div className="need">{request && <span className="badge">{merged ? 'Asked by ' + askers.length + ' Applications' : 'Change request from ' + item.application}</span>} {item.need}</div>
+    <div className="decision-head">
+      <h3 className="need">{item.need}</h3>
+      <div className="decision-meta">
+        <span className="badge">{request ? (merged ? 'Asked by ' + askers.length + ' Applications' : 'Request from ' + item.application) : 'Suggestion'}</span>
+        <span className="badge">For {scopeLabel(item.scope, item.application)}</span>
+        {!supported && <span className="badge warn">Not supported yet</span>}
+      </div>
+    </div>
     {ev && item.kind === 'pair_application' && <div className="evidence">Evidence: {ev.count} refused requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only counts are kept, never the token.</div>}
     {ev && item.kind !== 'pair_application' && <div className="evidence">Evidence: {ev.count} requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only request metadata was used.</div>}
-    {request && !merged && <dl className="request-text">
-      <dt>Kind</dt><dd>{item.kind}{item.kind !== 'application_alias' && item.kind !== 'bind_application' ? ' (not supported)' : ''}</dd>
-      <dt>Details</dt><dd>{item.details}</dd>
-      <dt>Why</dt><dd>{item.why}</dd>
-      <dt>Asked for {scopeLabel(item.scope, item.application)}</dt><dd>{item.scope_case}</dd>
-      {item.filed_by && <><dt>Filed by (as stated)</dt><dd>{item.filed_by}</dd></>}
-      {!!item.repeats && <><dt>Asked again</dt><dd>{item.repeats} more {item.repeats === 1 ? 'time' : 'times'}</dd></>}
-    </dl>}
-    {merged && <>
-      <dl className="request-text">
-        <dt>Kind</dt><dd>{item.kind}</dd>
+    {request && item.details && <p className="decision-ask"><span>Asks for</span> {firstSentence(item.details)}</p>}
+    {request && <details className="decision-more"><summary>Details and reasons</summary>
+      {!merged && <dl className="request-text">
         <dt>Details</dt><dd>{item.details}</dd>
-        <dt>Asked for</dt><dd>every Application</dd>
-      </dl>
-      <ul className="askers" aria-label="Each Application's argument">{askers.map(a => <li key={a.application}>
-        <strong>{a.application}</strong>{a.filed_by ? ' (filed by ' + a.filed_by + ', as stated)' : ''}{a.repeats ? ' · asked again ' + times(a.repeats) : ''}
-        <dl className="request-text"><dt>Why</dt><dd>{a.why}</dd><dt>Argument for every Application</dt><dd>{a.scope_case}</dd></dl>
-      </li>)}</ul>
-    </>}
+        <dt>Why</dt><dd>{item.why}</dd>
+        <dt>Why {scopeLabel(item.scope, item.application)}</dt><dd>{item.scope_case}</dd>
+        {item.filed_by && <><dt>Filed by (as stated)</dt><dd>{item.filed_by}</dd></>}
+        {!!item.repeats && <><dt>Asked again</dt><dd>{item.repeats} more {item.repeats === 1 ? 'time' : 'times'}</dd></>}
+      </dl>}
+      {merged && <>
+        <dl className="request-text"><dt>Details</dt><dd>{item.details}</dd></dl>
+        <ul className="askers" aria-label="Each Application's argument">{askers.map(a => <li key={a.application}>
+          <strong>{a.application}</strong>{a.filed_by ? ' (filed by ' + a.filed_by + ', as stated)' : ''}{a.repeats ? ' · asked again ' + times(a.repeats) : ''}
+          <dl className="request-text"><dt>Why</dt><dd>{a.why}</dd><dt>Argument for every Application</dt><dd>{a.scope_case}</dd></dl>
+        </li>)}</ul>
+      </>}
+    </details>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this item still waits. Reject it, or change what the guardrail checks and approve again.</div>}
     {(alias || item.kind === 'bind_application') && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
@@ -505,17 +520,47 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
   </div>;
 }
 
+/** A decided Suggestion or Change request: what it asked, the outcome, who decided, when, and the note. Plain text only. */
+function Decided({item}: {item: Decision}) {
+  const request = item.source === 'request', d = item.decision;
+  const outcome = item.status === 'accepted' ? 'Accepted' : item.status === 'dismissed' ? 'Dismissed' : 'Rejected';
+  return <div className="decision decided">
+    <div className="decision-head">
+      <h3 className="need">{item.need}</h3>
+      <div className="decision-meta">
+        <span className={'badge' + (item.status === 'accepted' ? ' good' : '')}>{outcome}</span>
+        <span className="badge">{request ? 'Request from ' + item.application : 'Suggestion'}</span>
+        <span className="badge">For {scopeLabel(d?.scope || item.scope, item.application)}</span>
+      </div>
+    </div>
+    {request && item.details && <p className="decision-ask"><span>Asked for</span> {firstSentence(item.details)}</p>}
+    {d && <p className="evidence">{outcome} by {d.by} on {when(d.at_ms)}{d.note ? ': “' + d.note + '”' : '.'}{item.status === 'accepted' ? ' The Change is in Applied changes below, where you can revert it.' : ''}</p>}
+    {request && <details className="decision-more"><summary>Details and reasons</summary>
+      <dl className="request-text">
+        {item.details && <><dt>Details</dt><dd>{item.details}</dd></>}
+        {item.why && <><dt>Why</dt><dd>{item.why}</dd></>}
+        {item.scope_case && <><dt>Why {scopeLabel(item.scope, item.application)}</dt><dd>{item.scope_case}</dd></>}
+        {item.filed_by && <><dt>Filed by (as stated)</dt><dd>{item.filed_by}</dd></>}
+      </dl>
+    </details>}
+  </div>;
+}
+
 /** Changes: Suggestions waiting for a decision (only when there are any), then every configuration edit made through aiport, newest first, with Revert. */
 export default function Changes({tick, onChange, targets = [], onOpenApplications}: {tick: number; onChange: () => void; targets?: string[]; onOpenApplications?: () => void}) {
   const [pending, setPending] = useState<Decision[]>([]), [demand, setDemand] = useState<Demand[]>([]), [issues, setIssues] = useState<Issue[]>([]);
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [reload, setReload] = useState(0), [upstream, setUpstream] = useState<Upstream | null>(null);
+  const [accepted, setAccepted] = useState<Decision[]>([]), [rejected, setRejected] = useState<Decision[]>([]), [view, setView] = useState<'pending' | 'accepted' | 'rejected'>('pending');
   const [autoFix, setAutoFix] = useState<boolean | null>(null), [adapting, setAdapting] = useState(true), [explain, setExplain] = useState<ExplainStatus | null>(null);
   useEffect(() => {
     send('GET', 'upstream').then(setUpstream).catch(() => setUpstream(null));
     send('GET', 'changes').then(d => { setChanges(d.changes || []); setRevertable(!!d.revertable); }).catch(e => setError(e.message));
     send('GET', 'decisions').then(d => { setPending((d.items || []).filter((i: Decision) => !i.issue)); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
+    const own = (d: {items?: Decision[]}) => (d.items || []).filter(i => !i.issue);
+    send('GET', 'decisions?status=accepted').then(d => setAccepted(own(d))).catch(() => setAccepted([]));
+    send('GET', 'decisions?status=rejected').then(d => setRejected(own(d))).catch(() => setRejected([]));
     send('GET', 'issues').then(d => { setIssues(d.issues || []); setAutoFix(!!d.auto_fix); setAdapting(d.adapting !== false); setExplain(explainOf(d)); }).catch(() => { setIssues([]); setAutoFix(null); });
   }, [tick, reload]);
   const revert = async (c: Change) => {
@@ -553,13 +598,23 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   }, [issues]);
   const byId = new Map((changes || []).map(c => [c.id, c]));
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
-  return <>{!!issues.length && <section className="panel" aria-label="Issues">
+  return <>{!!issues.length && <section className="panel changes" aria-label="Issues">
     <div className="panel-heading"><h2><CircleAlert size={16} aria-hidden/> Issues</h2><span>Problems aiport keeps seeing for one Application · they close themselves when its calls succeed again</span></div>
     {issues.map(i => <IssueCard key={i.id + i.state + (i.fix?.suggestion || '')} issue={i} targets={targets} explain={explain} onDecided={decided} onExplained={() => setReload(x => x + 1)}/>)}
-  </section>}{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
-    <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history and Change requests from Applications</span></div>
-    {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided} onOpenApplications={onOpenApplications}/>)}
-  </section>}{!!demand.length && <section className="panel" aria-label="Demand for things aiport cannot do yet">
+  </section>}{(adapting || pending.length + accepted.length + rejected.length > 0) && <section className="panel changes suggestions" aria-label="Suggestions and Change requests">
+    <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Suggestions and Change requests</h2>
+      <div className="task-filters decision-filters" role="tablist" aria-label="Show">
+        {([['pending', 'Waiting', pending.length], ['accepted', 'Accepted', accepted.length], ['rejected', 'Rejected', rejected.length]] as const).map(([key, label, n]) =>
+          <button key={key} type="button" role="tab" aria-selected={view === key} className={view === key ? 'active' : ''} onClick={() => setView(key)}>{label}<span>{n}</span></button>)}
+      </div>
+    </div>
+    {view === 'pending' && (pending.length
+      ? pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided} onOpenApplications={onOpenApplications}/>)
+      : <p className="quiet-empty">Nothing waits for your decision. Suggestions from request history and Change requests from Applications appear here.</p>)}
+    {view !== 'pending' && ((view === 'accepted' ? accepted : rejected).length
+      ? (view === 'accepted' ? accepted : rejected).map(item => <Decided key={item.id} item={item}/>)
+      : <p className="quiet-empty">No {view} items. Decided items are kept as long as request history.</p>)}
+  </section>}{!!demand.length && <section className="panel changes" aria-label="Demand for things aiport cannot do yet">
     <div className="panel-heading"><h2>Asked for, not supported yet</h2><span>Change requests aiport cannot apply · kept and counted, no decision needed</span></div>
     <div className="table-scroll"><table>
       <thead><tr><th>Kind</th><th>Requests</th><th>Applications</th><th>Last asked</th></tr></thead>
@@ -568,12 +623,12 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
     {upstream && !!upstream.suggestions.length && <ul className="askers" aria-label="Suggest to aiport">{upstream.suggestions.map(s => <li key={s.kind}>
       <strong>{s.kind}</strong> <span className="caption">kind named by an Application</span> <UpstreamAction label="Suggest to aiport" draft={s} what={{suggest: s.kind}} upstream={upstream}/>
     </li>)}</ul>}
-  </section>}{upstream && !!upstream.shares.length && <section className="panel" aria-label="Extensions">
+  </section>}{upstream && !!upstream.shares.length && <section className="panel changes" aria-label="Extensions">
     <div className="panel-heading"><h2><Puzzle size={16} aria-hidden/> Extensions</h2><span>Listed in aiport.yaml · share one upstream for others to use</span></div>
     <ul className="askers">{upstream.shares.map(s => <li key={s.extension}>
       <strong>{s.extension}</strong> ({s.hook}) <UpstreamAction label="Share upstream" draft={s} what={{share: s.extension}} upstream={upstream}/>
     </li>)}</ul>
-  </section>}<section className="panel">
+  </section>}<section className="panel changes">
     <div className="panel-heading"><h2>Applied changes</h2><div className="header-actions"><span className="caption">Newest first · kept across restarts</span><DecisionSoundToggle/></div></div>
     {autoFix !== null && <label className="check-label compact" title="adapting.auto_fix in aiport.yaml"><input type="checkbox" checked={autoFix} disabled={!!busy || !adapting} onChange={e => switchAutoFix(e.target.checked)}/>
       <span>Automatic fixes: aiport applies an Issue’s aiport fix itself, only when exactly one Connection serves the model, and only for that one Application. Each one is a Change below that you can revert; a fix you revert is never applied automatically again.{!adapting && ' Adapting is turned off in the configuration, so nothing is applied.'}</span></label>}

@@ -268,8 +268,8 @@ function ProviderGroup({location, targets, presets, providers, taken, sources, s
 }) {
   const g = GROUPS[location], Icon = g.icon;
   const [adding, setAdding] = useState('');
-  // Remote APIs start collapsed; Local starts open.
-  const [open, setOpen] = useState(location !== 'remote');
+  // Both groups start collapsed; the heading shows counts and problems.
+  const [open, setOpen] = useState(false);
   const [checks, setChecks] = useState<Record<string, CheckState>>({});
   async function runCheck(id: string) {
     setChecks(c => ({...c, [id]: 'running'}));
@@ -285,7 +285,7 @@ function ProviderGroup({location, targets, presets, providers, taken, sources, s
   const count = (id: string) => targets.filter(t => t.provider === id).length;
   const done = () => { setAdding(''); onChange(); };
   const body = 'group-body-' + location;
-  return <section className={'panel provider-group' + (open ? '' : ' collapsed')} aria-labelledby={'group-' + location}>
+  return <section className={'panel provider-group grad-cards' + (open ? '' : ' collapsed')} aria-labelledby={'group-' + location}>
     <div className="group-heading">
       <span className="group-icon" aria-hidden><Icon size={18} strokeWidth={1.75}/></span>
       <div>
@@ -300,7 +300,7 @@ function ProviderGroup({location, targets, presets, providers, taken, sources, s
     </div>
     {open && <div id={body}>
     {targets.length
-      ? <div className="provider-grid">{targets.map(t => <ProviderCard key={t.id} t={t} spec={providers.find(p => p.id === t.provider)} src={source(t)} role={role(t)} defaults={defaults} onKeys={onKeys} onChange={onChange} check={checks[t.id]} onCheck={() => runCheck(t.id)}/>)}</div>
+      ? <div className="provider-grid">{targets.map(t => <div className="provider-frame" key={t.id}><ProviderCard t={t} spec={providers.find(p => p.id === t.provider)} src={source(t)} role={role(t)} defaults={defaults} onKeys={onKeys} onChange={onChange} check={checks[t.id]} onCheck={() => runCheck(t.id)}/></div>)}</div>
       : <p className="group-empty">No {location === 'local' ? 'local model servers' : 'remote providers'} yet. Add one below.</p>}
     <div className="available">
       <h3>Add a connection</h3>

@@ -1,11 +1,13 @@
 package server
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -71,6 +73,7 @@ func (h *Handler) StartAdapting(stop <-chan struct{}) {
 // decisionsRoute serves the items waiting for the Owner in Changes:
 //
 //	GET  /api/v1/decisions       pending Suggestions and Change requests, newest first, and demand for unsupported kinds
+//	GET  /api/v1/decisions?status=accepted|rejected  decided items (rejected includes dismissed), latest decision first
 //	POST /api/v1/decisions/{id}  {action: accept|reject|dismiss, note, scope, target, model}
 //
 // The caller has already verified management access.
@@ -80,9 +83,30 @@ func (h *Handler) decisionsRoute(w http.ResponseWriter, r *http.Request, fail fu
 			fail(405, "method_not_allowed", "Use GET")
 			return true
 		}
+		// ?status= picks which items: pending (default), accepted, or rejected
+		// (rejected and dismissed), so the Owner can look back at decisions.
+		var statuses []decide.Status
+		switch r.URL.Query().Get("status") {
+		case "", "pending":
+			statuses = []decide.Status{decide.Pending}
+		case "accepted":
+			statuses = []decide.Status{decide.Accepted}
+		case "rejected":
+			statuses = []decide.Status{decide.Rejected, decide.Dismissed}
+		default:
+			fail(400, "invalid_status", "Use status=pending, accepted or rejected")
+			return true
+		}
 		items, demand := []decide.Item{}, []decide.Demand{}
 		if h.decisions != nil {
-			items, demand = h.decisions.List(decide.Filter{Status: decide.Pending}), h.decisions.Demand()
+			for _, st := range statuses {
+				items = append(items, h.decisions.List(decide.Filter{Status: st})...)
+			}
+			if statuses[0] != decide.Pending {
+				// Most recently decided first.
+				slices.SortStableFunc(items, func(a, b decide.Item) int { return cmp.Compare(decidedAt(b), decidedAt(a)) })
+			}
+			demand = h.decisions.Demand()
 		}
 		writeJSON(w, 200, map[string]any{"adapting": h.decisions != nil && h.decisions.On(), "items": items, "demand": demand})
 		return true
@@ -148,4 +172,12 @@ func decisionFailed(w http.ResponseWriter, err error, fail func(int, string, str
 	default:
 		fail(400, "invalid_decision", err.Error())
 	}
+}
+
+// decidedAt is when the Owner decided an item, or when it last changed.
+func decidedAt(it decide.Item) int64 {
+	if it.Decision != nil {
+		return it.Decision.At
+	}
+	return it.UpdatedAt
 }

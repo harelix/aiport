@@ -117,7 +117,9 @@ Connection speaks one protocol, `openai` or `anthropic`. Each provider shows
 its logo on its card, in the add list and in the Overview's provider
 distribution; llama.cpp and custom providers show a neutral icon.
 
-On **Providers**:
+On **Providers**, Connections are grouped as Remote APIs and Local. Both
+groups start collapsed; each heading shows how many Connections it holds and
+which need a key or are unhealthy. Click a heading to open it.
 
 - **Add a connection** from a preset, or any other server that speaks the
   OpenAI or Anthropic API natively (remote URLs must use HTTPS); **Remove**
@@ -897,11 +899,19 @@ Issue opens again and offers the aiport fix again.
   Integrate page to pair it, or Dismiss). Thresholds are under `adapting:`
   in the configuration.
 - **Change requests** come from Applications you allowed to request changes.
-  Each shows the kind, the details, why it is needed, the Scope asked for
-  and the argument for it, and who filed it (as stated). Identical requests
+  Each shows what it asks for; **Details and reasons** opens the full
+  details, why it is needed, the argument for the Scope asked for, and who
+  filed it (as stated). Identical requests
   from several Applications are merged into one item, each with its own
   argument; one decision answers them all. Request text is plain text from
   the Application: it is shown as is and never sent to a model.
+
+The **Waiting / Accepted / Rejected** filter on **Suggestions and Change
+requests** picks what the list shows. Waiting is what needs you. Accepted and
+Rejected show past decisions, most recent first, with who decided, when and
+the note; Rejected includes dismissed Suggestions. Decided items are kept as
+long as request history (`retention_days`); an accepted one's Change stays in
+**Applied changes**, where you can revert it.
 
 ### Scope
 

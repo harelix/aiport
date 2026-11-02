@@ -336,6 +336,22 @@ textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* ---------- Sidebar (expanded 248px / collapsed 68px strip) ---------- */
 :root{--sidebar-w:248px}
+/* Accent gradient (yellow → pink-violet → periwinkle), on trial on the notice edges of Overview and Activity. */
+:root{--grad-1:#FAD279;--grad-2:#F198FE;--grad-3:#9CBEFF;--grad-v:linear-gradient(180deg,var(--grad-1),var(--grad-2),var(--grad-3))}
+.main.grad-notices .notice{border-left-width:0;padding-left:19px;background:var(--grad-v) left/3px 100% no-repeat,var(--panel)}
+/* Gradient frame like a mat around a card: the gradient shows in a wide border, the panel sits inside. */
+:root{--grad-h:linear-gradient(90deg,var(--grad-1),var(--grad-2),var(--grad-3))}
+/* The frame's gradient turns one full circle every 60s, too slowly to notice at a glance. */
+@property --grad-angle{syntax:'<angle>';inherits:false;initial-value:90deg}
+@keyframes grad-turn{to{--grad-angle:450deg}}
+/* A wide gradient mat around each card, as in a framed screenshot; the card casts a soft shadow down and to the left. */
+.grad-cards .provider-frame{padding:12px;border-radius:14px;background:linear-gradient(var(--grad-angle),var(--grad-1),var(--grad-2),var(--grad-3));animation:grad-turn 60s linear infinite}
+.grad-cards .provider-frame:nth-child(2n){animation-delay:-20s}
+.grad-cards .provider-frame:nth-child(3n){animation-delay:-40s}
+.grad-cards .provider-frame .provider{height:100%;border-color:transparent;box-shadow:-6px 8px 20px rgba(46,52,64,.22)}
+@media (prefers-reduced-motion:reduce){.grad-cards .provider-frame{animation:none}}
+/* A 3px gradient line along a panel's bottom edge. */
+.panel.grad-bottom{border-bottom-width:0;padding-bottom:3px;background:var(--grad-h) bottom/100% 3px no-repeat,var(--panel)}
 html[data-sidebar=collapsed]{--sidebar-w:68px}
 .sidebar{width:var(--sidebar-w);padding:20px 14px;background:var(--side);border-right:1px solid var(--line);position:fixed;inset:0 auto 0 0;display:flex;flex-direction:column;gap:28px;transition:width .18s ease;overflow:hidden;z-index:10}
 .main{margin-left:var(--sidebar-w);padding:36px 48px 24px;max-width:1520px;width:calc(100% - var(--sidebar-w));transition:margin-left .18s ease,width .18s ease}
@@ -369,6 +385,23 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 /* decisions waiting in Changes */
 .decision{display:grid;gap:10px;padding:14px 0;border-top:1px solid var(--line)}
 .decision:first-of-type{border-top:0}
+/* Changes page: content lines up with the panel heading (24px), never against the panel's edge. */
+.panel.changes>.decision{padding:20px 24px;gap:12px}
+/* Each suggestion ends with the accent gradient instead of a grey rule. */
+.panel.suggestions>.decision{border-top:0;background:var(--grad-h) bottom/100% 2px no-repeat}
+.panel.suggestions>.panel-heading{border-bottom:1px solid var(--line)}
+.decision-filters{margin:0}
+.panel.suggestions>.quiet-empty{padding:28px 24px}
+/* Approve: a mint green that sits with the gradient's yellow, pink and periwinkle. */
+:root{--approve:#7ED6A8;--approve-hover:#69CB97;--approve-text:#13301F}
+.decision-form .actions .primary{background:var(--approve);border-color:var(--approve);color:var(--approve-text)}
+.decision-form .actions .primary:hover:not(:disabled){background:var(--approve-hover);border-color:var(--approve-hover)}
+.decision-form .actions .primary:disabled{opacity:.55}
+.panel.changes>.askers{padding:0 24px 20px}
+.panel.changes>.check-label{margin:0 24px 16px}
+.panel.changes>.notice{margin:0 24px 16px}
+.panel.changes>.caption{margin:0;padding:16px 24px 20px}
+@media(max-width:650px){.panel.changes>.decision{padding:14px 16px}.panel.changes>.askers{padding:0 16px 18px}.panel.changes>.check-label,.panel.changes>.notice{margin:0 16px 14px}.panel.changes>.caption{padding:14px 16px 18px}}
 .decision .need{color:var(--text);font-size:14px;overflow-wrap:anywhere}
 .decision .evidence{color:var(--muted);font-size:12px}
 .issue-count{display:inline-flex;align-items:center;gap:6px;text-align:left}
@@ -386,9 +419,24 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .application-fix summary{cursor:pointer;font-size:12px;color:var(--text-2)}
 .decision.issue:focus{outline:2px solid var(--accent);outline-offset:2px}
 .application-fix pre{margin:6px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--inset);color:var(--text-2);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
-.decision-form{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
-.decision-form label{display:grid;gap:4px;font-size:12px;color:var(--text-2)}
-.decision-form .actions{display:flex;gap:8px}
+.decision-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.decision-head .need{margin:0;font-size:15px;font-weight:600;line-height:1.45;color:var(--text)}
+.decision-meta{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;flex-shrink:0;max-width:45%}
+.decision .evidence{font-size:12.5px;line-height:1.6}
+.decision-more summary{cursor:pointer;width:max-content;font-size:13px;color:var(--text-2)}
+.decision-more summary:hover{color:var(--text)}
+.decision-more[open] summary{margin-bottom:12px}
+.decision-more .request-text{gap:10px 20px;line-height:1.6;max-width:880px}
+.decision-more .askers{margin-top:12px}
+.decision-ask{margin:0;font-size:13px;line-height:1.6;color:var(--text);overflow-wrap:anywhere}
+.decision-ask span{color:var(--muted);margin-right:4px}
+.decision-form{display:flex;flex-wrap:wrap;gap:12px 14px;align-items:flex-end;padding:14px 16px;background:var(--inset);border-radius:var(--radius-sm)}
+.decision-form label{flex:1 1 140px;display:grid;gap:6px;font-size:12px;color:var(--muted)}
+.decision-form input:not([type=checkbox]),.decision-form select{width:100%;min-width:0;height:34px;padding:0 10px;font-size:13px}
+.decision-form select{padding-right:28px}
+.decision-form .actions{flex:0 0 auto;margin-left:auto;display:flex;gap:8px}
+.decision-form .actions button{height:34px;padding-top:0;padding-bottom:0}
+@media(max-width:650px){.decision-head{flex-direction:column;gap:8px}.decision-meta{justify-content:flex-start;max-width:none}}
 .request-text{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13px;margin:0}
 .request-text dt{color:var(--muted)}
 .request-text dd{margin:0;color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -661,8 +709,9 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .row-select:hover{color:var(--accent-text)}
 .progress{display:inline-block;width:56px;height:6px;border-radius:6px;background:var(--panel2);vertical-align:middle;overflow:hidden}
 .app-row.selected .progress{background:var(--inset)}
-.progress i{display:block;height:100%;background:var(--accent)}
-.progress.complete i{background:var(--good)}
+.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--grad-1),var(--grad-2),var(--grad-3),var(--grad-2),var(--grad-1));background-size:224px 100%;animation:grad-drift 40s ease-in-out infinite alternate}
+@keyframes grad-drift{to{background-position:-168px 0}}
+@media (prefers-reduced-motion:reduce){.progress i{animation:none}}
 .progress-text{font-variant-numeric:tabular-nums;color:var(--text-2);font-size:12px;margin-left:6px}
 .pair-code.small{font-size:12px;letter-spacing:1px;padding:1px 6px;margin:0 2px}
 .rejected-row td{color:var(--text-2)}

@@ -395,3 +395,39 @@ func TestARejectedRequestTellsTheRequesterWhy(t *testing.T) {
 		t.Fatal("rejecting changed the configuration")
 	}
 }
+
+// The Owner can look back at decided items in Changes: accepted ones, and
+// rejected or dismissed ones with the note and who decided.
+func TestTheOwnerCanListDecidedItemsByOutcome(t *testing.T) {
+	h, _ := requestsServer(t)
+	id := file(t, h, reqHelper, nil)
+	if code, out := decideOn(t, h, reqManagement, id, `{"action":"reject","note":"Not now."}`); code != 200 {
+		t.Fatalf("reject: %d %v", code, out)
+	}
+	list := func(q string) []any {
+		t.Helper()
+		w, out := call(h, "GET", "/api/v1/decisions"+q, "", reqManagement, false)
+		if w.Code != 200 {
+			t.Fatalf("GET decisions%s: %d %s", q, w.Code, w.Body)
+		}
+		return out["items"].([]any)
+	}
+	if n := len(list("")); n != 0 {
+		t.Fatalf("a rejected request still waits: %d", n)
+	}
+	if n := len(list("?status=accepted")); n != 0 {
+		t.Fatalf("a rejected request is listed as accepted: %d", n)
+	}
+	got := list("?status=rejected")
+	if len(got) != 1 {
+		t.Fatalf("the rejected request is not listed: %v", got)
+	}
+	it := got[0].(map[string]any)
+	d, _ := it["decision"].(map[string]any)
+	if it["status"] != "rejected" || d == nil || d["note"] != "Not now." || d["by"] == "" {
+		t.Fatalf("the rejected item lacks its decision: %v", it)
+	}
+	if w, out := call(h, "GET", "/api/v1/decisions?status=everything", "", reqManagement, false); w.Code != 400 || errorCode(out) != "invalid_status" {
+		t.Fatalf("an unknown status was accepted: %d %s", w.Code, w.Body)
+	}
+}
