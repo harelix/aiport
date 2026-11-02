@@ -82,6 +82,33 @@ function CheckResult({state}: {state?: CheckState}) {
   return <p className="check-result" role="status"><span className={'badge ' + checkTone(state)}>{checkLabel(state)}</span> {state.message}{state.models !== undefined && ' ' + state.models + ' model' + (state.models === 1 ? '' : 's') + ' listed.'} <small>{state.latency_ms} ms · {new Date(state.checked_at_ms).toLocaleTimeString()}</small>{state.reason && <span className="check-reason">{state.reason.explanation} {state.reason.fix && <><b>What to do:</b> {state.reason.fix}</>}</span>}</p>;
 }
 
+/** Result of GET /api/v1/targets/{id}/models (the same free GET /models listing, cached briefly). */
+type ModelList = {connection: string; listed: boolean; state: string; models: string[]; listed_at_ms: number};
+
+/** "N models" on a Connection card, with the list on request. */
+function ConnectionModels({t, check}: {t: Target; check?: CheckState}) {
+  const [list, setList] = useState<ModelList | null>(null), [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  async function load(refresh: boolean) {
+    setBusy(true); setError('');
+    try { setList(await mutate('GET', 'targets/' + encodeURIComponent(t.id) + '/models' + (refresh ? '?refresh=1' : '')) as ModelList); setOpen(true); }
+    catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
+  if (t.disabled) return null;
+  const checked = check && typeof check === 'object' && !('error' in check) ? check.models : undefined;
+  const count = list?.listed ? list.models.length : checked;
+  const label = count === undefined ? 'Models' : count + ' model' + (count === 1 ? '' : 's');
+  return <div className="conn-models">
+    <button type="button" className="text-button" aria-expanded={open} disabled={busy} onClick={() => open ? setOpen(false) : load(false)} title="Lists this connection's models with GET /models. Generates nothing and costs nothing.">{busy ? 'Listing models…' : open ? 'Hide models' : list || count !== undefined ? 'Show ' + label.toLowerCase() : 'Show models'}</button>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    {open && list && (list.listed
+      ? <div className="model-list">
+          <p className="caption">{label} · listed {new Date(list.listed_at_ms).toLocaleTimeString()} <button type="button" className="text-button" disabled={busy} onClick={() => load(true)}>Refresh</button></p>
+          {list.models.length ? <ul>{list.models.map(m => <li key={m}><code>{m}</code></li>)}</ul> : <p className="caption">This connection lists no models.</p>}
+        </div>
+      : <p className="caption" role="status">The model list could not be read ({list.state.replaceAll('_', ' ')}). aiport treats its models as unknown. Use <b>Check connection</b> to see why. <button type="button" className="text-button" disabled={busy} onClick={() => load(true)}>Try again</button></p>)}
+  </div>;
+}
+
 /** Region / endpoint / protocol fields shared by the add and edit forms. */
 function useConnectionFields(spec: ProviderSpec, idPrefix: string, initial?: {region?: string; endpoint?: string; protocol?: string}) {
   const [region, setRegion] = useState(initial?.region || ''), [endpoint, setEndpoint] = useState(initial?.endpoint || spec.endpoints[0].id), [protocol, setProtocol] = useState(initial?.protocol || spec.protocol);
@@ -226,6 +253,7 @@ function ProviderCard({t, spec, src, role, defaults, onKeys, onChange, check, on
     <div className="conn-check">
       <button type="button" className="secondary with-icon" disabled={check === 'running' || t.disabled} onClick={onCheck} title="Sends GET /models with this connection's key. Generates nothing and costs nothing."><Activity size={14} aria-hidden/>Check connection</button>
       <CheckResult state={check}/>
+      <ConnectionModels t={t} check={check}/>
     </div>
     <CardActions t={t} defaults={defaults} onChange={onChange}/>
   </article>;

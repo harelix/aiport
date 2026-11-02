@@ -129,6 +129,14 @@ On **Providers**:
   connection refused, TLS failed, timed out), or the HTTP status with the
   provider's own error type (for example `HTTP 401, authentication_error`),
   and what to do. A passing check does not prove every model works.
+- **Show models** on a card lists the models that Connection serves, using
+  the same free `GET /models` listing (OpenAI-, Anthropic- and Ollama-shaped
+  answers). After a check, the button shows the count ("Show 12 models").
+  aiport keeps only the model ids, in memory, and reuses a list for two
+  minutes; **Refresh** lists again, and so does **Check connection**. If the
+  listing fails (no key, key rejected, no model list, unreachable), aiport
+  treats that Connection's models as unknown, not as "serves nothing".
+  Disabled Connections are not listed.
 - **Make OpenAI default** / **Make Anthropic default** sets the Connection a
   protocol uses when nothing else picks one.
 
