@@ -477,10 +477,15 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .toolbar .icon-button:hover:not(:disabled){background:var(--bg);color:var(--text)}
 .toolbar .icon-button.on{color:var(--accent-text)}
 .toolbar .theme-switch{padding:0;border:0;background:transparent}
-.help-link{display:inline-grid;place-items:center;width:22px;height:22px;margin-left:6px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);vertical-align:middle;flex-shrink:0}
-.help-link:hover{color:var(--accent-text);background:var(--panel2)}
-h1 .help-link{width:26px;height:26px;margin-left:8px}
-h1 .help-link svg{width:16px;height:16px}
+/* The info button: the canonical "info" blue (Nord frost), as a soft round chip centred on the heading's text. */
+:root{--info:var(--nord8);--info-bg:rgba(136,192,208,.16);--info-bg-hover:rgba(136,192,208,.28)}
+html[data-theme=light]{--info:var(--nord10);--info-bg:rgba(94,129,172,.14);--info-bg-hover:rgba(94,129,172,.26)}
+.help-link{display:inline-grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--info-bg);color:var(--info);flex-shrink:0;transition:background .15s}
+.help-link svg{width:16px;height:16px}
+.help-link:hover,.help-link.on{background:var(--info-bg-hover);color:var(--info)}
+:is(h1,h2,h3):has(>.help-link){display:flex;align-items:center;gap:8px}
+h1 .help-link{width:30px;height:30px}
+h1 .help-link svg{width:19px;height:19px}
 .toolbar-sep{width:1px;height:18px;background:var(--line);margin:0 3px}
 .header-actions .caption{margin:0}
 .preview-pill{font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);border:1px solid var(--line-strong);border-radius:999px;padding:4px 10px;white-space:nowrap}
@@ -660,8 +665,39 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .copy-button{padding:4px 10px;font-size:12px}
 .snippet-code{margin:0;padding:12px 14px;background:var(--inset);color:var(--text);font-size:12.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
 .brief>pre.snippet-code{border:1px solid var(--line);border-radius:var(--radius-sm);margin:0 0 14px}
-.manual .brief{padding-top:8px}
-.manual .brief h2{font-size:20px}
+/* The manual, laid out like a documentation site. */
+.docs{display:grid;grid-template-columns:232px minmax(0,1fr);gap:40px;align-items:start}
+.docs-toc{position:sticky;top:24px;max-height:calc(100vh - 48px);overflow:auto;padding-right:6px;font-size:13px;scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
+.docs-filter{display:flex;align-items:center;gap:8px;padding:0 10px;margin-bottom:12px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--field);color:var(--muted)}
+.docs-filter input{flex:1;min-width:0;border:0;background:transparent;padding:7px 0;font-size:13px;outline:none}
+.docs-toc ol{list-style:none;margin:0;padding:0;display:grid;gap:1px;border-left:1px solid var(--line)}
+.docs-toc a{display:block;padding:5px 10px;margin-left:-1px;border-left:2px solid transparent;color:var(--text-2);text-decoration:none;line-height:1.4}
+.docs-toc .level-2 a{padding-left:22px;font-size:12.5px;color:var(--muted)}
+.docs-toc a:hover{color:var(--text)}
+.docs-toc a.current{border-left-color:var(--grad-2);color:var(--text);font-weight:600}
+.docs-none{padding:6px 10px;color:var(--muted)}
+.docs-body{padding:8px 0 64px;font-size:15px;line-height:1.75;color:var(--text-2)}
+.docs-body>*{max-width:76ch}
+.docs-body>h2{font-size:30px;letter-spacing:-.5px;margin:0 0 18px;color:var(--text)}
+.docs-body>h3{font-size:21px;letter-spacing:-.2px;margin:48px 0 14px;padding-top:28px;border-top:1px solid var(--line);color:var(--text)}
+.docs-body>h4{font-size:17px;margin:32px 0 10px;color:var(--text)}
+.docs-body>h5{font-size:15px;margin:24px 0 8px;color:var(--text)}
+.docs-body h2,.docs-body h3,.docs-body h4,.docs-body h5{scroll-margin-top:24px;position:relative}
+.heading-anchor{margin-left:8px;color:var(--muted);text-decoration:none;font-weight:400;opacity:0;transition:opacity .15s}
+.docs-body :is(h2,h3,h4,h5):hover .heading-anchor,.heading-anchor:focus-visible{opacity:1}
+.docs-body code{font-size:.86em;padding:1px 4px;border:1px solid var(--line);border-radius:4px;background:var(--inset);color:var(--text)}
+.docs-body pre code{padding:0;border:0;background:none}
+.docs-body>pre.snippet-code{max-width:76ch}
+.docs-body .table-scroll{border:1px solid var(--line);border-radius:var(--radius-sm)}
+@media (max-width:980px){.docs{grid-template-columns:1fr;gap:16px}.docs-toc{position:static;max-height:none}}
+/* The info button's explanation, next to its subject. */
+.help-pop{position:fixed;z-index:60;width:380px;max-width:calc(100vw - 24px);padding:14px 16px 12px;background:var(--panel);border:1px solid var(--line-strong);border-radius:var(--radius);box-shadow:0 12px 32px rgba(46,52,64,.22);font-size:13px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--text-2);text-align:left}
+.help-pop-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;color:var(--text);font-size:13.5px}
+.help-pop-head .icon-button{width:26px;height:26px}
+.help-pop-body.brief{padding:0;line-height:1.6}
+.help-pop-body.brief>p,.help-pop-body.brief>ul,.help-pop-body.brief>ol{margin:0 0 8px;max-width:none}
+.help-pop-more{margin-top:4px;font-size:13px}
+
 .help-button.on{color:var(--accent-text);background:var(--panel)}
 @media(max-width:650px){.pairing{grid-template-columns:1fr}}
 
