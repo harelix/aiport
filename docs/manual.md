@@ -385,7 +385,10 @@ An Issue resolves itself: when the Application's calls for that model
 succeed again, aiport marks it **resolved** and records how: `aiport_fix`
 (the Change you approved), `application_fix` (the Application's coding
 agent fixed it, see below) or `stopped` (the calls succeeded, or stopped
-failing for a whole window, without a fix). If you revert the fix, the Issue
+failing for a whole window, without a fix). A fix is credited only when a
+call shows it works: if the Application makes no calls for that model for a
+whole window after you approved the fix, the Issue resolves as `stopped`,
+not `aiport_fix`. If you revert the fix, the Issue
 opens again and offers the fix again. A resolved Issue reopens when the
 error sticks again; only errors after it resolved count. Issues are kept
 across restarts and hold only Application ids, the cause, model names,

@@ -630,16 +630,17 @@ func (q *Queue) track(c config.Config, cause Cause, symptoms []*symptom, succeed
 		if succeeded != nil {
 			success = max(success, succeeded(is.Application, is.Subject))
 		}
-		if is.State == IssueResolving && is.ResolvingBy == ByApplicationFix {
-			// The Application's word is not enough: its calls for the same
-			// cause must succeed (silence never confirms it).
-			if success <= after {
-				continue
-			}
-		} else if success <= after && now-after < window.Milliseconds() {
-			continue
+		confirmed, quiet := success > after, now-after >= window.Milliseconds()
+		switch {
+		case is.State == IssueResolving && confirmed:
+			q.resolve(is, is.ResolvingBy, now) // the fix works: a call for the same cause succeeded
+		case is.State == IssueResolving && is.ResolvingBy == ByApplicationFix:
+			// The Application's word is not enough: its calls for the
+			// same cause must succeed (silence never confirms it).
+		case confirmed || quiet:
+			// No fix, or an aiport fix no call has shown working yet.
+			q.resolve(is, Stopped, now)
 		}
-		q.resolve(is, now)
 	}
 	return offered
 }
@@ -676,23 +677,14 @@ func (q *Queue) reopen(is *Issue, now int64) {
 	is.Reopened++
 }
 
-// resolve marks is resolved, recording how, and withdraws a fix still
-// waiting for the Owner.
-func (q *Queue) resolve(is *Issue, now int64) {
-	r := &Resolution{How: Stopped, At: now}
-	if is.State == IssueResolving && is.ResolvingBy != "" {
-		r.How = is.ResolvingBy
-	}
-	if r.How == ByAiportFix && is.Fix != nil {
+// resolve marks is resolved as how, and withdraws a fix still waiting for
+// the Owner: the Issue resolved itself.
+func (q *Queue) resolve(is *Issue, how How, now int64) {
+	r := &Resolution{How: how, At: now}
+	if how == ByAiportFix && is.Fix != nil {
 		r.ChangeID = is.Fix.ChangeID
 	}
-	if is.Fix != nil && is.Fix.State == FixProposed {
-		if j := q.index(is.Fix.Suggestion); j >= 0 && q.items[j].Status == Pending {
-			q.items[j].Status, q.items[j].UpdatedAt = Withdrawn, now
-			q.save(q.items[j])
-		}
-		is.Fix = nil
-	}
+	q.withdrawFix(is, now)
 	is.State, is.Resolution, is.ResolvingBy, is.SinceMS, is.UpdatedAt = IssueResolved, r, "", now, now
 	q.saveIssue(is)
 }

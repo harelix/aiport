@@ -267,6 +267,27 @@ func TestUnknownModelIssueStartToFinish(t *testing.T) {
 	}
 }
 
+// An approved aiport fix is credited only when a call shows it works: if
+// docs-bot makes no calls for a whole window after the fix, the Issue
+// resolves as stopped, not as fixed by aiport.
+func TestAnApprovedFixWithNoCallsAfterItResolvesAsStopped(t *testing.T) {
+	f := newIssuesFixture(t, "")
+	f.chat(t, docsBotToken, "llama3:8b", 5)
+	f.detect()
+	if code, out := f.decide(t, f.only(t)["id"].(string), `{"action":"accept"}`); code != 200 {
+		t.Fatalf("approve: %d %v", code, out)
+	}
+	f.h.Detect(f.at.Add(30 * time.Minute))
+	if is := f.only(t); is["state"] != "resolving" {
+		t.Fatalf("resolved before a whole quiet window: %v", is)
+	}
+	f.h.Detect(f.at.Add(61 * time.Minute))
+	is := f.only(t)
+	if res := m(is["resolution"]); is["state"] != "resolved" || res["how"] != "stopped" || res["change_id"] != nil {
+		t.Fatalf("after a quiet window: %v", is)
+	}
+}
+
 // With no Connection, several or an unlisted one serving the model, the
 // Issue stays open with no proposed Connection; the Owner chooses one.
 func TestUncertainDiagnosesLeaveTheConnectionToTheOwner(t *testing.T) {
