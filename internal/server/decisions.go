@@ -42,15 +42,21 @@ func (h *Handler) Detect(at time.Time) {
 }
 
 // StartAdapting runs detection on a background ticker until stop is closed,
-// at the interval configured at start. It does nothing when the adapting loop
-// is off or the handler has no decision queue. Detection never runs during a
-// request.
+// at the configured interval. The ticker runs even while the adapting loop is
+// off and each pass checks whether it is on, so turning it on in aiport.yaml
+// needs no restart. It does nothing when the handler has no decision queue.
+// Detection never runs during a request.
 func (h *Handler) StartAdapting(stop <-chan struct{}) {
-	c := h.snapshot()
-	if h.decisions == nil || c.Adapting.Disabled {
+	if h.decisions == nil {
 		return
 	}
-	go h.decisions.Run(stop, time.Duration(c.Adapting.IntervalSeconds)*time.Second, h.clock)
+	every := func() time.Duration {
+		if h.adaptEvery > 0 {
+			return h.adaptEvery
+		}
+		return time.Duration(h.snapshot().Adapting.IntervalSeconds) * time.Second
+	}
+	go h.decisions.Run(stop, every, h.clock)
 }
 
 // decisionsRoute serves the items waiting for the Owner in Changes:

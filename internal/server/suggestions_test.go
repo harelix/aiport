@@ -255,6 +255,37 @@ func TestAdaptingOff(t *testing.T) {
 	}
 }
 
+// Turning the adapting loop on in configuration starts detection without a
+// restart: the background ticker runs from the start and checks each time.
+func TestTurningAdaptingOnStartsDetectionWithoutARestart(t *testing.T) {
+	at := suggestionsNow
+	h, management := suggestionsServer(t, filepath.Join(t.TempDir(), "aiport.yaml"), "adapting: {disabled: true}\n", seededHistory(), &at)
+	h.adaptEvery = 5 * time.Millisecond
+	stop := make(chan struct{})
+	defer close(stop)
+	h.StartAdapting(stop)
+	time.Sleep(30 * time.Millisecond)
+	if on, list := pendingDecisions(t, h, management); on || len(list) != 0 {
+		t.Fatalf("loop off, yet adapting=%v items=%v", on, list)
+	}
+	// No dashboard endpoint turns the loop on; the Owner edits aiport.yaml,
+	// which reaches aiport as a Change.
+	if _, _, err := h.live.Change("turn adapting on", replaceConfig(suggestionsYAML)); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		on, list := pendingDecisions(t, h, management)
+		if on && len(list) == 1 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no detection after turning the loop on: adapting=%v items=%v", on, list)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // Requests forwarded with the loop on and off get identical bytes back, and
 // detection, run separately afterwards, finds the pattern in those requests.
 func TestForwardingUnchangedByAdapting(t *testing.T) {

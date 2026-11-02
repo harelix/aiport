@@ -450,10 +450,13 @@ func (q *Queue) save(it Item) {
 	}
 }
 
-// Run calls Detect every interval until stop is closed, with times from now.
-// It is the only place detection runs; nothing runs on the forwarding path.
-func (q *Queue) Run(stop <-chan struct{}, interval time.Duration, now func() time.Time) {
-	t := time.NewTicker(interval)
+// Run calls Detect until stop is closed, waiting every() between passes
+// (read again after each pass, so a changed interval applies), with times
+// from now. It runs whether or not the loop is on: Detect checks On each
+// time, so turning the loop on needs no restart. It is the only place
+// detection runs; nothing runs on the forwarding path.
+func (q *Queue) Run(stop <-chan struct{}, every func() time.Duration, now func() time.Time) {
+	t := time.NewTimer(every())
 	defer t.Stop()
 	for {
 		select {
@@ -461,6 +464,7 @@ func (q *Queue) Run(stop <-chan struct{}, interval time.Duration, now func() tim
 			return
 		case <-t.C:
 			q.Detect(now())
+			t.Reset(every())
 		}
 	}
 }
