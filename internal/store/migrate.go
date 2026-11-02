@@ -61,6 +61,80 @@ var migrations = []string{
 		PRIMARY KEY (task_uuid, seq)
 	);
 	CREATE INDEX tasks_created ON tasks(created_at_ms DESC);`,
+
+	// 3: Intent Queue tables. The feature lives on the intent-queue branch;
+	// the schema stays here because databases already carry version 3.
+	// instructions holds the editable description; request is the original
+	// wording and is never updated.
+	`ALTER TABLE tasks ADD COLUMN workspace TEXT NOT NULL DEFAULT '';
+	ALTER TABLE tasks ADD COLUMN request TEXT NOT NULL DEFAULT '';
+	ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'owner';
+	ALTER TABLE tasks ADD COLUMN location TEXT NOT NULL DEFAULT '';
+	ALTER TABLE tasks ADD COLUMN position REAL NOT NULL DEFAULT 0;
+	ALTER TABLE tasks ADD COLUMN superseded_by TEXT NOT NULL DEFAULT '';
+	ALTER TABLE tasks ADD COLUMN execution_ref TEXT NOT NULL DEFAULT '';
+	ALTER TABLE tasks ADD COLUMN needs_approval INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE tasks ADD COLUMN validation TEXT NOT NULL DEFAULT '';
+	ALTER TABLE tasks ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+	CREATE INDEX tasks_workspace ON tasks(workspace, position);
+	CREATE TABLE task_revisions (
+		task_uuid   TEXT NOT NULL REFERENCES tasks(uuid) ON DELETE CASCADE,
+		revision    INTEGER NOT NULL,
+		at_ms       INTEGER NOT NULL,
+		actor       TEXT NOT NULL,
+		title       TEXT NOT NULL,
+		description TEXT NOT NULL,
+		acceptance  TEXT NOT NULL,
+		PRIMARY KEY (task_uuid, revision)
+	);
+	CREATE TABLE task_links (
+		task_uuid  TEXT NOT NULL REFERENCES tasks(uuid) ON DELETE CASCADE,
+		other_uuid TEXT NOT NULL REFERENCES tasks(uuid) ON DELETE CASCADE,
+		kind       TEXT NOT NULL, -- depends_on, related
+		PRIMARY KEY (task_uuid, other_uuid, kind)
+	);
+	CREATE TABLE batches (
+		id               TEXT PRIMARY KEY,
+		name             TEXT NOT NULL UNIQUE,
+		workspace        TEXT NOT NULL,
+		title            TEXT NOT NULL DEFAULT '',
+		status           TEXT NOT NULL, -- approved, active, planned, completed, released
+		created_at_ms    INTEGER NOT NULL,
+		updated_at_ms    INTEGER NOT NULL,
+		lease_holder     TEXT NOT NULL DEFAULT '',
+		lease_expires_ms INTEGER NOT NULL DEFAULT 0,
+		summary          TEXT NOT NULL DEFAULT '',
+		checks           TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX batches_workspace ON batches(workspace, status);
+	CREATE TABLE batch_tasks (
+		batch_id  TEXT NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+		task_uuid TEXT NOT NULL REFERENCES tasks(uuid) ON DELETE CASCADE,
+		position  INTEGER NOT NULL,
+		interrupt INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (batch_id, task_uuid)
+	);
+	CREATE TABLE batch_history (
+		batch_id TEXT NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+		seq      INTEGER NOT NULL,
+		at_ms    INTEGER NOT NULL,
+		actor    TEXT NOT NULL,
+		action   TEXT NOT NULL,
+		note     TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (batch_id, seq)
+	);
+	CREATE TABLE proposals (
+		id            TEXT PRIMARY KEY,
+		name          TEXT NOT NULL UNIQUE,
+		workspace     TEXT NOT NULL,
+		actor         TEXT NOT NULL,
+		status        TEXT NOT NULL, -- open, done, dismissed
+		created_at_ms INTEGER NOT NULL,
+		updated_at_ms INTEGER NOT NULL,
+		fingerprint   TEXT NOT NULL,
+		items         TEXT NOT NULL
+	);
+	CREATE INDEX proposals_workspace ON proposals(workspace, status);`,
 }
 
 // SchemaVersion is the newest schema this build understands.
