@@ -648,13 +648,16 @@ func (q *Queue) Detect(at time.Time) []Item {
 	finder := q.finder
 	q.mu.Unlock()
 	diagnose(finder, symptoms, c.Adapting.UnknownModel.Count, at)
-	found := failingConnections(c, q.history, at)
+	failing, succeeded := failingSymptoms(c, q.history, at)
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	var found []Item
 	if q.failed != nil {
-		found = append(found, unknownTokens(c, q.failed, at)...)
+		found = unknownTokens(c, q.failed, at)
 	}
-	out := q.trackUnknownModels(c, symptoms, at)
+	q.revertedFixes(at.UnixMilli())
+	out := q.track(unknownModelRules(c), symptoms, at)
+	out = append(out, q.track(failingRules(c, succeeded), failing, at)...)
 	for _, s := range found {
 		if q.quiet(s, at) {
 			continue

@@ -43,18 +43,19 @@ const diagnosisText = (d: NonNullable<Issue['diagnosis']>, model: string) =>
 
 /**
  * One open or resolving Issue: what is wrong, the evidence, which Connections serve the model, the aiport fix
- * (an Alias for this Application only) with Approve / Dismiss, and the fix in the Application for its Coding agent.
+ * (an Alias for this Application only, or for a failing Connection binding this Application to a working one)
+ * with Approve / Dismiss, and the fix in the Application for its Coding agent.
  */
 function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]; onDecided: (message: string) => void}) {
-  const fix = issue.fix, ev = issue.evidence;
+  const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection';
   const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || issue.subject);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [blocked, setBlocked] = useState<Blocked | null>(null);
   const decide = async (action: 'accept' | 'dismiss') => {
     setBusy(action); setError(''); setBlocked(null);
     try {
-      await send('POST', 'issues/' + encodeURIComponent(issue.id), action === 'accept' ? {action, target, model} : {action});
+      await send('POST', 'issues/' + encodeURIComponent(issue.id), action !== 'accept' ? {action} : binds ? {action, target} : {action, target, model});
       onDecided(action === 'accept'
-        ? 'Approved for only ' + issue.application + ': the alias “' + issue.subject + '” → ' + target + '/' + model + '. The Issue resolves itself when its calls succeed; you can revert the Change below.'
+        ? 'Approved for only ' + issue.application + (binds ? ': bound to ' + target : ': the alias “' + issue.subject + '” → ' + target + '/' + model) + '. The Issue resolves itself when its calls succeed; you can revert the Change below.'
         : 'Dismissed. aiport stays quiet about this Issue for 7 days unless the evidence doubles.');
     } catch (e) {
       const err = e as Error & {code?: string; extension?: string; reason?: string};
@@ -68,18 +69,25 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
     <div className="need"><span className={'badge' + (issue.state === 'resolving' ? ' good' : '')}>{issue.state === 'resolving' ? 'Resolving' : 'Issue'}</span> {issue.summary}</div>
     <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>
     {issue.diagnosis && <div className="evidence">Diagnosis: {diagnosisText(issue.diagnosis, issue.subject)} Found from the Connections’ free model lists.</div>}
-    {issue.state === 'resolving' && <div className="evidence">{issue.resolving_by === 'aiport_fix' ? 'The aiport fix is applied' + (fix?.by ? ' (by ' + fix.by + ')' : '') : 'The Application says it fixed this'}: aiport marks the Issue resolved when {issue.application}’s calls for {issue.subject} succeed.</div>}
+    {issue.state === 'resolving' && <div className="evidence">{issue.resolving_by === 'aiport_fix' ? 'The aiport fix is applied' + (fix?.by ? ' (by ' + fix.by + ')' : '') : 'The Application says it fixed this'}: aiport marks the Issue resolved when {issue.application}’s calls {binds ? 'succeed again' : 'for ' + issue.subject + ' succeed'}.</div>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this Issue stays open.</div>}
     {issue.state === 'open' && fix?.state === 'proposed' && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
-      <label>Fix in aiport: alias for only {issue.application}<input value={issue.subject} readOnly spellCheck={false}/></label>
-      <label>Connection<select value={target} onChange={e => setTarget(e.target.value)}>
-        {!target && <option value="">Choose a Connection</option>}
-        {targets.map(t => <option key={t}>{t}</option>)}
-      </select></label>
-      <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} spellCheck={false} autoComplete="off"/></label>
+      {binds
+        ? <label>Fix in aiport: bind only {issue.application} to<select value={target} onChange={e => setTarget(e.target.value)}>
+            {!target && <option value="">Choose a working Connection</option>}
+            {targets.filter(t => t !== issue.subject).map(t => <option key={t}>{t}</option>)}
+          </select></label>
+        : <>
+          <label>Fix in aiport: alias for only {issue.application}<input value={issue.subject} readOnly spellCheck={false}/></label>
+          <label>Connection<select value={target} onChange={e => setTarget(e.target.value)}>
+            {!target && <option value="">Choose a Connection</option>}
+            {targets.map(t => <option key={t}>{t}</option>)}
+          </select></label>
+          <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} spellCheck={false} autoComplete="off"/></label>
+        </>}
       <div className="actions">
-        <button className="primary" disabled={!!busy || !target || !model.trim()}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
+        <button className="primary" disabled={!!busy || !target || (!binds && !model.trim())}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
         <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
       </div>
     </form>}
