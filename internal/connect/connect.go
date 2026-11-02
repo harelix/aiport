@@ -117,9 +117,10 @@ func Describe(c config.Config) Document {
 			{"X-Aiport-Compression", "methods; status=applied|no_gain|failed; bytes_before=N; bytes_after=N", "Present when compression was requested. On failed or no_gain the original body was sent.", "available"},
 			{"X-Aiport-Model", "model id", "Model actually used after aliases or tier routing.", "planned"},
 			{"X-Aiport-Route", "key=value; ...", "Why that model/target was chosen.", "planned"},
+			{"X-Aiport-Hint", "one line of text", "On a provider 404 for the requested model, sent only to applications allowed to request changes: which change request (kind and endpoint) could fix it. The provider's body is passed through unchanged.", "available"},
 			{"X-Aiport-Source", "gateway or upstream", "Whether an error came from aiport or the provider.", "planned"},
 		},
-		ErrorFormat: `Gateway errors: {"error":{"code":"...","message":"...","request_id":"..."}}. Provider errors pass through unchanged (status, body, headers).`,
+		ErrorFormat: `Gateway errors: {"error":{"code":"...","message":"...","request_id":"...","hint":"..."}}. hint is optional: applications allowed to request changes get one on refusals a change could fix (target_unconfigured, target_disabled), naming the change request kind and endpoint. Status and code never depend on it. Provider errors pass through unchanged (status, body, headers).`,
 		Errors: []ErrorCode{
 			{401, "unauthorized", "Missing or invalid application token."},
 			{403, "invalid_host", "Host header is not the configured local address."},
@@ -243,10 +244,21 @@ func integration(base string) Integration {
 			"**Errors.** A body of `{\"error\":{\"code\":...}}` with a code listed at `" + root + Path + "?format=markdown` came from aiport; anything else is the provider's own error, passed through. Retry only `429 concurrency_limit`, `502` and `504`, with backoff. On `401` the token is missing or no longer valid: pair again, do not retry.",
 			"**Log `X-Aiport-Request-Id`** from responses next to your own request logs; the owner finds the call in aiport's Activity page with it.",
 			"**Optional:** send `X-Aiport-Compress` to shrink large prompts, and `POST /v1/aiport/feedback` with the request id and a 0–1 score so the owner can see whether compression hurts answers. Do not rely on features marked `planned`.",
+			"**Let future sessions ask aiport for changes.** Add a project-level MCP entry to the application's repository (Claude Code: `.mcp.json`; other agents: their project MCP config) so coding agents there can reach aiport: `" + mcpEntry(root) + "`. It takes the token from the `AIPORT_APP_TOKEN` environment variable; never write the token itself into the file. Then add this line to the repository's `AGENTS.md`: \"" + AgentsLine + "\" Requesting changes needs the owner's permission: until the owner allows this application in the aiport dashboard (Routing → Applications), aiport answers `403 change_requests_not_allowed`; `GET " + root + "/v1/aiport/capabilities` shows whether it may.",
 			"**Verify.** Make one real call, check it succeeds, and ask the owner to confirm it appears under the application's name in aiport's Activity page. If it shows as `unknown`, the token is not the application's own.",
 		},
 		Note: "aiport stores no prompts or responses, only request metadata, and listens on this machine only. Full protocol reference: " + root + Path + "?format=markdown",
 	}
+}
+
+// AgentsLine is the line an integrating agent adds to the application's
+// AGENTS.md, so future sessions ask aiport instead of working around it.
+const AgentsLine = "This app's LLM calls go through aiport. If aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it."
+
+// mcpEntry is the project-level MCP server entry for this gateway. It names
+// the environment variable holding the token, never the token.
+func mcpEntry(root string) string {
+	return `{"mcpServers":{"aiport":{"type":"http","url":"` + root + `/mcp","headers":{"Authorization":"Bearer ${AIPORT_APP_TOKEN}"}}}}`
 }
 
 func integrating(w func(string, ...any), d Document) {
