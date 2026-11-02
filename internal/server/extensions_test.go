@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +86,19 @@ func TestAPolicyRefusalReachesTheRequesterWithItsReason(t *testing.T) {
 	}
 	if _, items := pendingDecisions(t, h, reqManagement); len(items) != 0 {
 		t.Fatalf("a refused request waits for the Owner: %v", items)
+	}
+}
+
+// Through the MCP door the refusal carries the same reason.
+func TestAPolicyRefusalReachesAnMCPRequester(t *testing.T) {
+	dir := t.TempDir()
+	h, _ := extensionsServer(t, "extensions:\n"+listed("ticket-policy", "policy", script(t, dir, "deny", denyBody), ""))
+	var args map[string]any
+	_ = json.Unmarshal([]byte(requestBody(nil)), &args)
+	res := toolCall(t, h, reqHelper, "aiport_request_change", args)
+	out, _ := res["structuredContent"].(map[string]any)
+	if res["isError"] != true || errorCode(out) != "change_request_refused" || !strings.Contains(errorMessage(out), "bind_application needs a ticket number in details") {
+		t.Fatalf("the MCP requester does not see the policy's refusal: %v", res)
 	}
 }
 
