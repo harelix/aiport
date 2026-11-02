@@ -129,7 +129,11 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 			_ = srv.Close()
 		}
 	}()
-	terminal.Frost(out, "aiport listening on http://"+c.Listen+" (experimental native forwarding)\n")
+	also := ""
+	if a := c.Address(); a != c.Listen {
+		also = ", also http://" + a
+	}
+	terminal.Frost(out, "aiport listening on http://"+c.Listen+also+" (experimental native forwarding)\n")
 	printStartupToken(out, c)
 	err = srv.Serve(listener)
 	if errors.Is(err, http.ErrServerClosed) {
@@ -219,7 +223,7 @@ func printStartupToken(out io.Writer, c config.Config) {
 		return
 	}
 	terminal.Dim(out, "Dashboard:        ")
-	terminal.Frost(out, "http://"+c.Listen+"/\n")
+	terminal.Frost(out, "http://"+c.Address()+"/\n")
 	terminal.Dim(out, "Management token: ")
 	terminal.Snow(out, token+"\n")
 	terminal.Dim(out, "Paste the token on first sign-in or to recover access. Keep it private.\n")

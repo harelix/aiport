@@ -27,7 +27,10 @@ import (
 )
 
 type Handler struct {
-	authority        string
+	// authorities are the Host values accepted (the listen address and each
+	// hostname on the listen port), rebuilt on every config change. Any
+	// other Host or Origin is refused: the DNS-rebinding defence.
+	authorities      atomic.Pointer[map[string]bool]
 	credMu           sync.RWMutex
 	credentials      []config.Credential // guarded by credMu; refreshed on config changes
 	tokenRefs        string              // guarded by credMu: the references credentials were resolved from
@@ -56,9 +59,10 @@ type Handler struct {
 }
 
 func New(c config.Config, s config.Secrets) http.Handler {
-	h := &Handler{auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, authority: c.Listen, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
+	h := &Handler{auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
 	h.initKeySources(c, s)
 	h.setRequesters(c)
+	h.setAuthorities(c)
 	return h
 }
 
@@ -80,6 +84,22 @@ func (h *Handler) mayRequestChanges(applicationID string) bool {
 	return set != nil && (*set)[applicationID]
 }
 
+// setAuthorities rebuilds the set of Host values aiport answers to from c.
+func (h *Handler) setAuthorities(c config.Config) {
+	set := map[string]bool{}
+	for _, a := range c.Authorities() {
+		set[a] = true
+	}
+	h.authorities.Store(&set)
+}
+
+// acceptsHost reports whether host is the listen address or a configured
+// hostname on the listen port.
+func (h *Handler) acceptsHost(host string) bool {
+	set := h.authorities.Load()
+	return set != nil && (*set)[host]
+}
+
 // setRequesters rebuilds the set mayRequestChanges reads from c.
 func (h *Handler) setRequesters(c config.Config) {
 	set := map[string]bool{}
@@ -98,6 +118,7 @@ func (h *Handler) setRequesters(c config.Config) {
 // proxy limits and telemetry still need a restart.
 func (h *Handler) applyLive(c config.Config) {
 	h.setRequesters(c)
+	h.setAuthorities(c)
 	h.gateway.Apply(c)
 	if h.keys.Env == nil {
 		return
@@ -146,13 +167,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	fail := func(status int, code, message string) { writeError(w, status, code, message, nil) }
-	if r.Host != h.authority {
-		fail(403, "invalid_host", "Host is not the configured local address")
+	if !h.acceptsHost(r.Host) {
+		fail(403, "invalid_host", "Host is not the listen address or a configured hostname")
 		return
 	}
 	if values := r.Header.Values("Origin"); len(values) > 0 {
 		u, err := url.Parse(values[0])
-		if len(values) != 1 || err != nil || u.Scheme != "http" || u.Host != h.authority || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		if len(values) != 1 || err != nil || u.Scheme != "http" || !h.acceptsHost(u.Host) || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 			fail(403, "invalid_origin", "Cross-origin access is disabled")
 			return
 		}

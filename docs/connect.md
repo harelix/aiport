@@ -14,6 +14,14 @@ configured, whether authentication is required, request/response headers,
 error codes and features. It never contains secrets, target URLs, key names or
 model lists. Host/Origin protections still apply.
 
+Addresses in the document (`base_url`, `docs`, `agent_prompt`, briefs and
+snippets) use the gateway's advertised address: the first entry of
+`hostnames` on the listen port when the Owner set one (for example
+`http://aiport.localhost:8787`), otherwise the listen address. aiport accepts
+`Host` and `Origin` for the listen address and each configured hostname on
+the listen port, and refuses everything else with `403 invalid_host` /
+`invalid_origin`.
+
 Each feature and header has a status. Only `available` items are implemented;
 `planned` items (model allowlists, effort tiers, capabilities, routing headers)
 are published early so integrators can prepare.

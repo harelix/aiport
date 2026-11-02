@@ -9,8 +9,15 @@ export type Location = 'local' | 'remote';
 export type Target = {id: string; provider: string; protocol: string; base_url?: string; url: string; endpoint?: string; region?: string; api_key_env?: string; disabled: boolean; location: Location};
 type EndpointSpec = {id: string; name: string; urls: Record<string, string>; note?: string};
 export type ProviderSpec = {id: string; name: string; protocol: string; api_key_env?: string; location: Location; regional: boolean; endpoints: EndpointSpec[]; note?: string};
+/* The host:port aiport hands out: the first configured hostname on the
+   listen port, otherwise the listen address (as config.Address in Go). */
+export function gatewayAddress(config?: {listen: string; hostnames?: string[]} | null): string | undefined {
+  if (!config) return undefined;
+  const name = config.hostnames?.[0];
+  return name ? name + ':' + config.listen.slice(config.listen.lastIndexOf(':') + 1) : config.listen;
+}
 export type SettingsConfig = {
-  auth: {username?: string; disabled: boolean}; listen: string; targets: Target[];
+  auth: {username?: string; disabled: boolean}; listen: string; hostnames?: string[]; targets: Target[];
   origins: {id: string; name: string; target: string; token_env: string; aliases?: {alias: string; target: string; model: string}[]}[];
   defaults: {openai_target?: string; anthropic_target?: string};
   evaluation?: {connection?: string; model?: string};
@@ -339,8 +346,8 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
     <section className="panel">
       <div className="panel-heading"><h2>Connect an application</h2><span>Point any OpenAI or Anthropic SDK here</span></div>
       <dl>
-        <dt>OpenAI-protocol base URL</dt><dd><code>http://{config?.listen}/v1</code></dd>
-        <dt>Anthropic-protocol base URL</dt><dd><code>http://{config?.listen}</code></dd>
+        <dt>OpenAI-protocol base URL</dt><dd><code>http://{gatewayAddress(config)}/v1</code></dd>
+        <dt>Anthropic-protocol base URL</dt><dd><code>http://{gatewayAddress(config)}</code></dd>
         <dt>Protocol description</dt><dd><a href="/_connect?format=markdown" target="_blank" rel="noreferrer"><code>/_connect</code></a></dd>
         <dt>Telemetry queue</dt><dd>{queueDepth ?? 0} pending</dd>
       </dl>

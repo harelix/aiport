@@ -43,6 +43,32 @@ management token, then set a password (at least 12 characters) and an
 optional username. Later visits use those. A browser session lasts 12 hours
 or until aiport restarts.
 
+### Use a name instead of 127.0.0.1
+
+To open aiport at `http://aiport.localhost:8787/` instead of the IP, add to
+`aiport.yaml` and restart aiport:
+
+```yaml
+hostnames: [aiport.localhost]
+```
+
+Browsers resolve any `*.localhost` name to this machine on their own, so the
+dashboard works at the name at once. SDKs, scripts and command-line tools
+use the system resolver, which may not: add this line to `/etc/hosts` (it
+needs `sudo`, so you do it yourself):
+
+```text
+127.0.0.1  aiport.localhost
+```
+
+aiport still listens on `127.0.0.1` and still refuses every name it was not
+given. Applications paired earlier keep working on the IP. Instructions
+handed out from now on (the agent instruction, both briefs, `/_connect`, the
+base URLs on Routing) use the name, so add the `/etc/hosts` line before
+handing them to a coding agent. Names must be lowercase and end in
+`.localhost`; the first one listed is the one aiport hands out.
+Coding agents started with `aiport agent` keep using the IP.
+
 Other commands: `aiport agent codex|claude --model MODEL` launches a coding
 agent through aiport with its own token, `aiport task` manages the task
 queue, `aiport version` prints the version.
@@ -372,7 +398,10 @@ text**. Nothing is sent on its own.
 
 - **The dashboard does not open.** Check `aiport serve` is running and use
   the exact address it prints. aiport refuses other host names and other
-  sites.
+  sites; to use a name, see "Use a name instead of 127.0.0.1".
+- **An SDK or script cannot reach `aiport.localhost`.** Its resolver does not
+  know the name: add `127.0.0.1  aiport.localhost` to `/etc/hosts`, or use
+  `127.0.0.1`.
 - **Forgot the password.** Use **Forgot username or password?** on the
   sign-in screen, paste the token from `./bin/aiport auth token`, then set a
   new password in Settings → Authentication.

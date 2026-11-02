@@ -24,15 +24,19 @@ var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 type Config struct {
-	Proxy     ProxyLimits `yaml:"proxy" json:"proxy"`
-	Version   int         `yaml:"version" json:"version"`
-	Listen    string      `yaml:"listen" json:"listen"`
-	Auth      Auth        `yaml:"auth" json:"auth"`
-	Targets   []Target    `yaml:"targets" json:"targets"`
-	Origins   []Origin    `yaml:"origins" json:"origins"`
-	Defaults  Defaults    `yaml:"defaults" json:"defaults"`
-	Aliases   []Alias     `yaml:"aliases" json:"aliases"`
-	Telemetry Telemetry   `yaml:"telemetry" json:"telemetry"`
+	Proxy   ProxyLimits `yaml:"proxy" json:"proxy"`
+	Version int         `yaml:"version" json:"version"`
+	Listen  string      `yaml:"listen" json:"listen"`
+	// Hostnames are local names for aiport (each under .localhost) that it
+	// also answers to on the listen port. The first one replaces the IP in
+	// every address aiport hands out; the socket stays on the IP.
+	Hostnames []string  `yaml:"hostnames,omitempty" json:"hostnames"`
+	Auth      Auth      `yaml:"auth" json:"auth"`
+	Targets   []Target  `yaml:"targets" json:"targets"`
+	Origins   []Origin  `yaml:"origins" json:"origins"`
+	Defaults  Defaults  `yaml:"defaults" json:"defaults"`
+	Aliases   []Alias   `yaml:"aliases" json:"aliases"`
+	Telemetry Telemetry `yaml:"telemetry" json:"telemetry"`
 	// Evaluation selects the connection and model aiport uses to judge
 	// compression (NLI, claims, LLM judge). Off when Connection is empty.
 	Evaluation Evaluation `yaml:"evaluation,omitempty" json:"evaluation"`
@@ -181,6 +185,64 @@ func (c Config) Application(id string) (Origin, bool) {
 	return Origin{}, false
 }
 
+var dnsLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// validHostnames checks the hostnames option: lowercase DNS names that are
+// localhost or end in .localhost, without a port, each listed once.
+func validHostnames(names []string) error {
+	seen := map[string]bool{}
+	for i, name := range names {
+		bad := func(why string) error { return fmt.Errorf("hostnames entry %d (%q) %s", i+1, name, why) }
+		if strings.Contains(name, ":") {
+			return bad("must not include a port; aiport answers on the listen port")
+		}
+		if name != strings.ToLower(name) {
+			return bad("must be lowercase")
+		}
+		if name != "localhost" && !strings.HasSuffix(name, ".localhost") {
+			return bad("must be localhost or end in .localhost")
+		}
+		if len(name) > 253 {
+			return bad("is longer than 253 characters")
+		}
+		for _, label := range strings.Split(name, ".") {
+			if !dnsLabel.MatchString(label) {
+				return bad("is not a valid DNS name (labels of letters, digits and inner hyphens)")
+			}
+		}
+		if seen[name] {
+			return bad("is listed twice")
+		}
+		seen[name] = true
+	}
+	return nil
+}
+
+// Address is the host:port aiport hands out to others: the first hostname
+// on the listen port when hostnames are set, otherwise the listen address.
+func (c Config) Address() string {
+	if len(c.Hostnames) == 0 {
+		return c.Listen
+	}
+	_, port, err := net.SplitHostPort(c.Listen)
+	if err != nil {
+		return c.Listen
+	}
+	return net.JoinHostPort(c.Hostnames[0], port)
+}
+
+// Authorities are the Host values aiport answers to: the listen address and
+// each hostname on the listen port.
+func (c Config) Authorities() []string {
+	out := []string{c.Listen}
+	if _, port, err := net.SplitHostPort(c.Listen); err == nil {
+		for _, name := range c.Hostnames {
+			out = append(out, net.JoinHostPort(name, port))
+		}
+	}
+	return out
+}
+
 func (c Config) Validate() error {
 	if c.Version != 1 {
 		return errors.New("configuration version must be 1")
@@ -193,6 +255,9 @@ func (c Config) Validate() error {
 	n, e := strconv.Atoi(port)
 	if ip == nil || !ip.IsLoopback() || e != nil || n < 1 || n > 65535 {
 		return errors.New("listen must be a literal loopback IP and port 1–65535; remote serving is not available")
+	}
+	if err := validHostnames(c.Hostnames); err != nil {
+		return err
 	}
 	if !envName.MatchString(c.Auth.TokenEnv) {
 		return errors.New("auth.token_env must name an environment variable")

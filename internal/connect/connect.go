@@ -85,7 +85,7 @@ type Auth struct {
 
 // Describe builds the protocol document for the given configuration.
 func Describe(c config.Config) Document {
-	base := "http://" + c.Listen
+	base := "http://" + c.Address()
 	on := !c.Adapting.Disabled
 	has := func(id string) bool {
 		for _, t := range c.Targets {
@@ -136,7 +136,7 @@ func Describe(c config.Config) Document {
 		ErrorFormat: `Gateway errors: {"error":{"code":"...","message":"...","request_id":"...","hint":"..."}}. hint is optional: applications allowed to request changes get one on refusals a change could fix (target_unconfigured, target_disabled), naming the change request kind and endpoint. Status and code never depend on it. Provider errors pass through unchanged (status, body, headers).`,
 		Errors: []ErrorCode{
 			{401, "unauthorized", "Missing or invalid application token."},
-			{403, "invalid_host", "Host header is not the configured local address."},
+			{403, "invalid_host", "Host header is not the listen address or a configured hostname on the listen port."},
 			{403, "invalid_origin", "Browser cross-origin requests are refused."},
 			{404, "unsupported_path", "Path is not part of this protocol."},
 			{405, "method_not_allowed", "Use the documented method."},

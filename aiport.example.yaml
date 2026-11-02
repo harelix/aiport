@@ -1,5 +1,9 @@
 version: 1
 listen: 127.0.0.1:8787
+# Optional local names for aiport (lowercase, ending in .localhost). The first
+# one replaces the IP in the addresses aiport hands out. Browsers resolve
+# *.localhost themselves; for SDKs add "127.0.0.1  aiport.localhost" to /etc/hosts.
+# hostnames: [aiport.localhost]
 auth:
   token_env: AIPORT_LOCAL_TOKEN
 targets:

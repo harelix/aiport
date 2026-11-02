@@ -293,6 +293,28 @@ func ensureNode(root *yaml.Node, key string, kind yaml.Kind) *yaml.Node {
 	return n
 }
 
+// SetHostnames sets (or, when empty, removes) the local names aiport
+// answers to; the first one is the address aiport hands out.
+func SetHostnames(names []string) Edit {
+	return func(root *yaml.Node) error {
+		if len(names) == 0 {
+			for i := 0; i+1 < len(root.Content); i += 2 {
+				if root.Content[i].Value == "hostnames" {
+					root.Content = append(root.Content[:i], root.Content[i+2:]...)
+					break
+				}
+			}
+			return nil
+		}
+		seq := ensureNode(root, "hostnames", yaml.SequenceNode)
+		seq.Content = nil
+		for _, name := range names {
+			seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: name})
+		}
+		return nil
+	}
+}
+
 // SetEvaluation sets (or, when empty, removes) the evaluator connection.
 func SetEvaluation(e Evaluation) Edit {
 	return func(root *yaml.Node) error {

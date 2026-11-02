@@ -247,6 +247,7 @@ func copyConfig(c Config) Config {
 		c.Origins[i].Aliases = append([]OriginAlias(nil), c.Origins[i].Aliases...)
 	}
 	c.Aliases = append(make([]Alias, 0, len(c.Aliases)), c.Aliases...)
+	c.Hostnames = append(make([]string, 0, len(c.Hostnames)), c.Hostnames...)
 	return c
 }
 

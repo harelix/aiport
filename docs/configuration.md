@@ -69,6 +69,7 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | --- | --- |
 | `version` | Required; exactly `1` |
 | `listen` | `127.0.0.1:8787`; literal IPv4/IPv6 loopback and port 1–65535 only |
+| `hostnames` | Optional list of local names aiport also answers to on the listen port, for example `[aiport.localhost]`. Each must be lowercase, `localhost` or end in `.localhost`, valid DNS label syntax (letters, digits, inner hyphens), without a port, listed once. aiport accepts `Host`/`Origin` `<name>:<listen port>` next to the listen address and refuses every other name. The first name replaces the IP in every address aiport hands out (`/_connect`, briefs, the dashboard's Connect panel, `aiport serve`); the socket stays on the `listen` IP. A change made through aiport takes effect without a restart; a hand edit needs one |
 | `auth.token_env` | Required name of the global management/local bearer token environment variable |
 | `targets` | List of `id`, `provider`, and for built-in providers optionally nothing else. `protocol`, `base_url` and `api_key_env` default from the provider preset (required for custom providers). `region` is required by regional providers (Bedrock) and fills `{region}`. `endpoint` picks a provider API surface (Bedrock: `runtime` default, or `mantle`). Optional `disabled` (false) |
 | `origins` | List of `id`, `name`, `token_env`, optional `target`, optional `aliases` (`alias`, `target`, `model`): models only this client can ask for, checked before global aliases and allowed to pick another connection |
