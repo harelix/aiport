@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"aiport/internal/agents"
 	"aiport/internal/config"
@@ -11,8 +12,9 @@ import (
 // codingAgentsRoute lists the Coding agents aiport can drive and sets the
 // default one:
 //
-//	GET /api/v1/agents                 {agents: [agents.Agent], default_agent}
+//	GET /api/v1/agents                 {agents: [agents.Agent], default_agent, agent_runs: {connection, model, explain_minutes}}
 //	PUT /api/v1/agents/default {agent}  sets agent_runs.default_agent as a revertable Change ("" = none)
+//	PUT /api/v1/agents/calls {connection, model}  sets where Agent runs' model calls go (agent_runs.connection, .model) as a revertable Change ("" = the Anthropic protocol default)
 //
 // The caller has already verified management access.
 func (h *Handler) codingAgentsRoute(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) bool {
@@ -23,7 +25,45 @@ func (h *Handler) codingAgentsRoute(w http.ResponseWriter, r *http.Request, fail
 			fail(405, "method_not_allowed", "Use GET")
 			return true
 		}
-		writeJSON(w, 200, map[string]any{"agents": agents.Detect(h.codingAgentDirs()), "default_agent": h.snapshot().AgentRuns.DefaultAgent})
+		ar := h.snapshot().AgentRuns
+		writeJSON(w, 200, map[string]any{"agents": agents.Detect(h.codingAgentDirs()), "default_agent": ar.DefaultAgent,
+			"agent_runs": map[string]any{"connection": ar.Connection, "model": ar.Model, "explain_minutes": int(ar.ExplainLimit().Minutes())}})
+		return true
+	case "/api/v1/agents/calls":
+		if r.Method != http.MethodPut {
+			w.Header().Set("Allow", http.MethodPut)
+			fail(405, "method_not_allowed", "Use PUT")
+			return true
+		}
+		if r.Header.Get("X-Aiport-CSRF") != "1" {
+			fail(403, "csrf_required", "Use the same-origin dashboard to choose where Agent runs' model calls go")
+			return true
+		}
+		var in struct {
+			Connection string `json:"connection"`
+			Model      string `json:"model"`
+		}
+		if decodeJSON(w, r, &in) != nil {
+			fail(400, "invalid_request", "Send a JSON body with connection and model")
+			return true
+		}
+		in.Connection, in.Model = strings.TrimSpace(in.Connection), strings.TrimSpace(in.Model)
+		what := "Agent runs' model calls to the Anthropic protocol default"
+		if in.Connection != "" {
+			what = "Agent runs' model calls to " + in.Connection
+		}
+		if in.Model != "" {
+			what += " (" + in.Model + ")"
+		}
+		fresh, ch, err := h.live.Change(what, config.SetAgentRunCalls(in.Connection, in.Model))
+		switch {
+		case errors.Is(err, config.ErrReadOnly):
+			fail(503, "config_readonly", "This server cannot edit its configuration")
+		case err != nil:
+			fail(400, "invalid_change", err.Error())
+		default:
+			writeJSON(w, 200, map[string]any{"agent_runs": fresh.AgentRuns, "change_id": ch.ID})
+		}
 		return true
 	case "/api/v1/agents/default":
 		if r.Method != http.MethodPut {

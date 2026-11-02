@@ -43,20 +43,65 @@ export type Issue = {
 export type Explanation = {text: string; source: 'connection' | 'coding_agent'; connection?: string; model?: string; agent?: string; at_ms?: number};
 
 /** Whether Explain is available (the "explain" field of GET /api/v1/issues): who writes, or a hint why not. */
-export type ExplainStatus = {available: boolean; hint?: string; source?: string; connection?: string; model?: string};
+export type ExplainStatus = {available: boolean; hint?: string; source?: string; connection?: string; model?: string; agent?: string; agent_name?: string; model_calls?: ModelCalls; limit_ms?: number;
+  /** Per Application with a connected Coding agent: the agent explains its Issues instead (explain_by). */
+  by?: Record<string, ExplainStatus>};
+/** Where an Agent run's model calls go. */
+export type ModelCalls = {through_aiport: boolean; connection?: string; model?: string; note?: string};
+/** An Agent run, as the runner describes it ("run" event, GET /api/v1/runs). */
+export type AgentRun = {id: string; application: string; issue: string; mode: string; agent: string; agent_name: string; model_calls: ModelCalls; state: string; error?: string; started_at_ms: number; limit_ms: number};
+/** One step of a run besides its words: a thought, a tool call, a plan, a permission aiport answered. */
+type RunStep = {kind: string; text: string; tool?: string; status?: string; verdict?: string; reason?: string};
 
-const writer = (e: {source?: string; connection?: string; model?: string; agent?: string}) =>
-  e.source === 'coding_agent' ? 'the Coding agent ' + e.agent : e.connection + ' (' + e.model + ')';
+/** Explain status from GET /api/v1/issues: explain (the chosen Connection) with explain_by (Coding agents) as by. */
+export const explainOf = (d: {explain?: ExplainStatus; explain_by?: Record<string, ExplainStatus>}): ExplainStatus | null =>
+  d.explain ? {...d.explain, by: d.explain_by} : null;
+
+const AGENTS: Record<string, string> = {claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI'};
+const writer = (e: {source?: string; connection?: string; model?: string; agent?: string; agent_name?: string}) =>
+  e.source === 'coding_agent' ? (e.agent_name || AGENTS[e.agent || ''] || e.agent) + ', after reading the code' : e.connection + ' (' + e.model + ')';
+
+const callsLine = (c?: ModelCalls) => !c ? '' : c.through_aiport
+  ? 'Model calls go through aiport to ' + (c.connection || 'the Anthropic protocol default') + (c.model ? ' (' + c.model + ')' : '') + ', under the Application aiport.'
+  : c.note || 'The agent uses its own login.';
+
+/** The run panel: which agent reads the code (read-only), where its calls go, its steps, and Stop. */
+function RunPanel({run, steps, busy}: {run: AgentRun; steps: RunStep[]; busy: boolean}) {
+  const [stopping, setStopping] = useState(false), [error, setError] = useState('');
+  const stop = async () => {
+    setStopping(true); setError('');
+    const r = await fetch('/api/v1/runs/' + encodeURIComponent(run.id) + '/stop', {method: 'POST', credentials: 'same-origin', headers: {'X-Aiport-CSRF': '1'}}).catch(() => null);
+    if (!r || (!r.ok && r.status !== 404)) { setError('Could not stop the run.'); setStopping(false); }
+  };
+  const shown = steps.slice(-30);
+  return <div className="run-panel" aria-label={'Agent run of ' + run.agent_name}>
+    <div className="run-head">
+      <strong>{run.agent_name}</strong> <span className="caption">reads the code, read-only · stops after {Math.round(run.limit_ms / 60000)} min</span>
+      {busy && <button type="button" className="secondary small" disabled={stopping} onClick={stop}>{stopping ? 'Stopping…' : 'Stop'}</button>}
+    </div>
+    <p className={'caption' + (run.model_calls.through_aiport ? '' : ' run-own-login')}>{callsLine(run.model_calls)}</p>
+    {shown.length > 0 && <ol className="run-steps" aria-live="polite">
+      {shown.map((s, i) => <li key={i} className={'run-step run-' + s.kind + (s.verdict ? ' run-' + s.verdict : '')}>
+        {s.kind === 'permission' ? <>{s.verdict === 'allowed' ? 'Allowed' : 'Denied'}: {s.text}{s.reason ? <small> · {s.reason}</small> : null}</>
+          : s.kind === 'tool' ? <>{s.text}{s.status && s.status !== 'completed' ? <small> · {s.status}</small> : null}</>
+          : s.kind === 'thought' ? <em>{s.text}</em> : s.text}
+      </li>)}
+    </ol>}
+    {error && <p className="auth-error" role="alert">{error}</p>}
+  </div>;
+}
 
 /**
  * Explain: the root cause of an Issue in words. POST /api/v1/issues/{id}/explain streams JSON lines (start, text…,
  * then done or error); the text is shown as it arrives and, once saved, comes back with the Issue (and in its
  * Application fix). Explain again replaces it. The text comes from a model: shown as plain text only.
  */
-export function IssueExplanation({issue, explain, onExplained}: {issue: Issue; explain: ExplainStatus | null; onExplained: () => void}) {
+export function IssueExplanation({issue, explain: all, onExplained}: {issue: Issue; explain: ExplainStatus | null; onExplained: () => void}) {
+  const explain = all?.by?.[issue.application] || all;
   const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [by, setBy] = useState('');
+  const [agentRun, setAgentRun] = useState<AgentRun | null>(null), [steps, setSteps] = useState<RunStep[]>([]);
   const run = async () => {
-    setBusy(true); setError(''); setText(''); setBy('');
+    setBusy(true); setError(''); setText(''); setBy(''); setAgentRun(null); setSteps([]);
     try {
       const r = await fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/explain', {method: 'POST', credentials: 'same-origin', headers: {'X-Aiport-CSRF': '1'}});
       if (!r.ok || !r.body) { const d = await r.json().catch(() => ({})); throw new Error(d.error?.message || 'Explain failed (' + r.status + ').'); }
@@ -71,7 +116,9 @@ export function IssueExplanation({issue, explain, onExplained}: {issue: Issue; e
           const line = buffer.slice(0, nl).trim(); buffer = buffer.slice(nl + 1);
           if (!line) continue;
           const ev = JSON.parse(line);
-          if (ev.type === 'start') setBy(writer(ev.by || {}));
+          if (ev.type === 'start') setBy(writer({...ev.by, agent_name: explain?.agent_name}));
+          else if (ev.type === 'run') setAgentRun(ev.run);
+          else if (ev.type === 'step') setSteps(s => [...s, ev.step]);
           else if (ev.type === 'text') setText(t => t + ev.text);
           else if (ev.type === 'done') done = true;
           else if (ev.type === 'error') failed = ev.error?.message || 'Explain failed.';
@@ -90,7 +137,8 @@ export function IssueExplanation({issue, explain, onExplained}: {issue: Issue; e
   const shown = busy || (text && error) ? text : saved?.text || '';
   return <div className="explanation">
     {shown && <div className="explanation-text" aria-live="polite"><strong>Root cause</strong>{(busy ? by : saved && writer(saved)) && <small> · written by {busy ? by : writer(saved!)}{!busy && saved?.source === 'connection' ? ' from the evidence only' : ''}</small>}<p>{shown}</p></div>}
-    {busy && !text && <p className="caption" role="status">Asking {by || 'the model'}…</p>}
+    {agentRun && <RunPanel run={agentRun} steps={steps} busy={busy}/>}
+    {busy && !text && !agentRun && <p className="caption" role="status">Asking {by || 'the model'}…</p>}
     {error && <div className="notice error" role="alert">{error}{saved ? ' The earlier explanation stays.' : ''}</div>}
     <div className="actions">
       <button type="button" className="secondary" disabled={busy || !explain?.available} onClick={run} title={explain?.available ? 'Explain the root cause with ' + writer(explain) : explain?.hint}>
@@ -305,7 +353,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
     send('GET', 'upstream').then(setUpstream).catch(() => setUpstream(null));
     send('GET', 'changes').then(d => { setChanges(d.changes || []); setRevertable(!!d.revertable); }).catch(e => setError(e.message));
     send('GET', 'decisions').then(d => { setPending((d.items || []).filter((i: Decision) => !i.issue)); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
-    send('GET', 'issues').then(d => { setIssues(d.issues || []); setAutoFix(!!d.auto_fix); setAdapting(d.adapting !== false); setExplain(d.explain || null); }).catch(() => { setIssues([]); setAutoFix(null); });
+    send('GET', 'issues').then(d => { setIssues(d.issues || []); setAutoFix(!!d.auto_fix); setAdapting(d.adapting !== false); setExplain(explainOf(d)); }).catch(() => { setIssues([]); setAutoFix(null); });
   }, [tick, reload]);
   const revert = async (c: Change) => {
     setBusy(c.id); setError(''); setMessage('');

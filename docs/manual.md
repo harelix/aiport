@@ -106,7 +106,7 @@ listens on and Sign out (or "Authentication off" when it is turned off).
   configuration Change made through aiport, with Revert.
 - **Tasks**: a queue of work for coding agents; you own intent and priority.
 - **Settings**: sign-in, authentication, the default coding agent for Agent
-  runs, the Connection and model that explain Issues, and the configuration
+  runs and where their model calls go, the Connection and model that explain Issues, and the configuration
   file.
 
 ## Connections and keys
@@ -529,6 +529,79 @@ For scripts: `PUT /api/v1/adapting/explainer` with `{"connection": "local",
 turns Explain off), and `POST /api/v1/issues/{id}/explain` streams JSON
 lines: `start` (who writes), `text` (the next words), then `done` (the
 Issue with its saved explanation) or `error`.
+
+#### Explain by a Coding agent
+
+When the Application has a Coding agent and a repository path (see
+"Connecting a coding agent") and the agent's ACP entry point is installed,
+**Explain** starts an **Agent run** instead: the agent reads the
+Application's code and writes the root cause, usually with the file and
+the change to make. The button's tooltip names the agent; otherwise the
+Connection from Settings explains, as above.
+
+- **How it starts**: only on your click, never by itself (not even with
+  automatic fixes on), and never with adapting off. aiport starts the ACP
+  entry point it found, by absolute path, never through a shell, in the
+  repository, with a minimal environment: `PATH` (the agent's own
+  directory first, then the absolute directories of aiport's `PATH`, so an
+  npm-installed adapter finds `node`), `HOME`, `TMPDIR`, `LANG`, `LC_ALL`,
+  `USER`, `LOGNAME`, and, for Claude Code, the variables below. Never
+  aiport's tokens or provider keys, and no MCP connection to aiport.
+- **What the agent is told**: the Issue's evidence (the same as above) and
+  that the run is read-only. Nothing an Application wrote.
+- **Read-only**: aiport answers every permission request itself, without
+  asking you. Reading and searching inside the repository are allowed;
+  every edit, delete, command and anything outside the repository is
+  denied. aiport only ever answers "once", so nothing is remembered in the
+  agent's own settings.
+- **The run panel** under the Issue shows the agent's name, where its
+  model calls go, its steps (thoughts, files read, permissions allowed or
+  denied) and its words as they come. **Stop** ends the run at any time
+  (the agent is asked to cancel, then its whole process group is ended);
+  so does leaving the page. Nothing is saved from a stopped run.
+- **Limits**: one Agent run per Application at a time; an Explain run
+  stops after 10 minutes (`agent_runs.explain_minutes`), and nothing is
+  saved.
+- **What is kept**: the explanation is saved with the Issue (replacing an
+  earlier one, also one a Connection wrote) and carried to the
+  Application's Coding agent as above. The run's log (its steps and words)
+  is kept in memory only while the Issue is open or resolving, never on
+  disk: it is gone when the Issue closes or aiport restarts.
+
+**Where the run's model calls go.** In **Settings → Default coding agent →
+Model calls of Agent runs** you choose an Anthropic-protocol Connection
+(and, optionally, a model) for them; empty means the Anthropic protocol
+default.
+
+- **Claude Code** is pointed at aiport by its environment only:
+  `ANTHROPIC_BASE_URL` (aiport's listen address), `ANTHROPIC_AUTH_TOKEN`
+  (a credential made for this run) and `ANTHROPIC_MODEL` when you chose a
+  model. That credential authenticates only model calls, as the built-in
+  Application `aiport`; it cannot reach the dashboard, the MCP endpoint or
+  any Application's data, is never written down or logged, and stops
+  working when the run ends. The calls show in Activity under `aiport`
+  with their Connection. Without an Anthropic-protocol Connection, Claude
+  Code uses its own login and the run panel says so.
+- **Codex** uses its own login: pointing it at aiport would mean editing
+  its configuration file, which aiport never does. The run panel says so.
+- **Gemini CLI** uses its own login too: aiport does not speak the Gemini
+  API yet. The run panel says so.
+
+```yaml
+agent_runs:
+  default_agent: claude
+  connection: claude-hosted   # an Anthropic-protocol Connection
+  model: claude-model-id      # optional
+  explain_minutes: 10
+```
+
+For scripts: `PUT /api/v1/agents/calls` with `{"connection", "model"}`
+(a revertable Change), `GET /api/v1/runs` (the runs going),
+`POST /api/v1/runs/{id}/stop`, and `GET /api/v1/issues/{id}/run` (the
+Issue's last run and its log, while the Issue is open). The explain
+stream adds `run` (the run: its id, agent and model calls) and `step`
+events for an Agent run; `error` codes include `run_stopped` and
+`explanation_timed_out`.
 
 ### Automatic fixes
 

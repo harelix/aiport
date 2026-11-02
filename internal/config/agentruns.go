@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -21,6 +22,28 @@ type AgentRuns struct {
 	// DefaultAgent is the Coding agent of every Application that has none of
 	// its own; empty means none.
 	DefaultAgent string `yaml:"default_agent,omitempty" json:"default_agent,omitempty"`
+	// Connection is where the model calls of Agent runs go, through aiport
+	// under the built-in Application, for agents aiport can point at itself
+	// (Claude Code): an Anthropic-protocol Connection. Empty: the Anthropic
+	// protocol default.
+	Connection string `yaml:"connection,omitempty" json:"connection,omitempty"`
+	// Model, when set, is the model those calls ask for (the agent's own
+	// choice otherwise).
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+	// ExplainMinutes is the time limit of an Explain run (default 10).
+	ExplainMinutes int `yaml:"explain_minutes,omitempty" json:"explain_minutes,omitempty"`
+}
+
+// DefaultExplainMinutes is the time limit of an Explain run when
+// agent_runs.explain_minutes says nothing.
+const DefaultExplainMinutes = 10
+
+// ExplainLimit is the time limit of an Explain run.
+func (a AgentRuns) ExplainLimit() time.Duration {
+	if a.ExplainMinutes > 0 {
+		return time.Duration(a.ExplainMinutes) * time.Minute
+	}
+	return DefaultExplainMinutes * time.Minute
 }
 
 // CodingAgent is the Coding agent and repository path of the Application
@@ -46,7 +69,22 @@ func ValidRepositoryPath(p string) bool {
 	return p != "" && len(p) <= MaxRepositoryPath && filepath.IsAbs(p) && filepath.Clean(p) == p && !strings.ContainsAny(p, "\r\n\x00")
 }
 
-func (a AgentRuns) validate(origins []Origin) error {
+func (a AgentRuns) validate(origins []Origin, targets map[string]Target) error {
+	if a.Connection != "" {
+		t, ok := targets[a.Connection]
+		if !ok {
+			return errors.New("agent_runs.connection must name a configured connection")
+		}
+		if t.Protocol != "anthropic" {
+			return errors.New("agent_runs.connection must be an Anthropic-protocol connection (the protocol Claude Code speaks)")
+		}
+	}
+	if a.Model != "" && !boundedModel(a.Model) {
+		return errors.New("agent_runs.model must be 1–256 characters")
+	}
+	if a.ExplainMinutes < 0 || a.ExplainMinutes > 24*60 {
+		return errors.New("agent_runs.explain_minutes must be 1–1440")
+	}
 	if a.DefaultAgent != "" && !slices.Contains(CodingAgents, a.DefaultAgent) {
 		return fmt.Errorf("agent_runs.default_agent must be one of %s", strings.Join(CodingAgents, ", "))
 	}
@@ -85,5 +123,16 @@ func SetCodingAgent(id, agent, repository string) Edit {
 			}
 		}
 		return errors.New("Application not found in configuration")
+	}
+}
+
+// SetAgentRunCalls sets (or, when empty, removes) where the model calls of
+// Agent runs go: agent_runs.connection and agent_runs.model.
+func SetAgentRunCalls(connection, model string) Edit {
+	return func(root *yaml.Node) error {
+		m := ensureNode(root, "agent_runs", yaml.MappingNode)
+		setScalar(m, "connection", connection)
+		setScalar(m, "model", model)
+		return nil
 	}
 }

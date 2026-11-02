@@ -30,6 +30,7 @@ func (h *Handler) keepChanges(path string) {
 
 // Close releases the database handle that keeps Changes.
 func (h *Handler) Close() {
+	h.runner().Close()
 	if h.changesDB != nil {
 		_ = h.changesDB.Close()
 		h.changesDB = nil

@@ -28,6 +28,9 @@ func (h *Handler) explainer(app string) (w explain.Writer, code, hint string) {
 	if h.decisions == nil || !h.decisions.On() {
 		return nil, "adapting_off", "Explain is unavailable while adapting is turned off in the configuration."
 	}
+	if a := h.agentExplainer(app); a != nil {
+		return a, "", ""
+	}
 	c := h.live.Config()
 	e := c.Adapting.Explain
 	if e.Connection == "" {
@@ -104,6 +107,10 @@ func (h *Handler) explainRoute(w http.ResponseWriter, r *http.Request, fail func
 		fail(409, code, hint)
 		return true
 	}
+	if _, going := h.runner().Active(is.Application); going {
+		fail(409, "agent_run_running", "An Agent run for this Application is going; wait for it to end or stop it")
+		return true
+	}
 	if !h.startExplaining(is.Application) {
 		fail(409, "explanation_running", "An explanation for this Application is being written; wait for it to finish")
 		return true
@@ -119,17 +126,32 @@ func (h *Handler) explainRoute(w http.ResponseWriter, r *http.Request, fail func
 		_ = rc.Flush()
 	}
 	send(map[string]any{"type": "start", "by": writer.By()})
-	ctx, cancel := context.WithTimeout(r.Context(), ExplainTimeout)
-	defer cancel()
-	e, err := writer.Explain(ctx, is, func(text string) { send(map[string]any{"type": "text", "text": text}) })
+	text := func(text string) { send(map[string]any{"type": "text", "text": text}) }
+	var e decide.Explanation
+	var err error
+	limit := ExplainTimeout
+	if sw, ok := writer.(explain.StepWriter); ok {
+		// An Agent run keeps its own time limit; it ends with the request.
+		limit = sw.Limit()
+		e, err = sw.ExplainSteps(r.Context(), is, text, func(s explain.Step) {
+			if s.Kind == "run" {
+				send(map[string]any{"type": "run", "run": s.Run})
+				return
+			}
+			send(map[string]any{"type": "step", "step": s})
+		})
+	} else {
+		ctx, cancel := context.WithTimeout(r.Context(), ExplainTimeout)
+		e, err = writer.Explain(ctx, is, text)
+		cancel()
+	}
 	if err == nil {
 		is, err = h.decisions.Explain(id, e, h.clock())
 	}
 	switch {
-	case errors.Is(err, context.DeadlineExceeded):
-		send(map[string]any{"type": "error", "error": map[string]string{"code": "explanation_timed_out", "message": "Writing the explanation took longer than " + ExplainTimeout.String() + "; nothing was saved."}})
 	case err != nil:
-		send(map[string]any{"type": "error", "error": map[string]string{"code": "explanation_failed", "message": "No explanation: " + err.Error() + ". Nothing was saved."}})
+		code, message := runRefusal(err, limit)
+		send(map[string]any{"type": "error", "error": map[string]string{"code": code, "message": message}})
 	default:
 		send(map[string]any{"type": "done", "issue": is})
 	}
