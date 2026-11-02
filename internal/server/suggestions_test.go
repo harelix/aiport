@@ -331,6 +331,7 @@ func TestForwardingUnchangedByAdapting(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			w.Header().Del("X-Aiport-Request-Id")
+			w.Header().Del("Date") // the provider's clock, not aiport's doing
 			got = append(got, fmt.Sprint(w.Code, w.Header(), w.Body.String()))
 		}
 		h.collector.Close(time.Second)
