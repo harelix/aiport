@@ -1,7 +1,7 @@
 import React, {FormEvent, useState} from 'react';
 import {Activity, Check, ChevronRight, Cloud, Copy, HardDrive, Plus} from 'lucide-react';
 import {AuthenticationSettings} from './AuthGate';
-import {ApplicationsPanel, HandoverPanel} from './Applications';
+import {ApplicationsPanel} from './Applications';
 import KeyField, {KeySource, keyBadge} from './KeyField';
 
 export type Location = 'local' | 'remote';
@@ -328,7 +328,7 @@ export function ProvidersPage({config, providers, secrets, sources, onKeys, onCh
 }
 
 /** Routing page: protocol defaults and the local endpoint apps connect to. */
-export function RoutingPage({config, providers, onChange, queueDepth}: Props) {
+export function RoutingPage({config, providers, onChange, queueDepth, onIntegrate}: Props & {onIntegrate?: () => void}) {
   const {targets} = useLists(config, providers);
   return <>
     <section className="panel">
@@ -345,7 +345,10 @@ export function RoutingPage({config, providers, onChange, queueDepth}: Props) {
       </dl>
     </section>
     <ApplicationsPanel origins={config?.origins || []} targets={targets} onChange={onChange}/>
-    <HandoverPanel/>
+    <section className="panel">
+      <div className="panel-heading"><h2>Instructions for coding agents</h2>{onIntegrate && <button type="button" className="secondary" onClick={onIntegrate}>Open Integrate</button>}</div>
+      <p className="muted handover-intro integrate-pointer">The Application brief and the coding-agent brief, with SDK snippets and a live checklist per Application, are on the Integrate page.</p>
+    </section>
     <section className="panel planned">
       <div className="panel-heading"><h2>Per-application limits</h2><span className="badge">Planned</span></div>
       <p className="muted">Model allowlists per application and routing by reasoning effort are not built yet. Today an application's calls go to its bound connection or the protocol default; per-application model aliases are set in the YAML file (<code>origins[].aliases</code>).</p>
