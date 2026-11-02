@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"sync"
@@ -175,6 +176,9 @@ var (
 	ErrNotFound = errors.New("no such item")
 	ErrDecided  = errors.New("this item was already decided")
 	ErrOff      = errors.New("the adapting loop is turned off in configuration")
+	// ErrChanged: the configuration changed while a guardrail checked the
+	// Change, so it would no longer be the Change the guardrail judged.
+	ErrChanged = errors.New("the configuration changed while a guardrail checked this Change; nothing was applied, decide again")
 )
 
 // Invalid is a decision that cannot be applied as given; the message says why.
@@ -295,28 +299,64 @@ func (q *Queue) List(f Filter) []Item {
 // it, unless a guardrail Extension blocks it (extension.Denied, with its
 // reason; the item stays pending); reject and dismiss change nothing in the
 // configuration and run no Extension.
+//
+// Guardrails run outside the lock, so the configuration may change while
+// they check. The Change is then built again from the configuration as it
+// is, and applied only if it is the Change the guardrails judged; otherwise
+// nothing is applied, the item stays pending and Decide returns ErrChanged.
 func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change, error) {
 	if !q.On() {
 		return Item{}, config.Change{}, ErrOff
 	}
+	if len(d.Note) > 2000 {
+		return Item{}, config.Change{}, Invalid{"the note must be at most 2,000 characters"}
+	}
+	if d.By == "" {
+		d.By = config.Owner
+	}
+	var judged *guarded
+	for {
+		it, ch, check, err := q.settle(id, d, at, judged)
+		if check == nil {
+			return it, ch, err
+		}
+		if judged != nil {
+			return Item{}, config.Change{}, ErrChanged
+		}
+		if err := extension.Check(check.config, config.HookGuardrail, extension.Input{Change: &check.change}); err != nil {
+			return Item{}, config.Change{}, err
+		}
+		judged = check
+	}
+}
+
+// guarded is an accepted Change as the guardrails see it, with the
+// guardrails that judge it.
+type guarded struct {
+	config     config.Config
+	change     extension.Change
+	guardrails string
+}
+
+func (g *guarded) same(o *guarded) bool {
+	return g != nil && o != nil && g.change == o.change && g.guardrails == o.guardrails
+}
+
+// settle decides pending item id under the lock. When the Change needs a
+// guardrail check that judged does not cover, nothing is decided and the
+// Change to check is returned instead.
+func (q *Queue) settle(id string, d Decision, at time.Time, judged *guarded) (Item, config.Change, *guarded, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	i := q.index(id)
 	if i < 0 {
-		return Item{}, config.Change{}, ErrNotFound
+		return Item{}, config.Change{}, nil, ErrNotFound
 	}
 	it := q.items[i]
 	if it.Status != Pending {
-		return Item{}, config.Change{}, ErrDecided
+		return Item{}, config.Change{}, nil, ErrDecided
 	}
-	if len(d.Note) > 2000 {
-		return Item{}, config.Change{}, Invalid{"the note must be at most 2,000 characters"}
-	}
-	by := d.By
-	if by == "" {
-		by = config.Owner
-	}
-	v := &Verdict{Action: d.Action, Note: d.Note, By: by, At: at.UnixMilli()}
+	v := &Verdict{Action: d.Action, Note: d.Note, By: d.By, At: at.UnixMilli()}
 	if it.Evidence != nil {
 		v.EvidenceCount = it.Evidence.Count
 	}
@@ -340,34 +380,22 @@ func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change
 		c := q.live.Config()
 		edit, what, err := change(c, it, p, scope)
 		if err != nil {
-			return Item{}, config.Change{}, err
+			return Item{}, config.Change{}, nil, err
 		}
-		// Guardrail Extensions run before the Change is applied, outside the
-		// lock so a slow one never holds up the queue; a block leaves the
-		// item waiting.
-		if len(c.ExtensionsFor(config.HookGuardrail)) > 0 {
-			q.mu.Unlock()
-			err := extension.Check(c, config.HookGuardrail, extension.Input{Change: &extension.Change{
+		if guardrails := c.ExtensionsFor(config.HookGuardrail); len(guardrails) > 0 {
+			now := &guarded{config: c, guardrails: fmt.Sprint(guardrails), change: extension.Change{
 				Item: it.ID, Source: it.Source, Application: it.Application, Kind: it.Kind, Scope: scope,
-				What: what, Alias: p.Alias, Target: p.Target, Model: p.Model, By: by,
-			}})
-			q.mu.Lock()
-			if err != nil {
-				return Item{}, config.Change{}, err
+				What: what, Alias: p.Alias, Target: p.Target, Model: p.Model, By: d.By,
+			}}
+			if !now.same(judged) {
+				return Item{}, config.Change{}, now, nil
 			}
-			if i = q.index(id); i < 0 {
-				return Item{}, config.Change{}, ErrNotFound
-			}
-			if q.items[i].Status != Pending {
-				return Item{}, config.Change{}, ErrDecided
-			}
-			it = q.items[i]
 		}
-		if _, ch, err = q.live.ChangeAs(by, what, edit); err != nil {
+		if _, ch, err = q.live.ChangeAs(d.By, what, edit); err != nil {
 			if errors.Is(err, config.ErrReadOnly) {
-				return Item{}, config.Change{}, err
+				return Item{}, config.Change{}, nil, err
 			}
-			return Item{}, config.Change{}, Invalid{err.Error()}
+			return Item{}, config.Change{}, nil, Invalid{err.Error()}
 		}
 		it.Proposal, it.Status, v.Scope, v.ChangeID = p, Accepted, scope, ch.ID
 	case Reject:
@@ -375,12 +403,12 @@ func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change
 	case Dismiss:
 		it.Status = Dismissed
 	default:
-		return Item{}, config.Change{}, Invalid{"action must be accept, reject or dismiss"}
+		return Item{}, config.Change{}, nil, Invalid{"action must be accept, reject or dismiss"}
 	}
 	it.Decision, it.UpdatedAt = v, at.UnixMilli()
 	q.items[i] = it
 	q.save(it)
-	return it, ch, nil
+	return it, ch, nil, nil
 }
 
 // index returns the position of item id, or -1.
@@ -433,13 +461,7 @@ func change(c config.Config, it Item, p Proposal, scope string) (config.Edit, st
 		if t == nil {
 			return nil, "", Invalid{"no Connection " + p.Target + " in configuration"}
 		}
-		d := c.Defaults
-		if t.Protocol == "anthropic" {
-			d.AnthropicTarget = t.ID
-		} else {
-			d.OpenAITarget = t.ID
-		}
-		return config.SetDefaults(d), "default " + t.Protocol + " Connection → " + t.ID + " for every Application", nil
+		return config.SetDefaultTarget(t.Protocol, t.ID), "default " + t.Protocol + " Connection → " + t.ID + " for every Application", nil
 	}
 	return nil, "", Invalid{"aiport cannot apply this kind of Change yet"}
 }

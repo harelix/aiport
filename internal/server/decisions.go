@@ -116,6 +116,8 @@ func (h *Handler) decisionsRoute(w http.ResponseWriter, r *http.Request, fail fu
 		writeJSON(w, 409, map[string]any{"error": map[string]any{"code": "guardrail_blocked", "message": err.Error(), "request_id": w.Header().Get("X-Aiport-Request-Id"), "extension": blocked.Extension, "reason": blocked.Reason}})
 	case errors.Is(err, decide.ErrOff):
 		fail(409, "adapting_off", err.Error())
+	case errors.Is(err, decide.ErrChanged):
+		fail(409, "decision_conflict", err.Error())
 	case errors.Is(err, decide.ErrNotFound):
 		fail(404, "decision_not_found", "Nothing waits for a decision with this id")
 	case errors.Is(err, decide.ErrDecided):

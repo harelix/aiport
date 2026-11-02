@@ -263,6 +263,20 @@ func SetDefaults(d Defaults) Edit {
 	}
 }
 
+// SetDefaultTarget sets which connection serves protocol by default
+// ("anthropic", or anything else for openai), leaving the other protocol's
+// default as it is in the file.
+func SetDefaultTarget(protocol, target string) Edit {
+	key := "openai_target"
+	if protocol == "anthropic" {
+		key = "anthropic_target"
+	}
+	return func(root *yaml.Node) error {
+		setScalar(ensureNode(root, "defaults", yaml.MappingNode), key, target)
+		return nil
+	}
+}
+
 // ensureNode returns root[key] as a block node of the given kind, creating it
 // or replacing an empty value (null, [] or {}).
 func ensureNode(root *yaml.Node, key string, kind yaml.Kind) *yaml.Node {
