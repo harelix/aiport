@@ -17,14 +17,14 @@ const sessionCookie = "aiport_session"
 
 func NewConfigured(c config.Config, s config.Secrets, collector *telemetry.Collector, path string) http.Handler {
 	h := NewWithTelemetry(c, s, collector).(*Handler)
-	h.auth = localauth.New(c.Auth, func(updated config.Auth) error { return config.SaveAuth(path, updated) })
-	h.credentialPath = config.CredentialFile(path)
-	h.configPath = path
-	saved, err := config.ReadCredentialFile(h.credentialPath)
-	if err != nil {
-		saved = nil
-	}
-	h.initKeySources(s, saved)
+	h.live = config.NewLive(path, c)
+	h.live.OnChange(h.applyLive)
+	h.keys = config.EnvKeys(path)
+	h.auth = localauth.New(c.Auth, func(updated config.Auth) error {
+		_, _, err := h.live.Change("sign-in settings", config.SetAuth(updated))
+		return err
+	})
+	h.refreshKeys(c)
 	if store, err := tasks.Open(tasks.Path(path)); err == nil {
 		h.tasks = store
 	}

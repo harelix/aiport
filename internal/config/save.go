@@ -23,48 +23,21 @@ func validPasswordHash(s string) bool {
 	return e1 == nil && e2 == nil && len(salt) == 16 && len(hash) == 32
 }
 
-// SaveAuth preserves other YAML keys/comments and atomically replaces a private file.
-func SaveAuth(path string, a Auth) error {
-	c, err := Load(path)
-	if err != nil {
-		return err
-	}
-	c.Auth = a
-	if err = c.Validate(); err != nil {
-		return err
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return errors.New("cannot read configuration for authentication update")
-	}
-	var doc yaml.Node
-	if yaml.Unmarshal(raw, &doc) != nil || len(doc.Content) != 1 {
-		return errors.New("cannot parse configuration for update")
-	}
-	root := doc.Content[0]
-	var authNode yaml.Node
-	if err = authNode.Encode(a); err != nil {
-		return errors.New("cannot encode authentication settings")
-	}
-	found := false
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "auth" {
-			root.Content[i+1] = &authNode
-			found = true
-			break
+// SetAuth replaces the auth block (sign-in settings).
+func SetAuth(a Auth) Edit {
+	return func(root *yaml.Node) error {
+		var node yaml.Node
+		if err := node.Encode(a); err != nil {
+			return errors.New("cannot encode authentication settings")
 		}
-	}
-	if !found {
+		for i := 0; i+1 < len(root.Content); i += 2 {
+			if root.Content[i].Value == "auth" {
+				root.Content[i+1] = &node
+				return nil
+			}
+		}
 		return errors.New("configuration authentication block is missing")
 	}
-	data, err := yaml.Marshal(&doc)
-	if err != nil {
-		return errors.New("cannot encode configuration")
-	}
-	if _, err = Parse(data); err != nil {
-		return err
-	}
-	return writePrivate(path, data, "authentication")
 }
 
 // writePrivate atomically replaces a regular, private configuration file.
@@ -74,6 +47,13 @@ func writePrivate(path string, data []byte, what string) error {
 	if err != nil || !st.Mode().IsRegular() {
 		return errors.New(what + " updates require a regular configuration path")
 	}
+	return replacePrivate(path, data)
+}
+
+// replacePrivate writes data to a private temporary file next to path, syncs
+// it and renames it over path, so readers see the old or the new file, never
+// a partial one.
+func replacePrivate(path string, data []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".aiport-update-*")
 	if err != nil {
 		return errors.New("cannot create private configuration update")
@@ -107,42 +87,9 @@ type TargetSettings struct {
 	Protocol string `json:"protocol"`
 }
 
-// editConfig applies edit to the YAML document (other keys and comments are
-// preserved), validates the complete result, writes it atomically with
-// private permissions and returns the newly loaded configuration. Nothing is
-// written when the edit or validation fails.
-func editConfig(path string, edit func(root *yaml.Node) error) (Config, error) {
-	if _, err := Load(path); err != nil { // also enforces private permissions
-		return Config{}, err
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return Config{}, errors.New("cannot read configuration for update")
-	}
-	var doc yaml.Node
-	if yaml.Unmarshal(raw, &doc) != nil || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
-		return Config{}, errors.New("cannot parse configuration for update")
-	}
-	if err = edit(doc.Content[0]); err != nil {
-		return Config{}, err
-	}
-	data, err := yaml.Marshal(&doc)
-	if err != nil {
-		return Config{}, errors.New("cannot encode configuration")
-	}
-	c, err := Parse(data)
-	if err != nil {
-		return Config{}, err
-	}
-	if err = writePrivate(path, data, "configuration"); err != nil {
-		return Config{}, err
-	}
-	return c, nil
-}
-
-// SaveTarget updates one target's region/endpoint/protocol.
-func SaveTarget(path, id string, s TargetSettings) (Config, error) {
-	return editConfig(path, func(root *yaml.Node) error {
+// EditTarget updates one target's region/endpoint/protocol.
+func EditTarget(id string, s TargetSettings) Edit {
+	return func(root *yaml.Node) error {
 		target := findTarget(root, id)
 		if target == nil {
 			return errors.New("connection not found in configuration")
@@ -151,13 +98,13 @@ func SaveTarget(path, id string, s TargetSettings) (Config, error) {
 			setScalar(target, kv[0], kv[1])
 		}
 		return nil
-	})
+	}
 }
 
 // AddTarget appends a connection. Only fields that differ from the preset are
 // written (yaml omitempty), so the file stays generic.
-func AddTarget(path string, t Target) (Config, error) {
-	return editConfig(path, func(root *yaml.Node) error {
+func AddTarget(t Target) Edit {
+	return func(root *yaml.Node) error {
 		var item yaml.Node
 		if err := item.Encode(t); err != nil {
 			return errors.New("cannot encode connection")
@@ -165,36 +112,39 @@ func AddTarget(path string, t Target) (Config, error) {
 		seq := ensureNode(root, "targets", yaml.SequenceNode)
 		seq.Content = append(seq.Content, &item)
 		return nil
-	})
+	}
 }
 
 // RemoveTarget deletes a connection. It refuses, with a specific reason, when
 // a default, an agent or an alias still uses it.
-func RemoveTarget(path, id string) (Config, error) {
-	current, err := Load(path)
-	if err != nil {
-		return Config{}, err
-	}
+func RemoveTarget(current Config, id string) (Edit, error) {
 	switch {
 	case current.Defaults.OpenAITarget == id:
-		return Config{}, errors.New("this connection is the OpenAI-protocol default; choose another default (or none) first")
+		return nil, errors.New("this connection is the OpenAI-protocol default; choose another default (or none) first")
 	case current.Defaults.AnthropicTarget == id:
-		return Config{}, errors.New("this connection is the Anthropic-protocol default; choose another default (or none) first")
+		return nil, errors.New("this connection is the Anthropic-protocol default; choose another default (or none) first")
 	}
 	if current.Evaluation.Connection == id {
-		return Config{}, errors.New("this connection is the compression evaluator; choose another evaluator (or none) first")
+		return nil, errors.New("this connection is the compression evaluator; choose another evaluator (or none) first")
 	}
 	for _, o := range current.Origins {
 		if o.Target == id {
-			return Config{}, errors.New("coding agent " + o.ID + " is bound to this connection; change it in the YAML file first")
+			return nil, errors.New("coding agent " + o.ID + " is bound to this connection; change it in the YAML file first")
 		}
 	}
 	for _, a := range current.Aliases {
 		if a.Target == id {
-			return Config{}, errors.New("model aliases use this connection; remove them in the YAML file first")
+			return nil, errors.New("model aliases use this connection; remove them in the YAML file first")
 		}
 	}
-	return editConfig(path, func(root *yaml.Node) error {
+	for _, o := range current.Origins {
+		for _, a := range o.Aliases {
+			if a.Target == id {
+				return nil, errors.New("client " + o.ID + " has a model alias on this connection; remove it first")
+			}
+		}
+	}
+	return func(root *yaml.Node) error {
 		seq := mappingValue(root, "targets")
 		if seq == nil {
 			return errors.New("connection not found in configuration")
@@ -206,18 +156,31 @@ func RemoveTarget(path, id string) (Config, error) {
 			}
 		}
 		return errors.New("connection not found in configuration")
-	})
+	}, nil
 }
 
-// SaveDefaults sets which connection serves each protocol by default
+// AddOrigin appends a client (an app or agent with its own token reference).
+func AddOrigin(o Origin) Edit {
+	return func(root *yaml.Node) error {
+		var item yaml.Node
+		if err := item.Encode(o); err != nil {
+			return errors.New("cannot encode client")
+		}
+		seq := ensureNode(root, "origins", yaml.SequenceNode)
+		seq.Content = append(seq.Content, &item)
+		return nil
+	}
+}
+
+// SetDefaults sets which connection serves each protocol by default
 // (empty = none).
-func SaveDefaults(path string, d Defaults) (Config, error) {
-	return editConfig(path, func(root *yaml.Node) error {
+func SetDefaults(d Defaults) Edit {
+	return func(root *yaml.Node) error {
 		m := ensureNode(root, "defaults", yaml.MappingNode)
 		setScalar(m, "openai_target", d.OpenAITarget)
 		setScalar(m, "anthropic_target", d.AnthropicTarget)
 		return nil
-	})
+	}
 }
 
 // ensureNode returns root[key] as a block node of the given kind, creating it
@@ -236,9 +199,9 @@ func ensureNode(root *yaml.Node, key string, kind yaml.Kind) *yaml.Node {
 	return n
 }
 
-// SaveEvaluation sets (or, when empty, removes) the evaluator connection.
-func SaveEvaluation(path string, e Evaluation) (Config, error) {
-	return editConfig(path, func(root *yaml.Node) error {
+// SetEvaluation sets (or, when empty, removes) the evaluator connection.
+func SetEvaluation(e Evaluation) Edit {
+	return func(root *yaml.Node) error {
 		if e.Connection == "" && e.Model == "" {
 			for i := 0; i+1 < len(root.Content); i += 2 {
 				if root.Content[i].Value == "evaluation" {
@@ -252,7 +215,7 @@ func SaveEvaluation(path string, e Evaluation) (Config, error) {
 		setScalar(m, "connection", e.Connection)
 		setScalar(m, "model", e.Model)
 		return nil
-	})
+	}
 }
 
 func mappingValue(m *yaml.Node, key string) *yaml.Node {

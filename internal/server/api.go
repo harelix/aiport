@@ -40,7 +40,7 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 		current := h.snapshot()
 		current.Auth = h.auth.Settings()
 		status, source := h.keyStatus()
-		writeJSON(w, 200, map[string]any{"config": current, "secret_status": status, "secret_source": source, "editable": false, "keys_editable": h.credentialPath != "", "providers": config.Providers()})
+		writeJSON(w, 200, map[string]any{"config": current, "secret_status": status, "secret_source": source, "editable": false, "keys_editable": h.keys.File != "", "providers": config.Providers()})
 		return true
 	}
 	if r.URL.Path != "/api/v1/requests" && r.URL.Path != "/api/v1/stats" && !strings.HasPrefix(r.URL.Path, "/api/v1/requests/") {

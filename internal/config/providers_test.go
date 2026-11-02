@@ -88,7 +88,16 @@ func TestSaveTargetPreservesFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := SaveTarget(path, "b", TargetSettings{Region: "eu-central-1", Endpoint: "mantle", Protocol: "anthropic"})
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := NewLive(path, loaded)
+	save := func(id string, s TargetSettings) (Config, error) {
+		c, _, err := live.Change("edit "+id, EditTarget(id, s))
+		return c, err
+	}
+	c, err := save("b", TargetSettings{Region: "eu-central-1", Endpoint: "mantle", Protocol: "anthropic"})
 	if err != nil || c.Targets[0].URL() != "https://bedrock-mantle.eu-central-1.api.aws/anthropic/v1" {
 		t.Fatal(err, c.Targets)
 	}
@@ -97,14 +106,14 @@ func TestSaveTargetPreservesFile(t *testing.T) {
 		t.Fatalf("file not preserved:\n%s", data)
 	}
 	// Back to defaults: keys removed, not set to empty.
-	if _, err = SaveTarget(path, "b", TargetSettings{Region: "us-east-1"}); err != nil {
+	if _, err = save("b", TargetSettings{Region: "us-east-1"}); err != nil {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(path)
 	if strings.Contains(string(data), "endpoint") || strings.Contains(string(data), "protocol") {
 		t.Fatalf("defaults not restored:\n%s", data)
 	}
-	if _, err = SaveTarget(path, "b", TargetSettings{}); err == nil {
+	if _, err = save("b", TargetSettings{}); err == nil {
 		t.Fatal("saved bedrock without a region")
 	}
 	if after, _ := os.ReadFile(path); string(after) != string(data) {

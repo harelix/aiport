@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"net/http"
-	"os"
 	"strings"
 
 	"aiport/internal/config"
@@ -12,28 +11,46 @@ import (
 
 // Key sources reported to the dashboard. Key values are never returned.
 const (
-	keyNotNeeded   = "not_needed"  // target has no api_key_env (local servers)
-	keySaved       = "saved"       // entered in the dashboard, stored in the private credential file
-	keyEnvironment = "environment" // taken from the server's environment at startup
-	keyMissing     = "missing"
+	keyNotNeeded   = config.KeyNotNeeded
+	keySaved       = config.KeySaved
+	keyEnvironment = config.KeyEnvironment
+	keyMissing     = config.KeyMissing
 )
 
-func (h *Handler) initKeySources(s config.Secrets, saved map[string]string) {
+// initKeySources reports key sources for a bare handler built from resolved
+// startup secrets (tests and embedding), where no credential file is known.
+func (h *Handler) initKeySources(c config.Config, s config.Secrets) {
 	h.keyMu.Lock()
 	defer h.keyMu.Unlock()
 	h.keySource = map[string]string{}
-	for _, t := range h.config.Targets {
+	for _, t := range c.Targets {
 		switch {
 		case t.APIKeyEnv == "":
 			h.keySource[t.ID] = keyNotNeeded
-		case s.Upstream[t.ID] != "" && saved[t.APIKeyEnv] == s.Upstream[t.ID]:
-			h.keySource[t.ID] = keySaved
 		case s.Upstream[t.ID] != "":
 			h.keySource[t.ID] = keyEnvironment
 		default:
 			h.keySource[t.ID] = keyMissing
 		}
 		h.secretStatus[t.ID] = h.keySource[t.ID] != keyMissing
+	}
+}
+
+// refreshKeys gives every connection the key config.Keys resolves for it and
+// records where it came from. A provider key equal to a local token is
+// refused, so an aiport token never leaves for a provider.
+func (h *Handler) refreshKeys(c config.Config) {
+	h.keyMu.Lock()
+	defer h.keyMu.Unlock()
+	h.keySource, h.secretStatus = map[string]string{}, map[string]bool{}
+	for _, t := range c.Targets {
+		value, source := h.keys.Provider(t)
+		if value != "" && h.isLocalCredential(value) {
+			value, source = "", keyMissing
+		}
+		h.gateway.SetKey(t.ID, value)
+		h.keySource[t.ID] = source
+		h.secretStatus[t.ID] = source != keyMissing
 	}
 }
 
@@ -54,7 +71,7 @@ func (h *Handler) keyStatus() (map[string]bool, map[string]string) {
 func (h *Handler) isLocalCredential(value string) bool {
 	digest := sha256.Sum256([]byte(value))
 	match := 0
-	for _, c := range h.credentials {
+	for _, c := range h.creds() {
 		match |= subtle.ConstantTimeCompare(digest[:], c.Digest[:])
 	}
 	return match == 1
@@ -80,7 +97,7 @@ func (h *Handler) targetKeyRoute(w http.ResponseWriter, r *http.Request, fail fu
 		fail(403, "csrf_required", "Use the same-origin dashboard to change API keys")
 		return true
 	}
-	if h.credentialPath == "" {
+	if h.keys.File == "" {
 		fail(503, "keys_unavailable", "API keys cannot be saved by this server")
 		return true
 	}
@@ -119,14 +136,15 @@ func (h *Handler) targetKeyRoute(w http.ResponseWriter, r *http.Request, fail fu
 		}
 		source = keySaved
 	}
-	if err := config.SetCredential(h.credentialPath, target.APIKeyEnv, value); err != nil {
+	if err := config.SetCredential(h.keys.File, target.APIKeyEnv, value); err != nil {
 		fail(500, "key_save_failed", "Could not update the private credential file")
 		return true
 	}
 	if r.Method == http.MethodDelete {
-		// Fall back to the server's own environment, if it provides a usable key.
-		if env := os.Getenv(target.APIKeyEnv); config.ValidCredentialValue(env) && !h.isLocalCredential(env) {
-			value, source = env, keyEnvironment
+		// Fall back to whatever else provides a key: the server's environment.
+		value, source = h.keys.Provider(target)
+		if value != "" && h.isLocalCredential(value) {
+			value, source = "", keyMissing
 		}
 	}
 	h.keyMu.Lock()

@@ -95,7 +95,7 @@ func (h *Handler) evaluationRoute(w http.ResponseWriter, r *http.Request, fail f
 		h.testEvaluator(w, r, fail)
 		return true
 	}
-	if h.configPath == "" {
+	if !h.live.Writable() {
 		fail(503, "config_readonly", "This server cannot edit its configuration")
 		return true
 	}
@@ -105,14 +105,11 @@ func (h *Handler) evaluationRoute(w http.ResponseWriter, r *http.Request, fail f
 		return true
 	}
 	in.Connection, in.Model = strings.TrimSpace(in.Connection), strings.TrimSpace(in.Model)
-	h.cfgMu.Lock()
-	defer h.cfgMu.Unlock()
-	fresh, err := config.SaveEvaluation(h.configPath, in)
+	fresh, _, err := h.live.Change("compression evaluator", config.SetEvaluation(in))
 	if err != nil {
 		fail(400, "invalid_evaluation", err.Error())
 		return true
 	}
-	h.config.Evaluation = fresh.Evaluation
 	writeJSON(w, 200, map[string]any{"evaluation": fresh.Evaluation})
 	return true
 }

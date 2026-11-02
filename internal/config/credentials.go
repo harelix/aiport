@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -100,26 +99,7 @@ func SetCredential(path, name, value string) error {
 	if st, err := os.Lstat(path); err == nil && !st.Mode().IsRegular() {
 		return errors.New("credential file must be a regular file")
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".aiport-credentials-*")
-	if err != nil {
-		return errors.New("cannot create private credential update")
-	}
-	temp := f.Name()
-	defer os.Remove(temp)
-	defer f.Close()
-	if err = f.Chmod(0600); err != nil {
-		return errors.New("cannot secure credential update")
-	}
-	if _, err = f.WriteString(b.String()); err != nil {
-		return errors.New("cannot write credential update")
-	}
-	if err = f.Sync(); err != nil {
-		return errors.New("cannot sync credential update")
-	}
-	if err = f.Close(); err != nil {
-		return errors.New("cannot close credential update")
-	}
-	if err = os.Rename(temp, path); err != nil {
+	if err := replacePrivate(path, []byte(b.String())); err != nil {
 		return errors.New("cannot replace credential file")
 	}
 	return nil

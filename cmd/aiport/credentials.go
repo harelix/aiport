@@ -57,27 +57,14 @@ func ensureLocalCredentials(configPath string, c config.Config, out io.Writer) e
 	return nil
 }
 
-// credentialLookup resolves configuration references. Provider API keys saved
-// from the dashboard take precedence over the environment, so a key entered in
-// Settings keeps applying after a restart. Everything else comes from the
-// environment (local tokens were loaded by ensureLocalCredentials).
+// credentialLookup resolves configuration references with config.Keys:
+// provider keys saved from the dashboard win over the environment, local
+// tokens come from the environment (loaded by ensureLocalCredentials).
 func credentialLookup(configPath string, c config.Config) (func(string) string, error) {
-	saved, err := config.ReadCredentialFile(config.CredentialFile(configPath))
-	if err != nil {
+	if _, err := config.ReadCredentialFile(config.CredentialFile(configPath)); err != nil {
 		return nil, err
 	}
-	provider := map[string]bool{}
-	for _, t := range c.Targets {
-		if t.APIKeyEnv != "" {
-			provider[t.APIKeyEnv] = true
-		}
-	}
-	return func(name string) string {
-		if provider[name] && saved[name] != "" {
-			return saved[name]
-		}
-		return os.Getenv(name)
-	}, nil
+	return config.EnvKeys(configPath).Lookup(c), nil
 }
 
 func newLocalToken() (string, error) {

@@ -25,29 +25,66 @@ import (
 
 type Handler struct {
 	authority        string
-	credentials      []config.Credential
+	credMu           sync.RWMutex
+	credentials      []config.Credential // guarded by credMu; refreshed on config changes
+	tokenRefs        string              // guarded by credMu: the references credentials were resolved from
 	telemetryEnabled bool
 	gateway          *proxy.Gateway
 	collector        *telemetry.Collector
-	config           config.Config
+	live             *config.Live
+	keys             config.Keys // set when serving a real config; empty in bare test handlers
 	secretStatus     map[string]bool
 	keyMu            sync.Mutex
 	keySource        map[string]string
-	credentialPath   string
-	configPath       string
-	cfgMu            sync.RWMutex
 	tasks            *tasks.Store
 	assets           http.Handler
 	auth             *localauth.Manager
 }
 
 func New(c config.Config, s config.Secrets) http.Handler {
-	c.Targets = append([]config.Target{}, c.Targets...)
-	c.Origins = append([]config.Origin{}, c.Origins...)
-	c.Aliases = append([]config.Alias{}, c.Aliases...)
-	h := &Handler{auth: localauth.New(c.Auth, nil), config: c, assets: dashboard.Handler(), secretStatus: map[string]bool{}, authority: c.Listen, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
-	h.initKeySources(s, nil)
+	h := &Handler{auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, authority: c.Listen, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
+	h.initKeySources(c, s)
 	return h
+}
+
+// snapshot returns a copy of the live configuration safe to read without locks.
+func (h *Handler) snapshot() config.Config { return h.live.Config() }
+
+// applyLive makes a changed configuration live everywhere: routing, API keys
+// and the local tokens clients authenticate with. Listener, auth settings,
+// proxy limits and telemetry still need a restart.
+func (h *Handler) applyLive(c config.Config) {
+	h.gateway.Apply(c)
+	if h.keys.Env == nil {
+		return
+	}
+	h.refreshKeys(c)
+	// Re-resolve local tokens only when clients or their token references
+	// changed (a client added, removed or renamed), not on every edit.
+	refs := tokenRefs(c)
+	h.credMu.Lock()
+	defer h.credMu.Unlock()
+	if refs == h.tokenRefs {
+		return
+	}
+	if s, err := c.Resolve(h.keys.Lookup(c)); err == nil {
+		h.credentials, h.tokenRefs = s.Credentials, refs
+	}
+}
+
+func tokenRefs(c config.Config) string {
+	var b strings.Builder
+	b.WriteString(c.Auth.TokenEnv)
+	for _, o := range c.Origins {
+		b.WriteString("\x00" + o.ID + "=" + o.TokenEnv)
+	}
+	return b.String()
+}
+
+func (h *Handler) creds() []config.Credential {
+	h.credMu.RLock()
+	defer h.credMu.RUnlock()
+	return h.credentials
 }
 
 func NewWithTelemetry(c config.Config, s config.Secrets, collector *telemetry.Collector) http.Handler {
@@ -106,7 +143,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	digest := sha256.Sum256([]byte(token))
 	authenticated, management := 0, 0
 	originID := "unknown"
-	for _, credential := range h.credentials {
+	for _, credential := range h.creds() {
 		match := subtle.ConstantTimeCompare(digest[:], credential.Digest[:])
 		authenticated |= match
 		if match == 1 {

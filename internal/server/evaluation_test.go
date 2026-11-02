@@ -32,8 +32,7 @@ func TestEvaluatorChosenFromConnections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := New(c, config.Secrets{}).(*Handler)
-	h.configPath = path
+	h := NewConfigured(c, config.Secrets{}, nil, path).(*Handler)
 	send := func(method, p, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, "http://127.0.0.1:8787"+p, strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")

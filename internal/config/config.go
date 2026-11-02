@@ -359,8 +359,8 @@ func (c Config) Resolve(lookup func(string) string) (Secrets, error) {
 			s.MissingKeys = append(s.MissingKeys, t.ID)
 			continue
 		}
-		if len(value) > 8192 || strings.ContainsAny(value, "\r\n\x00") {
-			return Secrets{}, errors.New("invalid upstream credential value")
+		if !ValidCredentialValue(value) {
+			return Secrets{}, errors.New("invalid upstream credential value for " + t.APIKeyEnv + ": use printable text without spaces or quotes")
 		}
 		if seen[sha256.Sum256([]byte(value))] {
 			return Secrets{}, errors.New("upstream and local credentials must be distinct")
