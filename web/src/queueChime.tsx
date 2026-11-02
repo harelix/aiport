@@ -35,6 +35,22 @@ export function playChime() {
   });
 }
 
+/** One short, soft, low note: what Changes may play when something new waits (see decisionSound). */
+export function playSoftNote() {
+  unlockAudio();
+  if (!ctx || ctx.state !== 'running') return;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator(), gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = 523.25;
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.08, now + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.5);
+}
+
 /**
  * Watches the task queue on every dashboard refresh. When the last pending or
  * in-progress task finishes, it chimes (if enabled) and shows a notice.

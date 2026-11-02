@@ -9,6 +9,7 @@ import Tasks from './Tasks';
 import Compression from './Compression';
 import Changes from './Changes';
 import {ChimeToggle, QueueDoneToast, useQueueChime} from './queueChime';
+import {useDecisionSound} from './decisionSound';
 import Sidebar, {ThemeSwitch, useAppearance} from './Sidebar';
 import {ArrowUpRight, Inbox, RefreshCw, X} from 'lucide-react';
 
@@ -25,8 +26,11 @@ function App(){
  const [error,setError]=useState(''),[loading,setLoading]=useState(false),[hours,setHours]=useState('24'),[origin,setOrigin]=useState(''),[target,setTarget]=useState(''),[outcome,setOutcome]=useState(''),[selected,setSelected]=useState<Call|null>(null),[next,setNext]=useState(''),[tick,setTick]=useState(0);
  const chime=useQueueChime(!!token,tick);
  // Items in Changes waiting for a decision: drives the badge and the one Overview line. Empty with the adapting loop off.
- const [pending,setPending]=useState(0);
- useEffect(()=>{if(!token)return;get('decisions').then(d=>setPending((d.items||[]).length)).catch(()=>setPending(0))},[token,tick]);
+ const [waiting,setWaiting]=useState<string[]|null>(null);
+ useEffect(()=>{if(!token)return;get('decisions').then(d=>setWaiting((d.items||[]).map((i:{id:string})=>i.id))).catch(()=>setWaiting([]))},[token,tick]);
+ const pending=waiting?.length||0;
+ // Silent unless the Owner turned the sound on in Changes.
+ useDecisionSound(waiting);
  const inFlight=useRef<AbortController|null>(null);
  const windowRef=useRef({from:Date.now()-24*3600000,to:Date.now()});
  const query=()=>new URLSearchParams({hours,origin,target,outcome,from_ms:String(windowRef.current.from),to_ms:String(windowRef.current.to)});
