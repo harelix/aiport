@@ -57,7 +57,8 @@ function AgentSelect({id, value, agents, emptyLabel, onChange, disabled}: {id: s
 export function AgentSettings({o, agents, onDone}: {o: Origin; agents: CodingAgents; onDone: () => void}) {
   const [agent, setAgent] = useState(o.agent || ''), [repository, setRepository] = useState(o.repository || '');
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState(false);
-  useEffect(() => { setAgent(o.agent || ''); setRepository(o.repository || ''); setError(''); setSaved(false); }, [o.id, o.agent, o.repository]);
+  useEffect(() => { setAgent(o.agent || ''); setRepository(o.repository || ''); }, [o.id, o.agent, o.repository]);
+  useEffect(() => { setError(''); setSaved(false); }, [o.id]);
   const fallback = agents.default_agent ? 'Default (' + agentName(agents.default_agent, agents) + ')' : 'None (no default set)';
   const chosen = agents.agents.find(a => a.id === (agent || agents.default_agent));
   const changed = agent !== (o.agent || '') || repository.trim() !== (o.repository || '');
