@@ -99,12 +99,22 @@ func applicationBrief(d Document, root string) Integration {
 			"**Errors and retries.** A body of `{\"error\":{\"code\":...}}` with a code listed at `" + root + Path + "?format=markdown` came from aiport; anything else is the provider's own error, passed through. Retry only `429 concurrency_limit`, `502` and `504`, with backoff. On `401` the token is missing or no longer valid: pair again, do not retry.",
 			"**Log `X-Aiport-Request-Id`** from responses next to your own request logs (the snippets read it); the Owner finds the call in aiport's Activity page with it.",
 			"**Optional:** send `X-Aiport-Compress` to shrink large prompts, and `POST /v1/aiport/feedback` with the request id and a 0–1 score so the Owner can see whether compression hurts answers. Do not rely on features marked `planned`.",
+			issuesStep(d, root),
 			"**Prepare later sessions.** Follow the coding-agent brief (`" + root + Path + "?format=handover&for=" + ForAgent + "`): it adds a project MCP entry and one line to `AGENTS.md`, so coding agents in this repository ask aiport for changes instead of working around it.",
 			"**Verify.** Make one real call, check it succeeds, and ask the Owner to confirm it appears under the application's name in aiport's Activity page (the Integrate page shows \"first call seen\"). If it shows as `unknown`, the token is not the application's own.",
 		},
 		Snippets: applicationSnippets(root, on),
 		Note:     "aiport stores no prompts or responses, only request metadata, and listens on this machine only. Full protocol reference: " + root + Path + "?format=markdown",
 	}
+}
+
+// issuesStep is the Application brief's paragraph on Issues.
+func issuesStep(d Document, root string) string {
+	s := "**Issues.** When one of the application's errors keeps happening (for example a model the Connection its calls go to does not serve), aiport opens an Issue: what is wrong, the evidence (counts, time window, request ids), what aiport found out and two fixes, one in aiport's configuration and one in the application's code. The Coding agent in this repository reads them with the MCP tool `aiport_my_issues` or `GET " + root + "/v1/aiport/issues` (the application's own token), and a failing call that belongs to an open Issue carries an `X-Aiport-Hint` header naming it. aiport may also fix the routing itself, for this application only and as a revertable Change, when the Owner approves it or has turned on automatic fixes; the application then needs no code change."
+	if !d.Adapting {
+		s += " On this gateway the Owner has turned adapting off, so there are no Issues right now."
+	}
+	return s
 }
 
 func applicationSnippets(root string, on map[string]bool) []Snippet {

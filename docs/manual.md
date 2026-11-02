@@ -235,7 +235,9 @@ a tile to see its steps and snippets, each with its own **Copy**.
   aiport. It covers pairing, configuration (`AIPORT_BASE_URL`,
   `AIPORT_APP_TOKEN`), pointing the OpenAI or Anthropic SDK at aiport,
   removing provider keys from the application, model names and Aliases,
-  errors and retries, logging `X-Aiport-Request-Id`, and how to verify. Its
+  errors and retries, logging `X-Aiport-Request-Id`, Issues (what they
+  are, that the Coding agent reads them with `aiport_my_issues`, and that
+  aiport may fix routing itself as a revertable Change), and how to verify. Its
   **Python / TypeScript / curl** picker switches the SDK snippets. Snippets
   for a protocol this gateway has not configured are marked "not
   configured".
