@@ -41,10 +41,19 @@ const (
 )
 
 // Cause is what an Issue is about. Each Cause has a detector that produces
-// it; Subject says which instance (for CauseUnknownModel, the model name).
+// it; Subject says which instance (for CauseUnknownModel, the model name;
+// for CauseFailingConnection, the Connection id).
 type Cause string
 
-const CauseUnknownModel Cause = "unknown_model"
+const (
+	// CauseUnknownModel: upstream 404s for a model the Application has no
+	// Alias for. The aiport fix is an Alias for that Application.
+	CauseUnknownModel Cause = "unknown_model"
+	// CauseFailingConnection: the Application's calls to one Connection keep
+	// failing (gateway errors and timeouts). The aiport fix binds the
+	// Application to a working Connection; it is never applied automatically.
+	CauseFailingConnection Cause = "failing_connection"
+)
 
 // How is how an Issue was resolved, or is expected to resolve while it is
 // resolving.
@@ -242,48 +251,89 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 }
 
 // ApplicationFix is the fix in the Application for Issue is, written for
-// its Coding agent: what is wrong, why, and what to change in the
-// Application. It is the one place that writes it (the Issues routes, MCP
-// and "Copy fix for the coding agent" all show this text).
+// its Coding agent so it can be pasted as-is: what is wrong, the evidence,
+// what aiport found, what to change in the Application and how to confirm
+// the fix. It is the one place that writes it (the Issues routes, MCP and
+// "Copy fix for the coding agent" all show this text). It holds only ids,
+// model names, counts, times and request ids: never prompts, provider
+// messages, keys or tokens.
 func ApplicationFix(is Issue) string {
 	switch is.Cause {
 	case CauseUnknownModel:
 		return unknownModelFix(is)
+	case CauseFailingConnection:
+		return failingFix(is)
 	}
 	return ""
 }
 
 func unknownModelFix(is Issue) string {
 	var b strings.Builder
-	model := strconv.Quote(is.Subject)
-	ev := is.Evidence
-	b.WriteString("aiport Issue " + is.ID + ": calls from " + is.Application + " for model " + model + " fail with " + statusText(ev))
-	b.WriteString(" (" + strconv.Itoa(ev.Count) + " times in the last " + strconv.Itoa(ev.WindowMinutes) + " minutes")
+	app, model := is.Application, strconv.Quote(is.Subject)
+	ev, d := is.Evidence, is.Diagnosis
+	b.WriteString("aiport Issue " + is.ID + ": calls from the Application " + app + " for model " + model + " fail with " + statusText(ev) + ".\n\n")
+
+	b.WriteString("What is wrong: the Connection these calls go to")
+	if len(ev.Connections) > 0 {
+		b.WriteString(" (" + strings.Join(ev.Connections, ", ") + ")")
+	}
+	b.WriteString(" does not serve " + model + ", and no Alias routes " + model + " for " + app + ".\n\n")
+
+	b.WriteString("Evidence: " + strconv.Itoa(ev.Count) + " failed calls")
+	if ev.FromMS > 0 && ev.ToMS > 0 {
+		b.WriteString(" between " + utc(ev.FromMS) + " and " + utc(ev.ToMS))
+	}
+	b.WriteString(" (looking back " + strconv.Itoa(ev.WindowMinutes) + " minutes)")
 	if len(ev.Connections) > 0 {
 		b.WriteString(", sent to Connection " + strings.Join(ev.Connections, ", "))
 	}
-	b.WriteString(").\n")
-	b.WriteString("Cause: the Connection these calls go to does not serve " + model + ", and no Alias routes it for " + is.Application + ".\n")
-	d := is.Diagnosis
+	b.WriteString(".")
+	if len(ev.Examples) > 0 {
+		b.WriteString(" Example request ids: " + strings.Join(ev.Examples, ", ") + ".")
+	}
+	b.WriteString("\n")
 	if d != nil {
+		b.WriteString("What aiport found: ")
 		switch d.Answer {
 		case ServedByOne:
-			b.WriteString("Connection " + strconv.Quote(d.Serving[0]) + " serves " + model + ".\n")
+			b.WriteString("Connection " + strconv.Quote(d.Serving[0]) + " serves " + model)
 		case ServedBySeveral:
-			b.WriteString("Connections " + strings.Join(d.Serving, ", ") + " serve " + model + ".\n")
+			b.WriteString("Connections " + strings.Join(d.Serving, ", ") + " serve " + model)
 		case ServedByNone:
-			b.WriteString("No enabled Connection of this gateway serves " + model + ".\n")
+			b.WriteString("no enabled Connection of this gateway serves " + model)
 		default:
-			b.WriteString("aiport could not list the models of every Connection, so it is not certain which serves " + model + ".\n")
+			b.WriteString("not every Connection could be listed, so it is not certain which serves " + model)
 		}
+		b.WriteString(" (from the Connections' free model lists).\n")
 	}
-	b.WriteString("Fix in the Application: send a model this gateway serves")
-	if d != nil && len(d.Available) > 0 {
-		b.WriteString(" for the " + d.Protocol + " protocol (" + strings.Join(d.Available, ", ") + ")")
+	b.WriteString("\n")
+
+	if f := is.Fix; f != nil && f.State == FixApplied && f.Proposal.Target != "" {
+		b.WriteString("Already fixed in aiport: calls from " + app + " for " + model + " now go to Connection " + strconv.Quote(f.Proposal.Target) + " (model " + strconv.Quote(f.Proposal.Model) + "). No code change is needed; aiport confirms the fix from the next calls.\n\n")
+	} else {
+		b.WriteString("What to change in " + app + ", one of:\n")
+		target := ""
+		if d != nil && d.Answer == ServedByOne {
+			target = d.Serving[0]
+		}
+		if target != "" {
+			b.WriteString("1. Ask aiport to route " + model + " for " + app + " to Connection " + strconv.Quote(target) + ": file a Change request of kind " + string(KindApplicationAlias) + " (alias " + model + ", Connection " + strconv.Quote(target) + ", model " + model + ").")
+		} else {
+			b.WriteString("1. Ask aiport to route " + model + " for " + app + " to a Connection that serves it: file a Change request of kind " + string(KindApplicationAlias) + " (alias " + model + ", the Connection, model " + model + ").")
+		}
+		b.WriteString(" If the Owner approves aiport's own fix for this Issue instead, no code change is needed.\n")
+		b.WriteString("2. Send a model the Connection these calls go to serves.")
+		if d != nil && len(d.Available) > 0 {
+			b.WriteString(" Models the " + d.Protocol + " Connections of this gateway list: " + strings.Join(d.Available, ", ") + ".")
+		}
+		b.WriteString("\nDo not retry " + model + " unchanged.\n\n")
 	}
-	b.WriteString(", or ask aiport to route " + model + " to a Connection that serves it with a Change request of kind " + string(KindApplicationAlias) + ". Do not retry the same model unchanged.")
+
+	b.WriteString("How to confirm: after the change, make one call through aiport with " + app + "'s own token and check it answers 200 instead of " + strconv.Itoa(ev.Status) + ". aiport marks this Issue resolved by itself when calls from " + app + " for " + model + " succeed again; it checks request history, so nothing else needs reporting.")
 	return b.String()
 }
+
+func utc(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.RFC3339) }
 
 func statusText(ev Evidence) string {
 	s := strconv.Itoa(ev.Status)
@@ -329,14 +379,18 @@ func (q *Queue) saveIssue(is *Issue) {
 	}
 }
 
-// symptom is what one detection pass saw for one Application and model in
-// the window: the errors that count, and the successful calls.
+// symptom is what one detection pass saw for one Application and Subject
+// of a Cause in the window: the errors that count, and the successful
+// calls. For an unknown model, protocol and diagnosis; for a failing
+// Connection, target, the working Connection to propose.
 type symptom struct {
-	app, model  string
-	protocol    string
-	errors      []telemetry.Event // oldest first
-	lastSuccess int64
-	diagnosis   *Diagnosis
+	cause        Cause
+	app, subject string
+	protocol     string
+	errors       []telemetry.Event // oldest first
+	lastSuccess  int64
+	diagnosis    *Diagnosis
+	target       string
 }
 
 func (s *symptom) since(ms int64) int {
@@ -350,10 +404,11 @@ func (s *symptom) since(ms int64) int {
 }
 
 func (s *symptom) evidence(window int) Evidence {
-	ev := Evidence{Count: len(s.errors), WindowMinutes: window, Status: 404}
+	ev := Evidence{Count: len(s.errors), WindowMinutes: window}
 	if len(s.errors) == 0 {
 		return ev
 	}
+	ev.Status = s.errors[len(s.errors)-1].Status
 	ev.FromMS, ev.ToMS = s.errors[0].StartedAt, s.errors[len(s.errors)-1].StartedAt
 	seen := map[string]bool{}
 	for i := len(s.errors) - 1; i >= 0; i-- {
@@ -402,7 +457,7 @@ func unknownModelSymptoms(c config.Config, history History, at time.Time) []*sym
 		key := [2]string{e.Origin, *e.RequestedModel}
 		g := groups[key]
 		if g == nil {
-			g = &symptom{app: e.Origin, model: *e.RequestedModel}
+			g = &symptom{cause: CauseUnknownModel, app: e.Origin, subject: *e.RequestedModel}
 			groups[key] = g
 		}
 		if !failed {
@@ -421,7 +476,7 @@ func unknownModelSymptoms(c config.Config, history History, at time.Time) []*sym
 		}
 		out = append(out, g)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].app+"\x00"+out[i].model < out[j].app+"\x00"+out[j].model })
+	sort.Slice(out, func(i, j int) bool { return out[i].app+"\x00"+out[i].subject < out[j].app+"\x00"+out[j].subject })
 	return out
 }
 
@@ -437,7 +492,7 @@ func diagnose(finder ModelFinder, symptoms []*symptom, count int, at time.Time) 
 		if len(s.errors) < count {
 			continue
 		}
-		d := finder.Serves(ctx, s.protocol, s.model)
+		d := finder.Serves(ctx, s.protocol, s.subject)
 		d.At = at.UnixMilli()
 		if d.Serving == nil {
 			d.Serving = []string{}
@@ -452,15 +507,50 @@ func diagnose(finder ModelFinder, symptoms []*symptom, count int, at time.Time) 
 	}
 }
 
-// trackUnknownModels opens, updates, reopens and resolves unknown-model
-// Issues from one pass's symptoms, offering each open Issue's aiport fix as
-// a Suggestion. It returns the Suggestions offered. Called with the lock
-// held.
-func (q *Queue) trackUnknownModels(c config.Config, symptoms []*symptom, at time.Time) []Item {
-	th := c.Adapting.UnknownModel
+// causeRules is what tracking needs to know about one Cause: its
+// threshold, its aiport fix and its summary. succeeded, when set, says when
+// an Application's last successful call for an Issue's Subject was (for
+// Causes whose successes are not grouped with the errors).
+type causeRules struct {
+	cause     Cause
+	threshold config.Threshold
+	fix       func(is Issue, s *symptom) (Kind, Proposal)
+	summary   func(is Issue, p Proposal) string
+	succeeded func(app, subject string) int64
+}
+
+func unknownModelRules(c config.Config) causeRules {
+	return causeRules{
+		cause: CauseUnknownModel, threshold: c.Adapting.UnknownModel,
+		fix: func(is Issue, _ *symptom) (Kind, Proposal) {
+			p := Proposal{Alias: is.Subject, Model: is.Subject}
+			if d := is.Diagnosis; d != nil && d.Answer == ServedByOne && len(d.Serving) == 1 {
+				p.Target = d.Serving[0] // certain; otherwise the Owner chooses
+			}
+			return KindApplicationAlias, p
+		},
+		summary: func(is Issue, _ Proposal) string { return unknownModelSummary(is) },
+	}
+}
+
+func failingRules(c config.Config, succeeded func(app, target string) int64) causeRules {
+	return causeRules{
+		cause: CauseFailingConnection, threshold: c.Adapting.FailingConnection,
+		fix: func(_ Issue, s *symptom) (Kind, Proposal) {
+			return KindBindApplication, Proposal{Target: s.target} // empty: the Owner chooses
+		},
+		summary:   func(is Issue, p Proposal) string { return failingSummary(is, p.Target) },
+		succeeded: succeeded,
+	}
+}
+
+// track opens, updates, reopens and resolves the Issues of one Cause from
+// one pass's symptoms, offering each open Issue's aiport fix as a
+// Suggestion. It returns the Suggestions offered. Called with the lock held.
+func (q *Queue) track(r causeRules, symptoms []*symptom, at time.Time) []Item {
+	th := r.threshold
 	window := time.Duration(th.WindowMinutes) * time.Minute
 	now := at.UnixMilli()
-	q.revertedFixes(now)
 	var offered []Item
 	seen := map[int]*symptom{}
 	appSuccess := map[string]int64{} // each Application's last successful call in the window
@@ -468,7 +558,7 @@ func (q *Queue) trackUnknownModels(c config.Config, symptoms []*symptom, at time
 		appSuccess[s.app] = max(appSuccess[s.app], s.lastSuccess)
 	}
 	for _, s := range symptoms {
-		i := q.issueFor(s.app, CauseUnknownModel, s.model)
+		i := q.issueFor(s.app, r.cause, s.subject)
 		if i >= 0 {
 			seen[i] = s
 		}
@@ -476,7 +566,7 @@ func (q *Queue) trackUnknownModels(c config.Config, symptoms []*symptom, at time
 			continue
 		}
 		if i < 0 {
-			q.issues = append(q.issues, Issue{ID: newID(), Application: s.app, Cause: CauseUnknownModel, Subject: s.model, State: IssueOpen, SinceMS: now, CreatedAt: now})
+			q.issues = append(q.issues, Issue{ID: newID(), Application: s.app, Cause: r.cause, Subject: s.subject, State: IssueOpen, SinceMS: now, CreatedAt: now})
 			i = len(q.issues) - 1
 			seen[i] = s
 		}
@@ -502,9 +592,10 @@ func (q *Queue) trackUnknownModels(c config.Config, symptoms []*symptom, at time
 		if s.diagnosis != nil {
 			is.Diagnosis = s.diagnosis
 		}
-		is.Summary = unknownModelSummary(*is)
+		kind, p := r.fix(*is, s)
+		is.Summary = r.summary(*is, p)
 		is.UpdatedAt = now
-		if it, ok := q.offerFix(is, now); ok {
+		if it, ok := q.offerFix(is, kind, p, now); ok {
 			offered = append(offered, it)
 		}
 		q.saveIssue(is)
@@ -513,7 +604,7 @@ func (q *Queue) trackUnknownModels(c config.Config, symptoms []*symptom, at time
 	// the fix), or a whole window passed without the error.
 	for i := range q.issues {
 		is := &q.issues[i]
-		if is.Cause != CauseUnknownModel || (is.State != IssueOpen && is.State != IssueResolving) {
+		if is.Cause != r.cause || (is.State != IssueOpen && is.State != IssueResolving) {
 			continue
 		}
 		after := is.Evidence.ToMS
@@ -521,15 +612,22 @@ func (q *Queue) trackUnknownModels(c config.Config, symptoms []*symptom, at time
 			after = max(after, is.SinceMS)
 		}
 		s := seen[i]
-		if s != nil && len(s.errors) > 0 {
-			after = max(after, s.errors[len(s.errors)-1].StartedAt) // errors below the threshold still mean it goes on
+		var success int64
+		if s != nil {
+			success = s.lastSuccess
+			if len(s.errors) > 0 {
+				after = max(after, s.errors[len(s.errors)-1].StartedAt) // errors below the threshold still mean it goes on
+			}
+		}
+		if r.succeeded != nil {
+			success = max(success, r.succeeded(is.Application, is.Subject))
 		}
 		if is.State == IssueResolving && is.ResolvingBy == ByApplicationFix {
 			// The Application's word is not enough: its calls must succeed.
-			if !confirmedByApplication(s, appSuccess[is.Application], after) {
+			if !confirmedByApplication(success, appSuccess[is.Application], after) {
 				continue
 			}
-		} else if (s == nil || s.lastSuccess <= after) && now-after < window.Milliseconds() {
+		} else if success <= after && now-after < window.Milliseconds() {
 			continue
 		}
 		q.resolve(is, now)
@@ -582,23 +680,19 @@ func (q *Queue) resolve(is *Issue, now int64) {
 	q.saveIssue(is)
 }
 
-// offerFix offers an open Issue's aiport fix as a pending Suggestion (or
-// updates the one waiting). With exactly one Connection serving the model
-// the fix is complete; otherwise the Owner chooses the Connection.
-func (q *Queue) offerFix(is *Issue, now int64) (Item, bool) {
+// offerFix offers an open Issue's aiport fix, a Change of kind for
+// Proposal p scoped to its Application, as a pending Suggestion (or updates
+// the one waiting). What p leaves empty the Owner chooses.
+func (q *Queue) offerFix(is *Issue, kind Kind, p Proposal, now int64) (Item, bool) {
 	if is.State != IssueOpen {
 		return Item{}, false
 	}
-	p := Proposal{Alias: is.Subject, Model: is.Subject}
-	if d := is.Diagnosis; d != nil && d.Answer == ServedByOne && len(d.Serving) == 1 {
-		p.Target = d.Serving[0]
-	}
 	ev := is.Evidence
 	it := q.submit(Item{
-		Source: FromSuggestion, Kind: KindApplicationAlias, Application: is.Application, Subject: is.Subject, Scope: ScopeApplication,
+		Source: FromSuggestion, Kind: kind, Application: is.Application, Subject: is.Subject, Scope: ScopeApplication,
 		Need: is.Summary, Evidence: &ev, Proposal: p, Issue: is.ID,
 	}, now)
-	is.Fix = &Fix{Suggestion: it.ID, Kind: KindApplicationAlias, Scope: ScopeApplication, Proposal: p, State: FixProposed}
+	is.Fix = &Fix{Suggestion: it.ID, Kind: kind, Scope: ScopeApplication, Proposal: p, State: FixProposed}
 	return it, true
 }
 

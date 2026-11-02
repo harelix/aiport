@@ -152,6 +152,6 @@ func (q *Queue) withdrawFix(is *Issue, now int64) {
 // a call for the same subject succeeded, or another of the Application's
 // calls did (it now sends a model this gateway serves). Its word alone,
 // or silence, never confirms it.
-func confirmedByApplication(s *symptom, appSuccess, after int64) bool {
-	return (s != nil && s.lastSuccess > after) || appSuccess > after
+func confirmedByApplication(success, appSuccess, after int64) bool {
+	return success > after || appSuccess > after
 }

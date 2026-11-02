@@ -208,8 +208,13 @@ narrow screen the strip moves below).
   and **Reject**.
 - The list shows each approved Application: name, client id, Connection (or
   the protocol default), the **May request changes** toggle, its last call
-  (in the last 7 days, when activity recording is on) and its onboarding
-  progress, such as `3/5`.
+  (in the last 7 days, when activity recording is on), its open **Issues**
+  and its onboarding progress, such as `3/5`.
+- **Issues** shows how many open or resolving Issues the Application has
+  and a short cause, such as "Unknown model llama3:8b" (None when there are
+  none). Select it to list them under the row: each with its summary, **Open
+  in Changes** (opens that Issue on the Changes page, where you approve or
+  dismiss it) and **Copy fix for the coding agent** (see Changes, Issues).
 - The **Approved / Rejected / All** filter picks what the list shows.
   Rejected Applications are hidden until you choose **Rejected** or **All**;
   each shows when it was rejected, with **Forget**.
@@ -343,7 +348,7 @@ the top of Changes with its evidence, what aiport found out and the ways to
 resolve it. There is one Issue per Application and cause: repeats update
 its counts and time window, never a second Issue.
 
-Today aiport opens an Issue when one Application keeps getting a provider
+aiport opens an Issue when one Application keeps getting a provider
 `404` for the same model it has no Alias for (`adapting.unknown_model`,
 default 5 times in 60 minutes). For example, docs-bot asks for
 `llama3:8b`, it is not bound to a Connection, and the protocol default is a
@@ -362,9 +367,18 @@ hosted Connection that does not serve that model.
   filled in; with none, several or unknown, choose the Connection (and the
   model, if it has another name there) yourself. **Approve** applies it as an
   ordinary Change you can revert; the Issue becomes **resolving**.
-- **Fix in the Application**: what to change in the Application's code,
-  written for its coding agent (send a model this gateway serves, listed for
-  that protocol, or ask for the Alias with a Change request).
+- **Copy fix for the coding agent**: copies the fix in the Application, a
+  ready instruction for the coding agent in the Application's repository:
+  paste it as-is. It says what is wrong, the evidence (counts, times, the
+  Connections, example request ids), what aiport found, what to change in
+  the Application (ask for the Alias with a Change request, or send a model
+  this gateway serves, listed for that protocol) and how to confirm the fix
+  (one call with the Application's own token answers `200`; aiport then
+  resolves the Issue by itself). Once the fix in aiport is applied it says
+  no code change is needed. It holds no prompts, keys or tokens. **Read the
+  fix** shows the same text first. The button is also on the Integrate page,
+  under the Application's row, and the text is the same one aiport gives the
+  Application's coding agent about its Issues.
 - **Dismiss**: the Issue stays quiet for 7 days unless the evidence doubles.
 
 An Issue resolves itself: when the Application's calls for that model
@@ -377,6 +391,35 @@ error sticks again; only errors after it resolved count. Issues are kept
 across restarts and hold only Application ids, the cause, model names,
 Connection ids, counts, request ids and fixed advice text: never prompts,
 responses, provider messages, keys or tokens.
+
+#### A failing Connection
+
+aiport also opens an Issue when one Application's calls to one Connection
+keep failing (`adapting.failing_connection`, default 5 times in 60
+minutes): gateway errors and timeouts count; a provider answer below `500`
+(an unknown model, a bad request), cancellations and requests aiport
+refused never do. For example, docs-bot is bound to a Connection that keeps
+answering `502`. There is one Issue per Application and Connection; only
+failures to the Connection the Application is bound to now count.
+
+- **Evidence**: how many calls failed, the last status, the time window and
+  a few request ids.
+- **Fix in aiport**: bind that Application only to a working Connection.
+  aiport proposes the configured, enabled Connection with the most
+  successful calls in the window; choose another if you like, but never the
+  failing one. **Approve** applies it as an ordinary Change you can revert;
+  other Applications are not touched. This fix is never applied
+  automatically, even with automatic fixes on: moving a whole Application
+  to another Connection is always your decision.
+- **Fix in the Application**: the request itself is fine; the coding agent
+  is told not to retry in a tight loop, to back off and handle `5xx`
+  answers and timeouts, and that it can ask for the binding with a Change
+  request of kind `bind_application`.
+
+It resolves itself when the Application's calls succeed again, on that
+Connection or on the one you bound it to (`aiport_fix` or `stopped`), and
+reopens if the failures stick again. Reverting the binding opens it again
+with the fix offered again.
 
 The badge on Changes counts an Issue only while its fix waits for you.
 
@@ -412,9 +455,9 @@ Issue opens again and offers the aiport fix again.
 
 - **Suggestions** come from aiport itself, from patterns in request history,
   with the evidence (how many requests, over which time window). An Alias
-  for a model one Application keeps getting `404` for comes as an Issue
-  (above). It also suggests binding an Application to a working Connection when its
-  calls to one Connection keep failing; and pairing when requests keep
+  for a model one Application keeps getting `404` for, and binding an
+  Application to a working Connection when its calls to one Connection keep
+  failing, come as Issues (above). It also suggests pairing when requests keep
   arriving with a missing or unknown token (informational: open the
   Integrate page to pair it, or Dismiss). Thresholds are under `adapting:`
   in the configuration.
