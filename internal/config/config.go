@@ -170,6 +170,17 @@ func Load(path string) (Config, error) {
 	return Parse(data)
 }
 
+// Application returns the Application with id (an entry under origins), and
+// whether there is one.
+func (c Config) Application(id string) (Origin, bool) {
+	for _, o := range c.Origins {
+		if o.ID == id {
+			return o, true
+		}
+	}
+	return Origin{}, false
+}
+
 func (c Config) Validate() error {
 	if c.Version != 1 {
 		return errors.New("configuration version must be 1")

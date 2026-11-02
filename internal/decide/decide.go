@@ -4,9 +4,11 @@
 // turn patterns in request history into Suggestions.
 //
 // Its interface is small on purpose; the dashboard API, the detectors and the
-// Change request endpoints all use the same five calls: Submit, List, Decide,
-// Detect (one pass at a given time) and Run (Detect on a background ticker).
-// Nothing here runs on the forwarding path.
+// Change request endpoints all use the same few calls: Submit, List, Decide,
+// Detect (one pass at a given time), Prune (forget decided items older than
+// request history) and Run (Prune and Detect on a background ticker); File,
+// Requests and RequestOf serve Change requests. Nothing here runs on the
+// forwarding path.
 package decide
 
 import (
@@ -191,7 +193,9 @@ type Invalid struct{ Reason string }
 
 func (e Invalid) Error() string { return e.Reason }
 
-// Queue is the decision queue. It is safe for concurrent use.
+// Queue is the decision queue. It keeps its items in memory and, when it has
+// a Store (SQLStore in the database next to aiport.yaml), there too. It is
+// safe for concurrent use.
 type Queue struct {
 	mu      sync.Mutex
 	live    *config.Live

@@ -145,9 +145,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	fail := func(status int, code, message string) {
-		writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message, "request_id": id}})
-	}
+	fail := func(status int, code, message string) { writeError(w, status, code, message, nil) }
 	if r.Host != h.authority {
 		fail(403, "invalid_host", "Host is not the configured local address")
 		return
@@ -299,6 +297,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	fail(404, "unsupported_path", "This path is not available")
 }
+
+// writeError answers with aiport's error body: code, message, the request id
+// (from the X-Aiport-Request-Id header) and any extra fields, such as the
+// problems with a Change request or the Extension that refused it.
+func writeError(w http.ResponseWriter, status int, code, message string, extra map[string]any) {
+	e := map[string]any{"code": code, "message": message, "request_id": w.Header().Get("X-Aiport-Request-Id")}
+	for k, v := range extra {
+		e[k] = v
+	}
+	writeJSON(w, status, map[string]any{"error": e})
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

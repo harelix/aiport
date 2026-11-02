@@ -47,7 +47,7 @@ const (
 // ChangeHint tells an Application how to ask the Owner for a Change of one
 // of the given kinds.
 func ChangeHint(kinds ...string) string {
-	return "A Change could fix this: ask the owner with POST " + RequestsPath + " (kind " + strings.Join(kinds, " or ") + ") or the MCP tool " + RequestTool + "; see /_connect."
+	return "A Change could fix this: ask the Owner with POST " + RequestsPath + " (kind " + strings.Join(kinds, " or ") + ") or the MCP tool " + RequestTool + "; see /_connect."
 }
 
 // HintHeader carries a hint on a provider error, whose body aiport passes

@@ -45,13 +45,13 @@ const (
 )
 
 // serveMCP handles MCPPath for an authenticated caller.
-func (h *Handler) serveMCP(w http.ResponseWriter, r *http.Request, originID string, fail func(int, string, string)) {
+func (h *Handler) serveMCP(w http.ResponseWriter, r *http.Request, applicationID string, fail func(int, string, string)) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		fail(405, "method_not_allowed", "Use POST; aiport offers no server-to-client stream")
 		return
 	}
-	if _, ok := h.capabilities(originID); !ok {
+	if !h.isApplication(applicationID) {
 		fail(403, "application_token_required", "The MCP endpoint serves one Application: send that Application's own token")
 		return
 	}
@@ -86,11 +86,11 @@ func (h *Handler) serveMCP(w http.ResponseWriter, r *http.Request, originID stri
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	result, rerr := h.mcpCall(originID, m)
+	result, rerr := h.mcpCall(applicationID, m)
 	writeJSON(w, 200, rpcReply(m.ID, result, rerr))
 }
 
-func (h *Handler) mcpCall(originID string, m rpcMessage) (any, *rpcError) {
+func (h *Handler) mcpCall(applicationID string, m rpcMessage) (any, *rpcError) {
 	switch m.Method {
 	case "initialize":
 		var p struct {
@@ -126,7 +126,7 @@ func (h *Handler) mcpCall(originID string, m rpcMessage) (any, *rpcError) {
 		if args[0] != '{' {
 			return nil, &rpcError{rpcInvalidParams, "arguments must be a JSON object"}
 		}
-		return h.mcpTool(originID, p.Name, args)
+		return h.mcpTool(applicationID, p.Name, args)
 	}
 	return nil, &rpcError{rpcNoMethod, "Unknown method " + m.Method}
 }
@@ -134,7 +134,7 @@ func (h *Handler) mcpCall(originID string, m rpcMessage) (any, *rpcError) {
 // mcpTool runs one tool by sending the equivalent request through the HTTP
 // handlers of /v1/aiport/capabilities and /v1/aiport/requests, so both doors
 // share one implementation and the tool result is exactly the HTTP body.
-func (h *Handler) mcpTool(originID, name string, args []byte) (any, *rpcError) {
+func (h *Handler) mcpTool(applicationID, name string, args []byte) (any, *rpcError) {
 	var r *http.Request
 	switch name {
 	case "aiport_capabilities":
@@ -162,9 +162,9 @@ func (h *Handler) mcpTool(originID, name string, args []byte) (any, *rpcError) {
 		writeJSON(tw, status, map[string]any{"error": map[string]string{"code": code, "message": message, "request_id": tw.header.Get("X-Aiport-Request-Id")}})
 	}
 	if name == "aiport_capabilities" {
-		h.serveCapabilities(tw, r, originID, fail)
+		h.serveCapabilities(tw, r, applicationID, fail)
 	} else {
-		h.serveRequests(tw, r, originID, fail)
+		h.serveRequests(tw, r, applicationID, fail)
 	}
 	body := bytes.TrimSpace(tw.body.Bytes())
 	return map[string]any{

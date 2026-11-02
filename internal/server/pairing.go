@@ -291,12 +291,8 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 	}
 	current := h.snapshot()
 	taken := func(id string) bool {
-		for _, o := range current.Origins {
-			if o.ID == id {
-				return true
-			}
-		}
-		return false
+		_, ok := current.Application(id)
+		return ok
 	}
 	id := strings.TrimSpace(in.ID)
 	if id == "" {

@@ -119,7 +119,7 @@ func (h *Handler) decisionsRoute(w http.ResponseWriter, r *http.Request, fail fu
 	var blocked extension.Denied
 	switch {
 	case errors.As(err, &blocked):
-		writeJSON(w, 409, map[string]any{"error": map[string]any{"code": "guardrail_blocked", "message": err.Error(), "request_id": w.Header().Get("X-Aiport-Request-Id"), "extension": blocked.Extension, "reason": blocked.Reason}})
+		writeError(w, 409, "guardrail_blocked", err.Error(), map[string]any{"extension": blocked.Extension, "reason": blocked.Reason})
 	case errors.Is(err, decide.ErrOff):
 		fail(409, "adapting_off", err.Error())
 	case errors.Is(err, decide.ErrChanged):

@@ -121,7 +121,7 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 	if !q.On() {
 		return Answer{}, ErrOff
 	}
-	o, ok := application(q.live.Config(), app)
+	o, ok := q.live.Config().Application(app)
 	if !ok {
 		return Answer{}, ErrNotApplication
 	}
@@ -206,15 +206,6 @@ func (q *Queue) admit(app string, at time.Time, spend bool) error {
 		q.filed[app] = append(kept, now)
 	}
 	return nil
-}
-
-func application(c config.Config, id string) (config.Origin, bool) {
-	for _, o := range c.Origins {
-		if o.ID == id {
-			return o, true
-		}
-	}
-	return config.Origin{}, false
 }
 
 // readRequest decodes body and lists every problem with it.

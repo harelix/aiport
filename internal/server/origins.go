@@ -25,22 +25,15 @@ func (h *Handler) originRoute(w http.ResponseWriter, r *http.Request, fail func(
 		return true
 	}
 	if r.Header.Get("X-Aiport-CSRF") != "1" {
-		fail(403, "csrf_required", "Use the same-origin dashboard to change applications")
+		fail(403, "csrf_required", "Use the same-origin dashboard to change Applications")
 		return true
 	}
 	if !h.live.Writable() {
 		fail(503, "config_readonly", "This server cannot edit its configuration")
 		return true
 	}
-	var app *config.Origin
-	current := h.snapshot()
-	for i := range current.Origins {
-		if current.Origins[i].ID == id {
-			app = &current.Origins[i]
-		}
-	}
-	if app == nil {
-		fail(404, "origin_not_found", "No application with this id")
+	if !h.isApplication(id) {
+		fail(404, "origin_not_found", "No Application with this id")
 		return true
 	}
 	var in struct {

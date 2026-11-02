@@ -43,7 +43,7 @@ var Protocols = []string{"openai", "anthropic"}
 // Router says which Connection would serve an Application on a protocol;
 // the gateway's routing module implements it.
 type Router interface {
-	Reachable(origin, protocol string) (connection string, ok bool)
+	Reachable(application, protocol string) (connection string, ok bool)
 }
 
 type Protocol struct {
@@ -88,16 +88,11 @@ const AdaptingOff = "The Owner has turned adapting off in aiport: no Application
 
 const permitted = "This Application may request the listed kinds of Change. The Owner approves or rejects each request."
 
-// For answers for the Application with id origin in configuration c, with
-// routing from r. ok is false when c has no such Application.
-func For(c config.Config, origin string, r Router) (caps Capabilities, ok bool) {
-	var app *config.Origin
-	for i := range c.Origins {
-		if c.Origins[i].ID == origin {
-			app = &c.Origins[i]
-		}
-	}
-	if app == nil {
+// For answers for the Application with id application in configuration c,
+// with routing from r. ok is false when c has no such Application.
+func For(c config.Config, application string, r Router) (caps Capabilities, ok bool) {
+	app, ok := c.Application(application)
+	if !ok {
 		return Capabilities{}, false
 	}
 	caps = Capabilities{

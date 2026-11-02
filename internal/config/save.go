@@ -179,7 +179,7 @@ func SetMayRequestChanges(id string, allowed bool) Edit {
 	return func(root *yaml.Node) error {
 		seq := mappingValue(root, "origins")
 		if seq == nil || seq.Kind != yaml.SequenceNode {
-			return errors.New("application not found in configuration")
+			return errors.New("Application not found in configuration")
 		}
 		for _, item := range seq.Content {
 			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
@@ -191,7 +191,7 @@ func SetMayRequestChanges(id string, allowed bool) Edit {
 				return nil
 			}
 		}
-		return errors.New("application not found in configuration")
+		return errors.New("Application not found in configuration")
 	}
 }
 
@@ -202,7 +202,7 @@ func AddOriginAlias(id string, a OriginAlias) Edit {
 	return func(root *yaml.Node) error {
 		seq := mappingValue(root, "origins")
 		if seq == nil || seq.Kind != yaml.SequenceNode {
-			return errors.New("application not found in configuration")
+			return errors.New("Application not found in configuration")
 		}
 		for _, item := range seq.Content {
 			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
@@ -215,7 +215,7 @@ func AddOriginAlias(id string, a OriginAlias) Edit {
 				return nil
 			}
 		}
-		return errors.New("application not found in configuration")
+		return errors.New("Application not found in configuration")
 	}
 }
 
@@ -240,7 +240,7 @@ func BindOrigin(id, target string) Edit {
 	return func(root *yaml.Node) error {
 		seq := mappingValue(root, "origins")
 		if seq == nil || seq.Kind != yaml.SequenceNode {
-			return errors.New("application not found in configuration")
+			return errors.New("Application not found in configuration")
 		}
 		for _, item := range seq.Content {
 			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
@@ -248,7 +248,7 @@ func BindOrigin(id, target string) Edit {
 				return nil
 			}
 		}
-		return errors.New("application not found in configuration")
+		return errors.New("Application not found in configuration")
 	}
 }
 
