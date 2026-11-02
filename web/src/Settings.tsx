@@ -4,6 +4,7 @@ import {AuthenticationSettings} from './AuthGate';
 import {ProviderLogo} from './ProviderLogo';
 import type {Reason} from './Reason';
 import {ApplicationsPanel} from './Applications';
+import {DefaultAgentPanel} from './CodingAgents';
 import KeyField, {KeySource, keyBadge} from './KeyField';
 
 export type Location = 'local' | 'remote';
@@ -449,6 +450,7 @@ function ExplainerPanel({config, providers, onChange}: {config: SettingsConfig |
 export default function SettingsPage({config, providers, onChange}: Props) {
   return <>
     <AuthenticationSettings username={config?.auth.username || ''} onChange={onChange}/>
+    <DefaultAgentPanel tick={0} onChange={onChange}/>
     <ExplainerPanel key={JSON.stringify(config?.adapting?.explain || {})} config={config} providers={providers} onChange={onChange}/>
     <section className="panel setup">
       <p className="eyebrow">CONFIGURATION</p>

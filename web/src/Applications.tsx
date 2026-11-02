@@ -5,8 +5,10 @@ import {AppWindow} from 'lucide-react';
    ones asking to pair and see the ones connected. The integration
    instructions for coding agents are on the Integrate page. */
 
-export type Pairing = {code: string; name: string; description?: string; requested_at_ms: number; expires_at_ms: number};
-export type Origin = {id: string; name: string; target?: string; aliases?: {alias: string; target: string; model: string}[]; may_request_changes?: boolean};
+/** repository: the path the Application reported, not yet confirmed; repository_problem: what is wrong with it. */
+export type Pairing = {code: string; name: string; description?: string; repository?: string; repository_problem?: string; requested_at_ms: number; expires_at_ms: number};
+/** agent and repository: its Coding agent (empty = the default) and confirmed repository path. */
+export type Origin = {id: string; name: string; target?: string; aliases?: {alias: string; target: string; model: string}[]; may_request_changes?: boolean; agent?: string; repository?: string};
 export type Target = {id: string; disabled?: boolean};
 /** A pairing request the Owner rejected, kept so it can still be seen (no secrets). */
 export type Rejected = {id: string; code: string; name: string; description?: string; rejected_at_ms: number};
@@ -22,9 +24,11 @@ const minutesLeft = (ms: number) => Math.max(0, Math.ceil((ms - Date.now()) / 60
 
 function PairingRow({p, targets, onDone}: {p: Pairing; targets: Target[]; onDone: () => void}) {
   const [target, setTarget] = useState(''), [mayRequest, setMayRequest] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  // The reported repository path is only a proposal: what is in this field when the Owner approves is what aiport keeps.
+  const [repository, setRepository] = useState(p.repository || '');
   async function act(action: 'approve' | 'reject') {
     setBusy(true); setError('');
-    try { await post('pairings/' + encodeURIComponent(p.code) + '/' + action, action === 'approve' ? {target, may_request_changes: mayRequest} : undefined); onDone(); }
+    try { await post('pairings/' + encodeURIComponent(p.code) + '/' + action, action === 'approve' ? {target, may_request_changes: mayRequest, repository: repository.trim()} : undefined); onDone(); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   return <li className="pairing">
@@ -32,6 +36,11 @@ function PairingRow({p, targets, onDone}: {p: Pairing; targets: Target[]; onDone
       <strong>{p.name}</strong> <span className="pair-code" aria-label={'Code ' + p.code}>{p.code}</span>
       {p.description && <p className="muted-small">{p.description}</p>}
       <small>Check the application shows this same code. Expires in {minutesLeft(p.expires_at_ms)} min.</small>
+      {p.repository && <div className="pairing-repository">
+        <label htmlFor={'repo-' + p.code}>Repository <small className="muted">(reported by the application; confirm, edit or clear it)</small></label>
+        <input id={'repo-' + p.code} value={repository} spellCheck={false} disabled={busy} onChange={e => setRepository(e.target.value)}/>
+        {p.repository_problem && repository.trim() === p.repository && <small className="auth-error">{p.repository_problem}</small>}
+      </div>}
     </div>
     <div className="pairing-actions">
       <label className="sr-only" htmlFor={'bind-' + p.code}>Connection</label>

@@ -52,6 +52,7 @@ type Handler struct {
 	pair             pairings
 	explainMu        sync.Mutex
 	explaining       map[string]bool // Applications whose Issue explanation is being written (guarded by explainMu)
+	agentDirs        []string        // where Coding agents are looked for; nil = agents.DefaultDirs; tests set a temporary one
 	// requesters are the Applications that may request changes right now
 	// (none while adapting is off), rebuilt on every config change so the
 	// forwarding path checks a set instead of copying the configuration.
