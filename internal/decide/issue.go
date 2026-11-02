@@ -164,6 +164,10 @@ type Issue struct {
 	NeedsOwner bool `json:"needs_owner"`
 }
 
+// undecided reports whether an Issue in state s is still for someone to
+// act on: open, or resolving while aiport waits to see a fix work.
+func undecided(s IssueState) bool { return s == IssueOpen || s == IssueResolving }
+
 // IssueFilter selects Issues. Zero fields don't filter.
 type IssueFilter struct {
 	Application string
@@ -243,14 +247,18 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 		return Issue{}, config.Change{}, ErrNotFound
 	}
 	is := q.issues[i]
-	q.mu.Unlock()
-	if is.State != IssueOpen {
+	if !undecided(is.State) {
+		q.mu.Unlock()
 		return Issue{}, config.Change{}, ErrDecided
 	}
 	if is.Fix == nil || is.Fix.State != FixProposed {
+		q.mu.Unlock()
 		return Issue{}, config.Change{}, ErrNoFix
 	}
-	_, ch, err := q.Decide(is.Fix.Suggestion, d, at)
+	suggestion := is.Fix.Suggestion
+	q.mu.Unlock()
+	// Decide checks again under the lock that the Suggestion still waits.
+	_, ch, err := q.Decide(suggestion, d, at)
 	if err != nil {
 		return Issue{}, config.Change{}, err
 	}
@@ -368,7 +376,7 @@ func (q *Queue) issueFor(app string, cause Cause, subject string) int {
 }
 
 func (q *Queue) saveIssue(is *Issue) {
-	is.NeedsOwner = is.State == IssueOpen && is.Fix != nil && is.Fix.State == FixProposed
+	is.NeedsOwner = undecided(is.State) && is.Fix != nil && is.Fix.State == FixProposed
 	is.ApplicationFix = ApplicationFix(*is)
 	if s, ok := q.store.(IssueStore); ok {
 		_ = s.SaveIssue(*is) // kept for this session even if the database fails
@@ -677,6 +685,20 @@ func (q *Queue) reopen(is *Issue, now int64) {
 	is.Reopened++
 }
 
+// withdrawFix withdraws is's aiport fix while it waits for the Owner (the
+// Suggestion becomes Withdrawn). Only an Issue that resolves itself does
+// this. Called with the lock held.
+func (q *Queue) withdrawFix(is *Issue, now int64) {
+	if is.Fix == nil || is.Fix.State != FixProposed {
+		return
+	}
+	if j := q.index(is.Fix.Suggestion); j >= 0 && q.items[j].Status == Pending {
+		q.items[j].Status, q.items[j].UpdatedAt = Withdrawn, now
+		q.save(q.items[j])
+	}
+	is.Fix = nil
+}
+
 // resolve marks is resolved as how, and withdraws a fix still waiting for
 // the Owner: the Issue resolved itself.
 func (q *Queue) resolve(is *Issue, how How, now int64) {
@@ -748,7 +770,7 @@ func (q *Queue) settledFix(it Item) {
 		return
 	}
 	is := &q.issues[i]
-	if is.Fix == nil || is.Fix.Suggestion != it.ID || is.State != IssueOpen {
+	if is.Fix == nil || is.Fix.Suggestion != it.ID || !undecided(is.State) {
 		return
 	}
 	v := it.Decision

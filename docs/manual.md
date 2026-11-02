@@ -482,10 +482,10 @@ management token gets `403`):
 - The `AGENTS.md` line from the Coding agent brief tells later sessions to
   check `aiport_my_issues` at the start.
 
-When the agent has fixed the Application's code (for docs-bot: it now sends
-a model this gateway serves), it says so with `aiport_issue_fixed` (or
+When the agent has fixed the Application's code, it says so with `aiport_issue_fixed` (or
 `POST /v1/aiport/issues/{id}/fixed`). The Issue becomes **resolving** by the
-Application fix, and the aiport fix stops waiting for you. aiport does not
+Application fix, so you see it is being handled; an aiport fix waiting for
+you keeps waiting, and you can still approve it. aiport does not
 take the agent's word for it: the Issue is resolved, as `application_fix`,
 only once that Application's calls succeed again for the same cause (for an
 unknown model, a successful call for that same model; for a failing

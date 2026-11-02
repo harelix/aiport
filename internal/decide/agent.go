@@ -133,10 +133,10 @@ func (q *Queue) publishHints() {
 }
 
 // FixedByApplication records that Application app fixed its open Issue id
-// on its side: the Issue becomes resolving by the Application fix, and the
-// aiport fix still waiting for the Owner is withdrawn (it is offered again
-// if the error sticks). aiport resolves the Issue only when the
-// Application's calls succeed again.
+// on its side: the Issue becomes resolving by the Application fix, so the
+// Owner sees it is being handled. An aiport fix waiting for the Owner keeps
+// waiting: the Owner can still approve it. aiport resolves the Issue only
+// when the Application's calls succeed again.
 func (q *Queue) FixedByApplication(app, id string, at time.Time) (AgentIssue, error) {
 	if !q.On() {
 		return AgentIssue{}, ErrOff
@@ -155,21 +155,7 @@ func (q *Queue) FixedByApplication(app, id string, at time.Time) (AgentIssue, er
 		return AgentIssue{}, ErrNotOpen
 	}
 	now := at.UnixMilli()
-	q.withdrawFix(is, now)
 	is.State, is.ResolvingBy, is.SinceMS, is.UpdatedAt = IssueResolving, ByApplicationFix, now, now
 	q.saveIssue(is)
 	return is.ForAgent(), nil
-}
-
-// withdrawFix withdraws is's aiport fix while it waits for the Owner.
-// Called with the lock held.
-func (q *Queue) withdrawFix(is *Issue, now int64) {
-	if is.Fix == nil || is.Fix.State != FixProposed {
-		return
-	}
-	if j := q.index(is.Fix.Suggestion); j >= 0 && q.items[j].Status == Pending {
-		q.items[j].Status, q.items[j].UpdatedAt = Withdrawn, now
-		q.save(q.items[j])
-	}
-	is.Fix = nil
 }

@@ -112,9 +112,9 @@ func TestTheMCPToolAnswersAsTheHTTPRoute(t *testing.T) {
 	}
 }
 
-// "Fixed on my side": the Issue is resolving by the Application fix, the
-// aiport fix stops waiting for the Owner, and aiport resolves the Issue
-// only once docs-bot's calls succeed again.
+// "Fixed on my side": the Issue is resolving by the Application fix (the
+// Owner sees it is being handled and can still approve the aiport fix),
+// and aiport resolves the Issue only once docs-bot's calls succeed again.
 func TestAnApplicationFixIsConfirmedByRealCalls(t *testing.T) {
 	f := newIssuesFixture(t, "")
 	f.chat(t, docsBotToken, "llama3:8b", 5)
@@ -128,11 +128,11 @@ func TestAnApplicationFixIsConfirmedByRealCalls(t *testing.T) {
 		t.Fatalf("management token marks it fixed: %d", w.Code)
 	}
 	got, isErr := mcpTool(t, f.h, docsBotToken, "aiport_issue_fixed", map[string]any{"id": id})
-	if isErr || got["state"] != "resolving" || got["resolving_by"] != "application_fix" || got["aiport_fix"] != nil {
+	if isErr || got["state"] != "resolving" || got["resolving_by"] != "application_fix" || m(got["aiport_fix"])["state"] != "proposed" {
 		t.Fatalf("fixed on my side: %v", got)
 	}
-	if _, pending := pendingDecisions(t, f.h, issuesManagement); len(pending) != 0 {
-		t.Fatalf("the aiport fix still waits for the Owner: %v", pending)
+	if _, pending := pendingDecisions(t, f.h, issuesManagement); len(pending) != 1 {
+		t.Fatalf("the aiport fix no longer waits for the Owner: %v", pending)
 	}
 	if w, out := call(f.h, "POST", IssuesPath+"/"+id+"/fixed", "", docsBotToken, false); w.Code != 200 || out["state"] != "resolving" {
 		t.Fatalf("saying it twice: %d %v", w.Code, out)
@@ -278,10 +278,39 @@ func TestAnAutomaticFixNeverOverridesAnApplicationFix(t *testing.T) {
 	f.chat(t, docsBotToken, "llama3:8b", 2)
 	f.detect()
 	is := f.only(t)
-	if is["state"] != "resolving" || is["resolving_by"] != "application_fix" || is["fix"] != nil {
+	if is["state"] != "resolving" || is["resolving_by"] != "application_fix" || m(is["fix"])["state"] != "proposed" {
 		t.Fatalf("an automatic fix overrode the Application fix: %v", is)
 	}
 	if len(f.aliases(t, "docs-bot")) != 0 {
 		t.Fatal("an Alias was added automatically while the Application fix is resolving")
+	}
+}
+
+// After "fixed on my side" the Owner can still approve the aiport fix;
+// the Issue then waits for the aiport fix to show it works.
+func TestTheOwnerCanStillApproveAfterTheApplicationSaysItFixedIt(t *testing.T) {
+	f := newIssuesFixture(t, "")
+	f.chat(t, docsBotToken, "llama3:8b", 5)
+	f.detect()
+	id := f.myIssues(t, docsBotToken)[0]["id"].(string)
+	if w, _ := call(f.h, "POST", IssuesPath+"/"+id+"/fixed", "", docsBotToken, false); w.Code != 200 {
+		t.Fatalf("fixed: %d", w.Code)
+	}
+	code, out := f.decide(t, id, `{"action":"accept"}`)
+	if code != 200 {
+		t.Fatalf("approve: %d %v", code, out)
+	}
+	if got := f.aliases(t, "docs-bot"); len(got) != 1 {
+		t.Fatalf("alias not live: %v", got)
+	}
+	if is := f.only(t); is["state"] != "resolving" || is["resolving_by"] != "aiport_fix" || m(is["fix"])["state"] != "applied" {
+		t.Fatalf("after approve: %v", is)
+	}
+	if codes := f.chat(t, docsBotToken, "llama3:8b", 1); fmt.Sprint(codes) != "[200]" {
+		t.Fatalf("call after the fix: %v", codes)
+	}
+	f.detect()
+	if is := f.only(t); is["state"] != "resolved" || m(is["resolution"])["how"] != "aiport_fix" {
+		t.Fatalf("after a successful call: %v", is)
 	}
 }
