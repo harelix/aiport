@@ -76,20 +76,21 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `defaults` | Optional `openai_target` and `anthropic_target`; matching target protocols required |
 | `aliases` | List of `target`, `alias`, `model`; unique alias per target; model strings 1–256 bytes |
 | `telemetry.enabled` | true; request metadata is saved to `<config>.db` (SQLite) |
-| `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests are kept (dismissed ones at least 7 days, the quiet period); Changes themselves are never pruned |
+| `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests, and resolved or dismissed Issues, are kept (dismissed ones at least 7 days, the quiet period); Changes themselves are never pruned |
 | `telemetry.queue_capacity` | 4096; range 1–65536 |
 | `telemetry.batch_size` | 100; range 1–queue capacity |
 | `telemetry.flush_interval_ms` | 250; range 1–60000 |
 | `telemetry.shutdown_drain_ms` | 2000; range 1–60000; reserved for M2 telemetry |
 | `telemetry.max_event_bytes` | 16384; range 1024–65536 |
-| `adapting.disabled` | false; `true` turns the whole adapting loop off: no Suggestions are detected and Changes shows nothing new |
+| `adapting.disabled` | false; `true` turns the whole adapting loop off: no Suggestions are detected, no Issues are opened and Changes shows nothing new |
 | `adapting.interval_seconds` | 60; range 5–86400; how often a background pass looks at request history (never during a request) |
-| `adapting.unknown_model.count` | 5; range 1–1000000; upstream 404s for one model from one Application that lead to a Suggestion to add an Alias |
+| `adapting.unknown_model.count` | 5; range 1–1000000; upstream 404s for one model from one Application that open an Issue (with an Alias for that Application as the aiport fix); also how many new 404s reopen a resolved one |
 | `adapting.unknown_model.window_minutes` | 60; range 1–10080; how far back those 404s are counted |
 | `adapting.unknown_token.count` | 10; range 1–1000000; requests refused for a missing or unknown token that lead to an informational Suggestion to pair the Application (only counts per minute are kept, never the token) |
 | `adapting.unknown_token.window_minutes` | 60; range 1–10080; how far back those refusals are counted |
 | `adapting.failing_connection.count` | 5; range 1–1000000; failed calls (gateway errors, timeouts and upstream 5xx; never cancellations or refusals) from one Application to one Connection that lead to a Suggestion to bind the Application to a working Connection |
 | `adapting.failing_connection.window_minutes` | 60; range 1–10080; how far back those failures are counted |
+| `adapting.auto_fix` | false; `true` lets aiport apply an Issue's aiport fix itself, as a revertable Change made by "aiport (automatic)", only when exactly one Connection serves the model, the error reached its threshold and the fix is an Alias for that one Application. A fix the Owner reverted (or rejected) is never applied automatically again for that Application and cause. Also switchable on the Changes page |
 
 IDs and provider labels contain 1–64 ASCII alphanumerics, underscores or hyphens,
 starting with an alphanumeric. Protocol is `openai` or `anthropic`. Provider is a
@@ -204,6 +205,16 @@ exact UTC `from_ms`/`to_ms` bounds capped at seven days. Stable descending
 P95 uses nearest rank; latency sample counts are returned. Error rate excludes
 pre-admission rejections and counts upstream/gateway/incomplete/timeout outcomes;
 cancellations and rejections are shown separately. Cost/token totals are null.
+
+Model listings (management access and the `X-Aiport-CSRF: 1` header; both call
+providers with the free `GET {base}/models`, never a generating request):
+`GET /api/v1/targets/{id}/models[?refresh=1]` returns `{connection, listed,
+state, models, listed_at_ms}` (model ids only; `listed: false` means unknown);
+`GET /api/v1/serving?protocol=openai|anthropic&model=…[&refresh=1]` returns
+`{model, protocol, answer, serving, unknown}` over the enabled Connections of
+that protocol, where `answer` is `one`, `none`, `several` or `unknown` (a
+Connection whose listing failed is in `unknown`). Lists are kept in memory
+for two minutes; a failed listing is not kept.
 
 The public local root serves embedded login assets under a restrictive same-origin
 CSP. The UI sends its in-memory management token as bearer auth; no localStorage,

@@ -28,6 +28,7 @@ type Gateway struct {
 	limits    config.ProxyLimits
 	slots     chan struct{}
 	transport http.RoundTripper
+	models    modelCache
 }
 
 func New(c config.Config, s config.Secrets) *Gateway {
@@ -50,8 +51,10 @@ func New(c config.Config, s config.Secrets) *Gateway {
 func (g *Gateway) Apply(c config.Config) {
 	rt := buildRoutes(c)
 	g.targetsMu.Lock()
+	before := g.routes.targets
 	g.routes = rt
 	g.targetsMu.Unlock()
+	g.forget(changedTargets(before, rt.targets)...)
 	g.keysMu.Lock()
 	for id := range g.keys {
 		if _, ok := rt.targets[id]; !ok {
@@ -64,6 +67,7 @@ func (g *Gateway) Apply(c config.Config) {
 // SetKey replaces the upstream API key for a target at runtime (empty removes
 // it). In-flight requests keep the key they started with.
 func (g *Gateway) SetKey(targetID, key string) {
+	g.forget(targetID)
 	g.keysMu.Lock()
 	defer g.keysMu.Unlock()
 	if key == "" {
@@ -436,6 +440,14 @@ func owner(r refusal.Refusal) *refusal.Advice { a := r.Owner; return &a }
 // local servers) expose. It costs nothing and proves reachability plus key
 // acceptance; it does not prove every model or feature works.
 func (g *Gateway) Probe(ctx context.Context, targetID string) ProbeResult {
+	r, models := g.probe(ctx, targetID)
+	g.remember(targetID, r, models)
+	return r
+}
+
+// probe runs the check; models are the ids the provider listed, nil when
+// the listing failed or had no model list.
+func (g *Gateway) probe(ctx context.Context, targetID string) (ProbeResult, []string) {
 	started := time.Now()
 	res := func(ok bool, state string, status int, msg string) ProbeResult {
 		return ProbeResult{OK: ok, State: state, Status: status, LatencyMS: time.Since(started).Milliseconds(), Message: msg, CheckedAt: time.Now().UnixMilli()}
@@ -444,23 +456,23 @@ func (g *Gateway) Probe(ctx context.Context, targetID string) ProbeResult {
 	t, ok := g.routes.targets[targetID]
 	g.targetsMu.RUnlock()
 	if !ok {
-		return res(false, "unknown", 0, "No connection with this id.")
+		return res(false, "unknown", 0, "No connection with this id."), nil
 	}
 	if t.Disabled {
-		return res(false, "disabled", 0, "This connection is disabled.").advised(owner(refusal.TargetDisabled))
+		return res(false, "disabled", 0, "This connection is disabled.").advised(owner(refusal.TargetDisabled)), nil
 	}
 	secret := g.key(targetID)
 	if t.APIKeyEnv != "" && secret == "" {
-		return res(false, "no_key", 0, "No API key yet. Add one to check this connection.").advised(owner(refusal.UpstreamKeyMissing))
+		return res(false, "no_key", 0, "No API key yet. Add one to check this connection.").advised(owner(refusal.UpstreamKeyMissing)), nil
 	}
 	u, err := url.Parse(t.URL())
 	if err != nil {
-		return res(false, "unreachable", 0, "The connection URL is invalid.").advised(owner(refusal.TargetInvalid))
+		return res(false, "unreachable", 0, "The connection URL is invalid.").advised(owner(refusal.TargetInvalid)), nil
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + "/models"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return res(false, "unreachable", 0, "Cannot create the check request.")
+		return res(false, "unreachable", 0, "Cannot create the check request."), nil
 	}
 	if t.Protocol == "anthropic" {
 		req.Header.Set("anthropic-version", "2023-06-01")
@@ -478,7 +490,7 @@ func (g *Gateway) Probe(ctx context.Context, targetID string) ProbeResult {
 		}
 		r := res(false, "unreachable", 0, msg+".").advised(&a)
 		r.ConnectionError = class
-		return r
+		return r, nil
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
@@ -502,22 +514,19 @@ func (g *Gateway) Probe(ctx context.Context, targetID string) ProbeResult {
 		if t.APIKeyEnv == "" {
 			r.Message = "Reachable."
 		}
-		var list struct {
-			Data   []json.RawMessage `json:"data"`
-			Models []json.RawMessage `json:"models"` // Ollama native shape
-		}
-		if json.Unmarshal(body, &list) == nil && (list.Data != nil || list.Models != nil) {
-			n := len(list.Data) + len(list.Models)
+		models, ok := modelIDs(body)
+		if ok {
+			n := len(models)
 			r.Models = &n
 		}
-		return r
+		return r, models
 	case s == 401 || s == 403:
-		return failed("key_rejected", "Reachable, but the provider rejected the key ("+detail+").")
+		return failed("key_rejected", "Reachable, but the provider rejected the key ("+detail+")."), nil
 	case s == 404 || s == 405:
-		return res(true, "no_model_list", s, "Reachable, but it has no model list to check the key against.")
+		return res(true, "no_model_list", s, "Reachable, but it has no model list to check the key against."), nil
 	case s == 429:
-		return res(true, "ok", s, "Reachable and the key was accepted, but you are rate-limited right now.")
+		return res(true, "ok", s, "Reachable and the key was accepted, but you are rate-limited right now."), nil
 	default:
-		return failed("provider_error", "The provider answered with an error ("+detail+").")
+		return failed("provider_error", "The provider answered with an error ("+detail+")."), nil
 	}
 }

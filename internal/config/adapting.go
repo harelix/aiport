@@ -19,6 +19,10 @@ type Adapting struct {
 	// (gateway errors, timeouts) at least Count times within the last
 	// WindowMinutes.
 	FailingConnection Threshold `yaml:"failing_connection,omitempty" json:"failing_connection"`
+	// AutoFix lets aiport apply an Issue's aiport fix itself, as a revertable
+	// Change made by "aiport (automatic)", when the diagnosis is certain and
+	// the fix is for that Application only. Off by default.
+	AutoFix bool `yaml:"auto_fix,omitempty" json:"auto_fix"`
 }
 
 // Threshold is how much evidence a detector needs: Count matching requests

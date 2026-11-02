@@ -130,7 +130,7 @@ func Describe(c config.Config) Document {
 			{"X-Aiport-Compression", "methods; status=applied|no_gain|failed; bytes_before=N; bytes_after=N", "Present when compression was requested. On failed or no_gain the original body was sent.", "available"},
 			{"X-Aiport-Model", "model id", "Model actually used after aliases or tier routing.", "planned"},
 			{"X-Aiport-Route", "key=value; ...", "Why that model/target was chosen.", "planned"},
-			{"X-Aiport-Hint", "one line of text", "On a provider 404 for the requested model, sent only to Applications allowed to request changes: which change request (kind and endpoint) could fix it. The provider's body is passed through unchanged.", "available"},
+			{"X-Aiport-Hint", "one line of text", "On a failing call that is one of an open Issue's failures (a provider 404 for the Issue's model, or a 5xx, timeout or connection error from the Issue's failing Connection), sent to any Application: the Issue and where to read it. Otherwise, on a provider 404 for the requested model, sent only to Applications allowed to request changes: which change request (kind and endpoint) could fix it. The provider's body is passed through unchanged.", "available"},
 			{"X-Aiport-Source", "gateway or upstream", "Whether an error came from aiport or the provider.", "planned"},
 		},
 		ErrorFormat: `Gateway errors: {"error":{"code":"...","message":"...","request_id":"...","hint":"..."}}. hint is optional: applications allowed to request changes get one on refusals a change could fix (target_unconfigured, target_disabled), naming the change request kind and endpoint. Status and code never depend on it. Provider errors pass through unchanged (status, body, headers).`,
@@ -171,7 +171,8 @@ func Describe(c config.Config) Document {
 			{"effort_tiers", "planned", "Virtual model names routed to a model by X-Aiport-Effort or the native reasoning effort field."},
 			{"capabilities", "available", "GET /v1/aiport/capabilities with the Application's own token: what aiport can do for it right now (protocols it can reach and their connection, its own aliases, its binding, whether it may request changes and which kinds of change: application_alias, bind_application). Answers only about the calling Application and reflects applied changes at once."},
 			{"change_requests", "available", "POST /v1/aiport/requests with the Application's own token asks the Owner for a change: {\"kind\":\"application_alias|bind_application|...\",\"need\":\"one line\",\"details\":\"...\",\"why\":\"...\",\"scope\":\"application|every_application\",\"scope_case\":\"the argument for that scope\",\"filed_by\":\"optional, informational\"}; each field at most 2,000 characters, 6,000 in total, plain text never sent to a model. Only for Applications the Owner allowed (see capabilities). GET /v1/aiport/requests lists this Application's own requests and GET /v1/aiport/requests/{id} one of them, with status (pending, accepted, rejected, not_supported), the scope granted and the Owner's note. Kinds aiport cannot apply are kept as not_supported. 20 requests per Application per hour; refused requests do not count."},
-			{"mcp", "available", "Model Context Protocol (Streamable HTTP, JSON responses) at POST /mcp, authenticated with Authorization: Bearer <the Application's own token> (from AIPORT_APP_TOKEN; the Owner's token is refused). Tools: aiport_capabilities, aiport_request_change and aiport_my_requests, answering exactly as GET /v1/aiport/capabilities and /v1/aiport/requests do. Project-level MCP entry: {\"type\":\"http\",\"url\":\"<this aiport>/mcp\",\"headers\":{\"Authorization\":\"Bearer ${AIPORT_APP_TOKEN}\"}}; never commit the token itself."},
+			{"mcp", "available", "Model Context Protocol (Streamable HTTP, JSON responses) at POST /mcp, authenticated with Authorization: Bearer <the Application's own token> (from AIPORT_APP_TOKEN; the Owner's token is refused). Tools: aiport_capabilities, aiport_request_change, aiport_my_requests, aiport_my_issues and aiport_issue_fixed, answering exactly as GET /v1/aiport/capabilities, /v1/aiport/requests and /v1/aiport/issues do. Project-level MCP entry: {\"type\":\"http\",\"url\":\"<this aiport>/mcp\",\"headers\":{\"Authorization\":\"Bearer ${AIPORT_APP_TOKEN}\"}}; never commit the token itself."},
+			{"issues", "available", "GET /v1/aiport/issues with the Application's own token: its Issues (problems aiport keeps seeing with its calls), newest first, each with summary, evidence (counts, window, request ids), application_fix (what to change in the Application) and aiport_fix (proposed, applied, rejected or reverted); GET /v1/aiport/issues/{id} one of them; POST /v1/aiport/issues/{id}/fixed says it was fixed in the Application (state resolving; resolved as application_fix once its calls succeed again). Capabilities show open_issues; a failing call that is one of an open Issue's failures carries an X-Aiport-Hint naming it. Check it at the start of a session."},
 			{"pairing", "available", "POST /v1/aiport/pair {name}: an application asks for its own token; the owner approves the shown code in the dashboard; the application collects the token once from the poll path. Requests expire after 10 minutes."},
 		},
 		Privacy: []string{
@@ -203,10 +204,10 @@ func adaptingOff(d *Document) {
 	}
 	for i, f := range d.Features {
 		switch f.Name {
-		case "change_requests":
+		case "change_requests", "issues":
 			d.Features[i].Status, d.Features[i].Description = "off", AdaptingOff
 		case "mcp":
-			d.Features[i].Description = "Model Context Protocol (Streamable HTTP, JSON responses) at POST /mcp, authenticated with Authorization: Bearer <the Application's own token> (from AIPORT_APP_TOKEN). aiport_capabilities works; aiport_request_change and aiport_my_requests are " + strings.ToLower(AdaptingOff[:1]) + AdaptingOff[1:]
+			d.Features[i].Description = "Model Context Protocol (Streamable HTTP, JSON responses) at POST /mcp, authenticated with Authorization: Bearer <the Application's own token> (from AIPORT_APP_TOKEN). aiport_capabilities works; aiport_my_issues and aiport_issue_fixed are not offered; aiport_request_change and aiport_my_requests are " + strings.ToLower(AdaptingOff[:1]) + AdaptingOff[1:]
 		}
 	}
 	d.ErrorFormat += " With adapting off no hint is sent."

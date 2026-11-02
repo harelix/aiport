@@ -60,8 +60,9 @@ func briefs(base string) []Brief {
 }
 
 // AgentsLine is the line an integrating agent adds to the Application's
-// AGENTS.md, so future sessions ask aiport instead of working around it.
-const AgentsLine = "This app's LLM calls go through aiport. If aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it."
+// AGENTS.md, so future sessions check their Issues and ask aiport instead
+// of working around it.
+const AgentsLine = "This app's LLM calls go through aiport. At the start of a session, check `aiport_my_issues` for open Issues; if aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it."
 
 // mcpEntry is the project-level MCP server entry for this gateway. It names
 // the environment variable holding the token, never the token.
@@ -98,12 +99,22 @@ func applicationBrief(d Document, root string) Integration {
 			"**Errors and retries.** A body of `{\"error\":{\"code\":...}}` with a code listed at `" + root + Path + "?format=markdown` came from aiport; anything else is the provider's own error, passed through. Retry only `429 concurrency_limit`, `502` and `504`, with backoff. On `401` the token is missing or no longer valid: pair again, do not retry.",
 			"**Log `X-Aiport-Request-Id`** from responses next to your own request logs (the snippets read it); the Owner finds the call in aiport's Activity page with it.",
 			"**Optional:** send `X-Aiport-Compress` to shrink large prompts, and `POST /v1/aiport/feedback` with the request id and a 0–1 score so the Owner can see whether compression hurts answers. Do not rely on features marked `planned`.",
+			issuesStep(d, root),
 			"**Prepare later sessions.** Follow the coding-agent brief (`" + root + Path + "?format=handover&for=" + ForAgent + "`): it adds a project MCP entry and one line to `AGENTS.md`, so coding agents in this repository ask aiport for changes instead of working around it.",
 			"**Verify.** Make one real call, check it succeeds, and ask the Owner to confirm it appears under the application's name in aiport's Activity page (the Integrate page shows \"first call seen\"). If it shows as `unknown`, the token is not the application's own.",
 		},
 		Snippets: applicationSnippets(root, on),
 		Note:     "aiport stores no prompts or responses, only request metadata, and listens on this machine only. Full protocol reference: " + root + Path + "?format=markdown",
 	}
+}
+
+// issuesStep is the Application brief's paragraph on Issues.
+func issuesStep(d Document, root string) string {
+	s := "**Issues.** When one of the application's errors keeps happening (for example a model the Connection its calls go to does not serve), aiport opens an Issue: what is wrong, the evidence (counts, time window, request ids), what aiport found out and two fixes, one in aiport's configuration and one in the application's code. The Coding agent in this repository reads them with the MCP tool `aiport_my_issues` or `GET " + root + "/v1/aiport/issues` (the application's own token), and a failing call that belongs to an open Issue carries an `X-Aiport-Hint` header naming it. aiport may also fix the routing itself, for this application only and as a revertable Change, when the Owner approves it or has turned on automatic fixes; the application then needs no code change."
+	if !d.Adapting {
+		s += " On this gateway the Owner has turned adapting off, so there are no Issues right now."
+	}
+	return s
 }
 
 func applicationSnippets(root string, on map[string]bool) []Snippet {
@@ -183,29 +194,32 @@ func agentBrief(d Document, root string) Integration {
 	auth := "`Authorization: Bearer $AIPORT_APP_TOKEN`"
 	steps := []string{}
 	if !d.Adapting {
-		steps = append(steps, "**Change requests are off on this gateway right now.** The Owner has turned adapting off (`adapting.disabled`): `aiport_request_change`, `aiport_my_requests` and `/v1/aiport/requests` answer `409 adapting_off`, and aiport sends no hints. Set up the MCP entry and the AGENTS.md line anyway; `aiport_capabilities` works, and change requests work again once the Owner turns adapting back on. Until then, tell the user what the Application needs instead of filing a request.")
+		steps = append(steps, "**Change requests are off on this gateway right now.** The Owner has turned adapting off (`adapting.disabled`): `aiport_request_change`, `aiport_my_requests` and `/v1/aiport/requests` answer `409 adapting_off`, there are no Issues (`aiport_my_issues` is not offered and `/v1/aiport/issues` answers `409 adapting_off`), and aiport sends no hints. Set up the MCP entry and the AGENTS.md line anyway; `aiport_capabilities` works, and change requests work again once the Owner turns adapting back on. Until then, tell the user what the Application needs instead of filing a request.")
 	}
 	steps = append(steps,
 		"**Where you are.** This repository's Application sends its LLM calls through aiport at `"+root+"`, with its own Application token in the `AIPORT_APP_TOKEN` environment variable (never in a file). If aiport lacks something the Application needs (a model name, another Connection), ask the Owner through aiport. Do not work around it: no provider API keys, no direct provider URLs.",
 		"**Add the project MCP entry** so coding agents here can reach aiport (Claude Code: `.mcp.json` at the repository root; other agents: their project MCP config; see the `mcp` snippet): `"+mcpEntry(root)+"`. It reads the token from `${AIPORT_APP_TOKEN}`; never write the token's value into the file or commit it.",
 		"**Add this line to the repository's `AGENTS.md`** (see the `agents-line` snippet): \""+AgentsLine+"\"",
-		"**The tools and their HTTP equivalents.** Each MCP tool answers exactly as its HTTP endpoint does; both use "+auth+". `aiport_capabilities` = `GET "+root+"/v1/aiport/capabilities`: the protocols this Application can reach and their Connection, its own aliases, its binding, `may_request_changes` and the `change_kinds` it may request. `aiport_request_change` = `POST "+root+"/v1/aiport/requests`: file a Change request. `aiport_my_requests` = `GET "+root+"/v1/aiport/requests` (all of this Application's own requests) or `GET "+root+"/v1/aiport/requests/{id}` (one).",
+		"**The tools and their HTTP equivalents.** Each MCP tool answers exactly as its HTTP endpoint does; both use "+auth+". `aiport_capabilities` = `GET "+root+"/v1/aiport/capabilities`: the protocols this Application can reach and their Connection, its own aliases, its binding, `may_request_changes` and the `change_kinds` it may request. `aiport_request_change` = `POST "+root+"/v1/aiport/requests`: file a Change request. `aiport_my_requests` = `GET "+root+"/v1/aiport/requests` (all of this Application's own requests) or `GET "+root+"/v1/aiport/requests/{id}` (one). `aiport_my_issues` = `GET "+root+"/v1/aiport/issues` (this Application's Issues) or `GET "+root+"/v1/aiport/issues/{id}` (one). `aiport_issue_fixed` = `POST "+root+"/v1/aiport/issues/{id}/fixed`.",
+		"**Check Issues at the start of a session.** Call `aiport_my_issues`: an Issue is a problem aiport keeps seeing with this Application's calls (for example a model no Connection it reaches serves), with `summary`, `evidence` (counts, time window, request ids), `application_fix` (what to change in this Application's code, with the models this gateway serves) and `aiport_fix` (a fix in aiport's configuration: `proposed` waits for the Owner, `applied`, `rejected` or `reverted`). `aiport_capabilities` shows `open_issues`, and a failing call that is one of an open Issue's failures (the same model answered `404`, or the same failing Connection) carries an `X-Aiport-Hint` naming that Issue, whether or not this Application may request changes. Either make the Application fix, or leave it to the Owner when an aiport fix is proposed; do not do both.",
+		"**Say when you fixed it.** After changing the Application's code, call `aiport_issue_fixed` with the Issue's `id`: it becomes `resolving`, so the Owner sees it is being handled (an aiport fix waiting for the Owner keeps waiting; the Owner may still approve it). aiport marks it `resolved` with `resolution.how` = `application_fix` only once the Application's calls succeed again; if the error goes on, the Issue opens again. Only `open` Issues can be marked (`409 issue_not_open`); another Application's Issue is `404 issue_not_found`.",
 		"**Check first.** Call `aiport_capabilities` before asking: the alias or binding you need may already exist, and `change_kinds` lists what you may request (`application_alias`: a model name only this Application sends, replaced with a model on a Connection; `bind_application`: send all of its calls to one Connection). Other kinds are kept as `not_supported` for the Owner to read.",
 		"**Write a good Change request.** Send every field as plain text (it is shown to the Owner, never sent to a model): `kind` (from `change_kinds`), `need` (one line: what the Application needs), `details` (what exactly: alias name, model, Connection), `why` (what failed: the error code, the `X-Aiport-Request-Id`, what you tried), `scope` (`application` for this Application only, or `every_application`) and `scope_case` (the argument for that scope); `filed_by` is optional. Each field at most 2,000 characters, 6,000 in total. A `400 invalid_change_request` lists every problem in `error.problems`; fix them all and send again. At most 20 requests per Application per hour (`429 change_requests_rate_limited`, retry after `Retry-After`).",
 		"**Wait for the Owner's decision.** A new request is `pending`; the Owner approves or rejects it in the aiport dashboard (Changes), and may grant a narrower or wider scope than asked. Read the answer with `aiport_my_requests`: `accepted` (the Change is live at once; `aiport_capabilities` shows it), `rejected` (the Owner's `note` says why) or `not_supported`. Do not file the same request again while it is pending; identical requests are merged. Tell the user it waits for the Owner, and carry on with other work.",
 		"**Permission.** Requesting changes needs the Owner's permission: until the Owner allows this Application on the Integrate page of the aiport dashboard, aiport answers `403 change_requests_not_allowed` (`may_request_changes` is false in `aiport_capabilities`). A policy Extension the Owner added may refuse a request: `403 change_request_refused` with `error.reason`.",
-		"**Read hints.** Once allowed, aiport tells you when a Change could remove an error: `target_unconfigured` and `target_disabled` errors carry `error.hint`, and a provider `404` for the requested model carries an `X-Aiport-Hint` response header (the provider's body is unchanged). A hint names the request kind and the endpoint; status and error codes never depend on it.",
+		"**Read hints.** Once allowed, aiport tells you when a Change could remove an error: `target_unconfigured` and `target_disabled` errors carry `error.hint`, and a provider `404` for the requested model carries an `X-Aiport-Hint` response header (the provider's body is unchanged). A hint names the request kind and the endpoint. Issue hints need no permission: a failing call that is one of an open Issue's failures carries an `X-Aiport-Hint` naming that Issue instead. Status and error codes never depend on it.",
 	)
 	return Integration{
 		For:   ForAgent,
 		Title: "Ask aiport for changes from this repository",
-		Intro: "You are a coding agent working in the repository of an application whose LLM calls go through the aiport gateway on this machine. When aiport lacks something the application needs, you ask the Owner for a Change through aiport.",
+		Intro: "You are a coding agent working in the repository of an application whose LLM calls go through the aiport gateway on this machine. You check the application's open Issues with aiport, and when aiport lacks something the application needs, you ask the Owner for a Change through aiport.",
 		Steps: steps,
 		Snippets: []Snippet{
 			{ID: "mcp", Title: "Project MCP entry (.mcp.json)", Language: "json", Available: true, Code: mcpEntry(root) + "\n"},
 			{ID: "agents-line", Title: "Line for AGENTS.md", Language: "text", Available: true, Code: AgentsLine + "\n"},
 			{ID: "capabilities", Title: "What aiport can do for this Application", Language: "curl", Available: true, Code: "curl -s " + root + "/v1/aiport/capabilities \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\"\n"},
 			{ID: "request", Title: "File a Change request", Language: "curl", Available: d.Adapting, Code: "curl -s -X POST " + root + "/v1/aiport/requests \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\" -H 'content-type: application/json' \\\n  -d '{\"kind\":\"application_alias\",\"need\":\"Send model fast to a local model\",\"details\":\"alias fast -> MODEL on Connection CONNECTION\",\"why\":\"Calls with model fast fail with a provider 404 (request id ...)\",\"scope\":\"application\",\"scope_case\":\"Only this application uses the name fast\"}'\n"},
+			{ID: "my-issues", Title: "This Application's Issues", Language: "curl", Available: d.Adapting, Code: "curl -s " + root + "/v1/aiport/issues \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\"\n"},
 			{ID: "my-requests", Title: "Read the Owner's answers", Language: "curl", Available: d.Adapting, Code: "curl -s " + root + "/v1/aiport/requests \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\"\n"},
 		},
 		Note: "Never put the Application token's value in a file you commit; the MCP entry and every example read it from AIPORT_APP_TOKEN. Full protocol reference: " + root + Path + "?format=markdown",

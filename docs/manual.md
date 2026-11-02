@@ -5,7 +5,8 @@ decides what it does. It walks through the dashboard page by page. For exact
 configuration keys see [configuration](configuration.md); for the protocol
 Applications use see [Connect](connect.md); for policies and guardrails see
 [Extensions](extensions.md). Words with a capital letter (Application,
-Connection, Alias, Change request, Suggestion, Change, Scope, Extension) are
+Connection, Alias, Change request, Suggestion, Issue, Change, Scope,
+Extension) are
 defined in the [glossary](../GLOSSARY.md).
 
 ## What aiport does
@@ -101,8 +102,8 @@ listens on and Sign out (or "Authentication off" when it is turned off).
   (see [compression](compression.md)).
 - **Agents**: coding agents launched through `aiport agent`, each with its
   own token.
-- **Changes**: what waits for your decision and every configuration Change
-  made through aiport, with Revert.
+- **Changes**: open Issues, what waits for your decision and every
+  configuration Change made through aiport, with Revert.
 - **Tasks**: a queue of work for coding agents; you own intent and priority.
 - **Settings**: sign-in, authentication and the configuration file.
 
@@ -129,6 +130,14 @@ On **Providers**:
   connection refused, TLS failed, timed out), or the HTTP status with the
   provider's own error type (for example `HTTP 401, authentication_error`),
   and what to do. A passing check does not prove every model works.
+- **Show models** on a card lists the models that Connection serves, using
+  the same free `GET /models` listing (OpenAI-, Anthropic- and Ollama-shaped
+  answers). After a check, the button shows the count ("Show 12 models").
+  aiport keeps only the model ids, in memory, and reuses a list for two
+  minutes; **Refresh** lists again, and so does **Check connection**. If the
+  listing fails (no key, key rejected, no model list, unreachable), aiport
+  treats that Connection's models as unknown, not as "serves nothing".
+  Disabled Connections are not listed.
 - **Make OpenAI default** / **Make Anthropic default** sets the Connection a
   protocol uses when nothing else picks one.
 
@@ -199,8 +208,13 @@ narrow screen the strip moves below).
   and **Reject**.
 - The list shows each approved Application: name, client id, Connection (or
   the protocol default), the **May request changes** toggle, its last call
-  (in the last 7 days, when activity recording is on) and its onboarding
-  progress, such as `3/5`.
+  (in the last 7 days, when activity recording is on), its open **Issues**
+  and its onboarding progress, such as `3/5`.
+- **Issues** shows how many open or resolving Issues the Application has
+  and a short cause, such as "Unknown model llama3:8b" (None when there are
+  none). Select it to list them under the row: each with its summary, **Open
+  in Changes** (opens that Issue on the Changes page, where you approve or
+  dismiss it) and **Copy fix for the Coding agent** (see Changes, Issues).
 - The **Approved / Rejected / All** filter picks what the list shows.
   Rejected Applications are hidden until you choose **Rejected** or **All**;
   each shows when it was rejected, with **Forget**.
@@ -221,17 +235,21 @@ a tile to see its steps and snippets, each with its own **Copy**.
   aiport. It covers pairing, configuration (`AIPORT_BASE_URL`,
   `AIPORT_APP_TOKEN`), pointing the OpenAI or Anthropic SDK at aiport,
   removing provider keys from the application, model names and Aliases,
-  errors and retries, logging `X-Aiport-Request-Id`, and how to verify. Its
+  errors and retries, logging `X-Aiport-Request-Id`, Issues (what they
+  are, that the Coding agent reads them with `aiport_my_issues`, and that
+  aiport may fix routing itself as a revertable Change), and how to verify. Its
   **Python / TypeScript / curl** picker switches the SDK snippets. Snippets
   for a protocol this gateway has not configured are marked "not
   configured".
 - **Coding agent brief** (`/_connect?format=handover&for=agent`): for coding
   agents working in that application's repository later. It covers the
   project MCP entry (which reads the token from `${AIPORT_APP_TOKEN}`, never
-  the value), the line for the repository's `AGENTS.md`, the tools
-  `aiport_capabilities`, `aiport_request_change` and `aiport_my_requests`
-  and their HTTP equivalents, how to write a good Change request, waiting
-  for your decision, the permission, and hints.
+  the value), the line for the repository's `AGENTS.md` (which tells later
+  sessions to check `aiport_my_issues` at the start), the tools
+  `aiport_capabilities`, `aiport_request_change`, `aiport_my_requests`,
+  `aiport_my_issues` and `aiport_issue_fixed` and their HTTP equivalents,
+  how to write a good Change request, waiting for your decision, the
+  permission, and hints.
 
 `/_connect?format=handover` returns both, one after the other.
 
@@ -297,8 +315,9 @@ Overview and Activity says how many.
 
 **Pruning.** Rows older than `telemetry.retention_days` (default 7) are
 deleted at startup and hourly. The same setting decides how long decided
-Suggestions and Change requests are kept (dismissed ones at least 7 days,
-the quiet period). Applied Changes are never pruned. Deleted rows can linger
+Suggestions and Change requests, and resolved or dismissed Issues, are kept
+(dismissed ones at least 7 days, the quiet period). Open Issues are kept
+until they resolve. Applied Changes are never pruned. Deleted rows can linger
 in SQLite's files; deletion is not secure erasure.
 
 If the database cannot be opened, aiport says so and keeps the latest 500
@@ -324,13 +343,176 @@ aiport adapts to the Applications that use it, but only with your approval.
 **Changes** in the Gateway menu stays quiet: a badge appears only when
 something needs a decision.
 
+### Issues
+
+An **Issue** is a problem aiport keeps seeing for one Application, shown at
+the top of Changes with its evidence, what aiport found out and the ways to
+resolve it. There is one Issue per Application and cause: repeats update
+its counts and time window, never a second Issue.
+
+aiport opens an Issue when one Application keeps getting a provider
+`404` for the same model it has no Alias for (`adapting.unknown_model`,
+default 5 times in 60 minutes). For example, docs-bot asks for
+`llama3:8b`, it is not bound to a Connection, and the protocol default is a
+hosted Connection that does not serve that model.
+
+- **Evidence**: how many calls failed, the status and the provider's error
+  type (such as `404 model_not_found`), the time window, the Connections the
+  calls went to and a few request ids to look up in Activity.
+- **Diagnosis**: aiport asks each enabled Connection of that protocol for its
+  model list (the same free listing the connection check uses, kept for 2
+  minutes; nothing is generated and nothing costs money) and says which
+  serve the model: exactly one, none, several, or unknown when a listing
+  failed (a failed listing never counts as "does not serve").
+- **Fix in aiport**: an Alias for that Application only, same model name, to
+  the Connection that serves it. With exactly one serving Connection it is
+  filled in; with none, several or unknown, choose the Connection (and the
+  model, if it has another name there) yourself. **Approve** applies it as an
+  ordinary Change you can revert; the Issue becomes **resolving**.
+- **Copy fix for the Coding agent**: copies the fix in the Application, a
+  ready instruction for the Coding agent in the Application's repository:
+  paste it as-is. It says what is wrong, the evidence (counts, times, the
+  Connections, example request ids), what aiport found, what to change in
+  the Application (ask for the Alias with a Change request, or send a model
+  this gateway serves, listed for that protocol) and how to confirm the fix
+  (one call with the Application's own token answers `200`; aiport then
+  resolves the Issue by itself). Once the fix in aiport is applied it says
+  no code change is needed. It holds no prompts, keys or tokens. **Read the
+  fix** shows the same text first. The button is also on the Integrate page,
+  under the Application's row, and the text is the same one aiport gives the
+  Application's Coding agent about its Issues.
+- **Dismiss**: the Issue stays quiet for 7 days unless the evidence doubles.
+  You can dismiss any Issue that is not resolved or dismissed yet, whatever
+  its fix stands at (waiting, approved, rejected or reverted); an approved
+  fix stays applied until you revert its Change.
+- **Reject** (`POST /api/v1/issues/{id}` with `action: reject`): turns the
+  aiport fix down and leaves the Issue as it is. The dashboard offers
+  Approve and Dismiss; Reject is there for scripts.
+
+An Issue resolves itself: when the Application's calls for that model
+succeed again, aiport marks it **resolved** and records how: `aiport_fix`
+(the Change you approved), `application_fix` (the Application's Coding
+agent fixed it, see below) or `stopped` (the calls succeeded, or stopped
+failing for a whole window, without a fix). A fix is credited only when a
+call shows it works: if the Application makes no calls for that model for a
+whole window after you approved the fix, the Issue resolves as `stopped`,
+not `aiport_fix`. If you revert the fix, the Issue
+opens again and offers the fix again. A resolved Issue reopens when the
+error sticks again; only errors after it resolved count. Issues are kept
+across restarts and hold only Application ids, the cause, model names,
+Connection ids, counts, request ids and fixed advice text: never prompts,
+responses, provider messages, keys or tokens.
+
+#### A failing Connection
+
+aiport also opens an Issue when one Application's calls to one Connection
+keep failing (`adapting.failing_connection`, default 5 times in 60
+minutes): gateway errors and timeouts count; a provider answer below `500`
+(an unknown model, a bad request), cancellations and requests aiport
+refused never do. For example, docs-bot is bound to a Connection that keeps
+answering `502`. There is one Issue per Application and Connection; only
+failures to the Connection the Application is bound to now count.
+
+- **Evidence**: how many calls failed, the last status, the time window and
+  a few request ids.
+- **Fix in aiport**: bind that Application only to a working Connection.
+  aiport proposes the configured, enabled Connection with the most
+  successful calls in the window; choose another if you like, but never the
+  failing one. **Approve** applies it as an ordinary Change you can revert;
+  other Applications are not touched. This fix is never applied
+  automatically, even with automatic fixes on: moving a whole Application
+  to another Connection is always your decision.
+- **Fix in the Application**: the request itself is fine; the Coding agent
+  is told not to retry in a tight loop, to back off and handle `5xx`
+  answers and timeouts, and that it can ask for the binding with a Change
+  request of kind `bind_application`.
+
+It resolves itself when the Application's calls succeed again, on that
+Connection or on the one you bound it to (`aiport_fix` or `stopped`), and
+reopens if the failures stick again. Reverting the binding opens it again
+with the fix offered again.
+
+The badge on Changes counts an Issue only while its fix waits for you.
+
+### Automatic fixes
+
+Automatic fixes are off by default. Turn them on with the **Automatic
+fixes** switch under Applied changes (or `adapting.auto_fix: true` in
+aiport.yaml); the switch itself is a Change you can revert. When they are
+on, aiport applies an Issue's aiport fix itself, without waiting for you,
+only when all of this holds:
+
+- the diagnosis is certain: exactly one enabled Connection serves the model
+  (never with none, several or unknown);
+- the error is sticky: the Issue's threshold (`adapting.unknown_model`) was
+  reached;
+- the fix touches only that Application: an Alias for it alone. Binding a
+  whole Application to another Connection, shared Aliases, protocol
+  defaults or anything for every Application are never automatic;
+- you have not refused that fix (below), and the adapting loop is on.
+
+For example, docs-bot keeps getting `404` for `llama3:8b` and only the
+local Connection serves it: aiport adds the Alias `llama3:8b` → local for
+docs-bot and the Issue becomes resolving. The Change is recorded as made by
+**aiport (automatic)**, and Applied changes shows it as "aiport fixed: …"
+with **Revert**; the Issue shows "aiport fixed this automatically" with its
+own Revert. Guardrail Extensions judge automatic fixes like your approvals.
+
+If you revert an automatic fix, aiport records it and never applies the same
+fix automatically again for that Application and cause, also after a
+restart; the Issue opens again and its fix waits for your decision, which
+you can still approve. A fix you rejected is never applied automatically
+either, also if you turn automatic fixes on later; you can still approve it
+yourself. To keep these decisions, an Issue that holds a fix you reverted or
+rejected is kept beyond request-history retention
+(`telemetry.retention_days`), even once it is resolved or dismissed; it
+holds no more than any other Issue (ids, model names, counts).
+
+### What the Application's Coding agent sees
+
+The Application's Coding agent hears about its Issues over the connection
+it already has with aiport, with the Application's own token (your
+management token gets `403`):
+
+- The MCP tool `aiport_my_issues`, or `GET /v1/aiport/issues` (and
+  `GET /v1/aiport/issues/{id}` for one), lists that Application's open and
+  recent Issues: what is wrong, the evidence, the fix in the Application
+  (the same text as "Copy fix for the Coding agent") and whether the aiport
+  fix is proposed, applied, rejected or reverted. An Application never sees
+  another Application's Issues (their ids answer `404`), and never your
+  notes.
+- The capabilities answer (`aiport_capabilities`) shows `open_issues`, the
+  number of its Issues that are open or resolving.
+- A failing call that is one of an open Issue's failures carries an
+  `X-Aiport-Hint` header naming that Issue, so the Application's own logs
+  point the agent to it: for an unknown model, a provider `404` for the
+  same model; for a failing Connection, a `5xx`, timeout or connection
+  error from that Connection. Other failing calls, and aiport's own
+  refusals that are not the Issue's cause, name no Issue. Issue hints are
+  sent whether or not the Application may request changes: telling it about
+  its Issues is not a Change request.
+- The `AGENTS.md` line from the Coding agent brief tells later sessions to
+  check `aiport_my_issues` at the start.
+
+When the agent has fixed the Application's code, it says so with `aiport_issue_fixed` (or
+`POST /v1/aiport/issues/{id}/fixed`). The Issue becomes **resolving** by the
+Application fix, so you see it is being handled; an aiport fix waiting for
+you keeps waiting, and you can still approve it. aiport does not
+take the agent's word for it: the Issue is resolved, as `application_fix`,
+only once that Application's calls succeed again for the same cause (for an
+unknown model, a successful call for that same model; for a failing
+Connection, a successful call routed for that Application after it said
+so). A successful call for another model does not count, and neither does
+silence. If the error goes on, the
+Issue opens again and offers the aiport fix again.
+
 ### What waits for your decision
 
 - **Suggestions** come from aiport itself, from patterns in request history,
-  with the evidence (how many requests, over which time window). It
-  suggests an Alias when one Application keeps getting a provider `404` for
-  the same model; binding an Application to a working Connection when its
-  calls to one Connection keep failing; and pairing when requests keep
+  with the evidence (how many requests, over which time window). An Alias
+  for a model one Application keeps getting `404` for, and binding an
+  Application to a working Connection when its calls to one Connection keep
+  failing, come as Issues (above). It also suggests pairing when requests keep
   arriving with a missing or unknown token (informational: open the
   Integrate page to pair it, or Dismiss). Thresholds are under `adapting:`
   in the configuration.
@@ -366,7 +548,7 @@ decision.
 
 **Applied changes** lists every configuration Change made through aiport,
 newest first, with who made it: you, or an approved Suggestion or Change
-request. The list survives restarts. **Revert** restores the configuration
+request, or **aiport (automatic)** for an automatic fix. The list survives restarts. **Revert** restores the configuration
 file exactly as it was before that Change and makes it live at once. If the
 file was edited after a Change, revert the newer Changes first; aiport
 refuses rather than overwrite them.
@@ -395,10 +577,12 @@ adapting:
   disabled: true
 ```
 
-With adapting off, aiport detects no Suggestions, Changes shows nothing new,
-Change requests answer `409 adapting_off`, no hints are sent, and
-`/_connect` and both briefs mark change requests, their MCP tools and
-`X-Aiport-Hint` as off with the reason. Forwarding is unchanged, and Revert
+With adapting off, aiport detects no Suggestions and opens no Issues, Changes
+shows nothing new,
+Change requests and `/v1/aiport/issues` answer `409 adapting_off`, the
+Issue tools are not offered over MCP, capabilities carry no `open_issues`,
+no hints are sent, and `/_connect` and both briefs mark change requests,
+Issues, their MCP tools and `X-Aiport-Hint` as off with the reason. Forwarding is unchanged, and Revert
 still works on earlier Changes. See [configuration](configuration.md) for
 the detector thresholds and the check interval.
 
@@ -472,7 +656,7 @@ reasons, and where each is fixed:
 | Cannot reach the provider: connecting timed out / the connection was closed | `502 upstream_unavailable`, `timeout` / `connection_reset` | Check the network and the base URL; retry. |
 | Timed out: the provider did not answer in time | `504 upstream_timeout` | Retry; for slow local models raise `proxy.response_header_timeout_ms`. |
 | Provider error: the key was rejected | provider `401`/`403` (`authentication_error`, `invalid_api_key`, `permission_error`) | Replace the key on Providers, then **Check connection**. |
-| Provider error: unknown model | provider `404` (`not_found_error`, `model_not_found`) | Use a model the provider lists, or add an Alias. aiport also suggests one when it keeps happening. |
+| Provider error: unknown model | provider `404` (`not_found_error`, `model_not_found`) | Use a model the provider lists, or add an Alias. When it keeps happening aiport opens an Issue in Changes that says which Connection serves the model. |
 | Provider error: rate-limited | provider `429` (`rate_limit_error`) | Wait, or ask the provider for a higher limit. |
 | Provider error: out of quota or credit | `insufficient_quota`, `billing_error` | Check the plan and billing with the provider. |
 | Provider error: the request was not accepted | provider `400` (`invalid_request_error`) | Check the model name and parameters the Application sends. |

@@ -59,8 +59,8 @@ func TestMCPInitializeExplainsTheLoop(t *testing.T) {
 		t.Fatalf("serverInfo: %v", res)
 	}
 	instr, _ := res["instructions"].(string)
-	if !strings.Contains(instr, "aiport_request_change") || !strings.Contains(instr, "aiport_my_requests") || strings.Count(instr, ". ") != 1 {
-		t.Fatalf("instructions should explain the loop in two sentences: %q", instr)
+	if !strings.Contains(instr, "aiport_request_change") || !strings.Contains(instr, "aiport_my_requests") || !strings.Contains(instr, "aiport_my_issues") || strings.Count(instr, ". ") != 2 {
+		t.Fatalf("instructions should explain the loop and Issues in three sentences: %q", instr)
 	}
 }
 
@@ -182,7 +182,7 @@ func sameJSON(t *testing.T, res map[string]any, httpBody []byte) {
 	}
 }
 
-func TestMCPListsTheThreeTools(t *testing.T) {
+func TestMCPListsItsTools(t *testing.T) {
 	h, _ := requestsServer(t)
 	_, out := mcp(h, reqHelper, rpc(2, "tools/list", nil))
 	result, _ := out["result"].(map[string]any)
@@ -196,7 +196,7 @@ func TestMCPListsTheThreeTools(t *testing.T) {
 		}
 		names[tool["name"].(string)] = true
 	}
-	if len(names) != 3 || !names["aiport_capabilities"] || !names["aiport_request_change"] || !names["aiport_my_requests"] {
+	if len(names) != 5 || !names["aiport_capabilities"] || !names["aiport_request_change"] || !names["aiport_my_requests"] || !names["aiport_my_issues"] || !names["aiport_issue_fixed"] {
 		t.Fatalf("tools: %v", names)
 	}
 }

@@ -79,6 +79,14 @@ func TestTheApplicationBriefWiresAnApplicationToThisGateway(t *testing.T) {
 	mustNotContain(t, "application brief", brief, "127.0.0.1:8787", connect.AgentsLine, "scope_case")
 }
 
+// Issues from the start: the Application brief says what an Issue is,
+// where the Coding agent reads them and that aiport may fix routing
+// itself.
+func TestTheApplicationBriefExplainsIssues(t *testing.T) {
+	brief := getBrief(t, briefServer(t, ""), "?format=handover&for=application")
+	mustContain(t, "application brief", brief, "**Issues.**", "aiport_my_issues", "/v1/aiport/issues", "X-Aiport-Hint", "revertable Change")
+}
+
 func TestTheCodingAgentBriefExplainsHowToAskAiportForChanges(t *testing.T) {
 	brief := getBrief(t, briefServer(t, ""), "?format=handover&for=agent")
 	mustContain(t, "coding-agent brief", brief,

@@ -60,6 +60,7 @@ type Handler struct {
 
 func New(c config.Config, s config.Secrets) http.Handler {
 	h := &Handler{auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
+	h.gateway.SetClock(h.clock)
 	h.initKeySources(c, s)
 	h.setRequesters(c)
 	h.setAuthorities(c)
@@ -270,6 +271,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveRequests(w, r, originID, fail)
 		return
 	}
+	if r.URL.Path == IssuesPath || strings.HasPrefix(r.URL.Path, IssuesPath+"/") {
+		h.serveIssues(w, r, originID, fail)
+		return
+	}
 	if r.URL.Path == "/v1/chat/completions" || r.URL.Path == "/v1/responses" || r.URL.Path == "/v1/messages" {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", "POST")
@@ -281,8 +286,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// The provider's 404 for a requested model passes through unchanged;
 		// an Application allowed to request changes learns how to ask for an
 		// Alias from a header.
+		// When the failing call is one of an open Issue's failures, the hint
+		// names that Issue instead.
 		writer.before = func(status int) {
-			if status == http.StatusNotFound && o.Event.RequestedModel != nil && h.mayRequestChanges(originID) {
+			if status < 400 {
+				return
+			}
+			e := o.Event
+			e.Outcome, e.Status = "upstream_error", status
+			if hint := h.issueHint(originID, e); hint != "" {
+				w.Header().Set(refusal.HintHeader, hint)
+			} else if status == http.StatusNotFound && o.Event.RequestedModel != nil && h.mayRequestChanges(originID) {
 				w.Header().Set(refusal.HintHeader, refusal.UnknownModelHint)
 			}
 		}
@@ -308,6 +322,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		localFail := func(ref refusal.Refusal) {
 			if len(ref.Changes) > 0 && h.mayRequestChanges(originID) {
 				ref = ref.ForRequester()
+			}
+			// aiport's own refusal names an Issue only when it is the
+			// Issue's cause (a failing Connection that timed out or could
+			// not be reached).
+			e := o.Event
+			e.Outcome, e.Status = ref.Outcome, ref.Status
+			if hint := h.issueHint(originID, e); hint != "" {
+				w.Header().Set(refusal.HintHeader, hint)
 			}
 			writer.status = ref.Status
 			o.Event.Outcome = ref.Outcome

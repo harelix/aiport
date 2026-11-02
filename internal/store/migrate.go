@@ -188,6 +188,24 @@ var migrations = []string{
 	`ALTER TABLE requests ADD COLUMN refusal_code TEXT NOT NULL DEFAULT '';
 	ALTER TABLE requests ADD COLUMN upstream_error_type TEXT NOT NULL DEFAULT '';
 	ALTER TABLE requests ADD COLUMN connection_error TEXT NOT NULL DEFAULT '';`,
+
+	// 7: Issues, problems aiport keeps seeing for one Application, with
+	// their evidence, diagnosis and resolutions. The Issue is JSON in body;
+	// the columns are what it is looked up by. Application ids, causes,
+	// model names, Connection ids, counts, request ids and fixed advice
+	// text only: never prompts, responses, provider messages, keys or
+	// tokens. Additive.
+	`CREATE TABLE issues (
+		id            TEXT PRIMARY KEY,
+		application   TEXT NOT NULL,
+		cause         TEXT NOT NULL, -- unknown_model, failing_connection
+		subject       TEXT NOT NULL, -- for unknown_model the requested model, for failing_connection the Connection id
+		state         TEXT NOT NULL, -- open, resolving, resolved, dismissed
+		created_at_ms INTEGER NOT NULL,
+		updated_at_ms INTEGER NOT NULL,
+		body          TEXT NOT NULL
+	);
+	CREATE INDEX issues_key ON issues(application, cause, subject);`,
 }
 
 // preRelease maps the schema version of a database written by a pre-release

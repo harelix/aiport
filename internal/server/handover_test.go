@@ -30,7 +30,7 @@ func TestTheHandoverBriefAddsTheMCPEntryAndTheAgentsLine(t *testing.T) {
 		`"url":"http://127.0.0.1:8787/mcp"`,
 		`"Authorization":"Bearer ${AIPORT_APP_TOKEN}"`,
 		".mcp.json",
-		"This app's LLM calls go through aiport. If aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it.",
+		"This app's LLM calls go through aiport. At the start of a session, check `aiport_my_issues` for open Issues; if aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it.",
 		"AGENTS.md",
 		"permission",
 	} {

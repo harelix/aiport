@@ -1,7 +1,8 @@
 import React, {useEffect, useState} from 'react';
-import {ArrowUpRight, History, Lightbulb, Puzzle, Undo2} from 'lucide-react';
+import {ArrowUpRight, CircleAlert, History, Lightbulb, Puzzle, Undo2} from 'lucide-react';
 import {type Upstream, UpstreamAction} from './Upstream';
 import {DecisionSoundToggle} from './decisionSound';
+import {CopyButton} from './Integrate';
 
 /** One applied Change to aiport's configuration, as GET /api/v1/changes lists it. */
 type Change = {
@@ -20,7 +21,110 @@ export type Decision = {
   informational?: boolean;
   /** The panel where the Owner acts on it ('applications': the Applications panel, where Pairing is). */
   opens?: string;
+  /** The Issue this Suggestion is the aiport fix for: shown with that Issue, not on its own. */
+  issue?: string;
 };
+
+/** An Issue: a problem aiport keeps seeing for one Application, as GET /api/v1/issues lists it. */
+export type Issue = {
+  id: string; application: string; cause: string; subject: string;
+  state: 'open' | 'resolving' | 'resolved' | 'dismissed';
+  summary: string; needs_owner: boolean; application_fix: string;
+  evidence: {count: number; from_ms: number; to_ms: number; window_minutes: number; status?: number; error?: string; examples?: string[]; connections?: string[]};
+  /** summary is the server's own words for what aiport found (decide.Diagnosis.Summary). */
+  diagnosis?: {protocol: string; answer: 'one' | 'none' | 'several' | 'unknown'; serving: string[]; unknown: string[]; available?: string[]; summary?: string};
+  fix?: {suggestion: string; kind: string; scope: string; proposal: {alias?: string; target?: string; model?: string}; state: 'proposed' | 'applied' | 'rejected' | 'reverted'; change_id?: string; by?: string};
+  resolving_by?: string; resolution?: {how: string; at_ms: number; change_id?: string}; reopened?: number;
+};
+
+/** Who makes a Change aiport applies itself (adapting.auto_fix). */
+const AUTOMATIC = 'aiport (automatic)';
+
+/**
+ * One open or resolving Issue: what is wrong, the evidence, which Connections serve the model, the aiport fix
+ * (an Alias for this Application only, or for a failing Connection binding this Application to a working one)
+ * with Approve / Dismiss, and the fix in the Application for its Coding agent. Approve stays while the Application
+ * says it fixed the Issue (resolving); Dismiss is there for any Issue still open or resolving.
+ */
+function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]; onDecided: (message: string) => void}) {
+  const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection';
+  const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || issue.subject);
+  const [busy, setBusy] = useState(''), [error, setError] = useState(''), [blocked, setBlocked] = useState<Blocked | null>(null);
+  const automatic = fix?.state === 'applied' && fix.by === AUTOMATIC && !!fix.change_id;
+  const revert = async () => {
+    setBusy('revert'); setError(''); setBlocked(null);
+    try {
+      await send('POST', 'changes/' + encodeURIComponent(fix!.change_id!) + '/revert');
+      onDecided('Reverted the automatic fix. aiport will not apply it automatically again for ' + issue.application + '; the Issue waits for your decision.');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+  const decide = async (action: 'accept' | 'dismiss') => {
+    setBusy(action); setError(''); setBlocked(null);
+    try {
+      await send('POST', 'issues/' + encodeURIComponent(issue.id), action !== 'accept' ? {action} : binds ? {action, target} : {action, target, model});
+      onDecided(action === 'accept'
+        ? 'Approved for only ' + issue.application + (binds ? ': bound to ' + target : ': the alias “' + issue.subject + '” → ' + target + '/' + model) + '. The Issue resolves itself when its calls succeed; you can revert the Change below.'
+        : 'Dismissed. aiport stays quiet about this Issue for 7 days unless the evidence doubles.');
+    } catch (e) {
+      const err = e as Error & {code?: string; extension?: string; reason?: string};
+      if (err.code === 'guardrail_blocked') setBlocked({extension: err.extension || 'a guardrail', reason: err.reason || ''});
+      else setError(err.message);
+    } finally {
+      setBusy('');
+    }
+  };
+  return <div className="decision issue" id={issueAnchor(issue.id)} tabIndex={-1}>
+    <div className="need"><span className={'badge' + (issue.state === 'resolving' ? ' good' : '')}>{issue.state === 'resolving' ? 'Resolving' : 'Issue'}</span> {issue.summary}</div>
+    <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>
+    {issue.diagnosis?.summary && <div className="evidence">Diagnosis: {issue.diagnosis.summary}</div>}
+    {automatic && <div className="evidence"><strong>aiport fixed this automatically:</strong> the alias “{fix!.proposal.alias}” → {fix!.proposal.target}/{fix!.proposal.model} for only {issue.application}. <button className="text-button" disabled={!!busy} onClick={revert} aria-label={'Revert the automatic fix for ' + issue.application}><Undo2 size={14} aria-hidden/> {busy === 'revert' ? 'Reverting…' : 'Revert'}</button></div>}
+    {issue.state === 'resolving' && !automatic && <div className="evidence">{issue.resolving_by === 'aiport_fix' ? 'The aiport fix is applied' + (fix?.by ? ' (by ' + fix.by + ')' : '') : 'The Application says it fixed this'}: aiport marks the Issue resolved when {issue.application}’s calls {binds ? 'succeed again' : 'for ' + issue.subject + ' succeed'}.</div>}
+    {error && <div className="notice error" role="alert">{error}</div>}
+    {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this Issue stays open.</div>}
+    {fix?.state === 'proposed' && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
+      {binds
+        ? <label>Fix in aiport: bind only {issue.application} to<select value={target} onChange={e => setTarget(e.target.value)}>
+            {!target && <option value="">Choose a working Connection</option>}
+            {targets.filter(t => t !== issue.subject).map(t => <option key={t}>{t}</option>)}
+          </select></label>
+        : <>
+          <label>Fix in aiport: alias for only {issue.application}<input value={issue.subject} readOnly spellCheck={false}/></label>
+          <label>Connection<select value={target} onChange={e => setTarget(e.target.value)}>
+            {!target && <option value="">Choose a Connection</option>}
+            {targets.map(t => <option key={t}>{t}</option>)}
+          </select></label>
+          <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} spellCheck={false} autoComplete="off"/></label>
+        </>}
+      <div className="actions">
+        <button className="primary" disabled={!!busy || !target || (!binds && !model.trim())}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
+        <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
+      </div>
+    </form>}
+    {fix?.state !== 'proposed' && <div className="actions">
+      <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
+    </div>}
+    <ApplicationFix issue={issue}/>
+  </div>;
+}
+
+/** The id of an Issue's card on the Changes page, so Integrate can link to it. */
+export const issueAnchor = (id: string) => 'issue-' + id;
+
+/**
+ * The fix in the Application, for its Coding agent: "Copy fix for the Coding agent" copies the text the server
+ * writes (decide.ApplicationFix, the same text aiport_my_issues gives the agent), shown below it to read first.
+ */
+export function ApplicationFix({issue}: {issue: Issue}) {
+  if (!issue.application_fix) return null;
+  return <div className="application-fix">
+    <CopyButton text={issue.application_fix} label="Copy fix for the Coding agent"/>
+    <details><summary>Read the fix for {issue.application}’s Coding agent</summary><pre>{issue.application_fix}</pre></details>
+  </div>;
+}
 
 /** One Application that asked for a Change for every Application, with its own argument. */
 type Asker = {application: string; why: string; scope_case: string; filed_by?: string; repeats?: number; asked_at_ms: number};
@@ -127,14 +231,16 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
 
 /** Changes: Suggestions waiting for a decision (only when there are any), then every configuration edit made through aiport, newest first, with Revert. */
 export default function Changes({tick, onChange, targets = [], onOpenApplications}: {tick: number; onChange: () => void; targets?: string[]; onOpenApplications?: () => void}) {
-  const [pending, setPending] = useState<Decision[]>([]), [demand, setDemand] = useState<Demand[]>([]);
+  const [pending, setPending] = useState<Decision[]>([]), [demand, setDemand] = useState<Demand[]>([]), [issues, setIssues] = useState<Issue[]>([]);
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [reload, setReload] = useState(0), [upstream, setUpstream] = useState<Upstream | null>(null);
+  const [autoFix, setAutoFix] = useState<boolean | null>(null), [adapting, setAdapting] = useState(true);
   useEffect(() => {
     send('GET', 'upstream').then(setUpstream).catch(() => setUpstream(null));
     send('GET', 'changes').then(d => { setChanges(d.changes || []); setRevertable(!!d.revertable); }).catch(e => setError(e.message));
-    send('GET', 'decisions').then(d => { setPending(d.items || []); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
+    send('GET', 'decisions').then(d => { setPending((d.items || []).filter((i: Decision) => !i.issue)); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
+    send('GET', 'issues').then(d => { setIssues(d.issues || []); setAutoFix(!!d.auto_fix); setAdapting(d.adapting !== false); }).catch(() => { setIssues([]); setAutoFix(null); });
   }, [tick, reload]);
   const revert = async (c: Change) => {
     setBusy(c.id); setError(''); setMessage('');
@@ -148,9 +254,33 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
       setBusy('');
     }
   };
+  const switchAutoFix = async (on: boolean) => {
+    setBusy('auto-fix'); setError(''); setMessage('');
+    try {
+      await send('PUT', 'adapting/auto-fix', {enabled: on});
+      setMessage(on
+        ? 'Automatic fixes are on: aiport applies an Issue’s aiport fix itself when only one Connection serves the model. You can revert each one below.'
+        : 'Automatic fixes are off: every aiport fix waits for your decision.');
+      setReload(x => x + 1); onChange();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+  // Integrate links to one Issue with #issue-<id>: bring it into view once listed.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id.startsWith('issue-') || !issues.length) return;
+    const el = document.getElementById(id);
+    if (el) { el.scrollIntoView({behavior: 'smooth', block: 'start'}); el.focus({preventScroll: true}); history.replaceState(null, '', window.location.pathname + window.location.search); }
+  }, [issues]);
   const byId = new Map((changes || []).map(c => [c.id, c]));
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
-  return <>{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
+  return <>{!!issues.length && <section className="panel" aria-label="Issues">
+    <div className="panel-heading"><h2><CircleAlert size={16} aria-hidden/> Issues</h2><span>Problems aiport keeps seeing for one Application · they close themselves when its calls succeed again</span></div>
+    {issues.map(i => <IssueCard key={i.id + i.state + (i.fix?.suggestion || '')} issue={i} targets={targets} onDecided={decided}/>)}
+  </section>}{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
     <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history and Change requests from Applications</span></div>
     {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided} onOpenApplications={onOpenApplications}/>)}
   </section>}{!!demand.length && <section className="panel" aria-label="Demand for things aiport cannot do yet">
@@ -169,6 +299,8 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
     </li>)}</ul>
   </section>}<section className="panel">
     <div className="panel-heading"><h2>Applied changes</h2><div className="header-actions"><span className="caption">Newest first · kept across restarts</span><DecisionSoundToggle/></div></div>
+    {autoFix !== null && <label className="check-label compact" title="adapting.auto_fix in aiport.yaml"><input type="checkbox" checked={autoFix} disabled={!!busy || !adapting} onChange={e => switchAutoFix(e.target.checked)}/>
+      <span>Automatic fixes: aiport applies an Issue’s aiport fix itself, only when exactly one Connection serves the model, and only for that one Application. Each one is a Change below that you can revert; a fix you revert is never applied automatically again.{!adapting && ' Adapting is turned off in the configuration, so nothing is applied.'}</span></label>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {message && <div className="notice" role="status">{message}</div>}
     {changes && !changes.length && <div className="empty"><span className="empty-icon"><History size={20} strokeWidth={1.75} aria-hidden/></span><h3>No changes yet</h3><p>Configuration edits made through aiport appear here, with the file before and after kept so you can revert them.</p></div>}
@@ -178,7 +310,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
         const undone = c.reverted_by ? byId.get(c.reverted_by) : undefined;
         return <tr key={c.id}>
           <td title={new Date(c.at_ms).toISOString()}>{when(c.at_ms)}</td>
-          <td>{c.what}</td>
+          <td>{c.by === AUTOMATIC ? 'aiport fixed: ' + c.what : c.what}</td>
           <td>{c.by}</td>
           <td>{c.reverted
             ? <span className="badge" title={undone ? 'Reverted by ' + undone.by : undefined}>Reverted{c.reverted_at_ms ? ' ' + when(c.reverted_at_ms) : ''}</span>

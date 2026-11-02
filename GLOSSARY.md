@@ -50,6 +50,11 @@ ways to resolve it: a fix in aiport (offered as a Suggestion) and a fix in
 the Application, for its Coding agent. An Issue closes itself when the
 Application's calls succeed again.
 
+**Agent run**
+One run of a Coding agent that aiport starts for an Issue, on the Owner's
+click: to Explain it (read-only) or to Fix it (in its own branch, ending in a
+diff the Owner keeps or discards), with its log, approvals and result.
+
 **Change**
 An approved Change request or Suggestion once it is applied to aiport's
 configuration. Every Change can be reverted. aiport applies a Change on its

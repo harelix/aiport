@@ -61,6 +61,19 @@ const HintHeader = "X-Aiport-Hint"
 // for this Application could point the name at a model the provider has.
 var UnknownModelHint = ChangeHint("application_alias")
 
+// IssuesPath and IssuesTool are where an Application's Coding agent reads
+// its Issues.
+const (
+	IssuesPath = "/v1/aiport/issues"
+	IssuesTool = "aiport_my_issues"
+)
+
+// IssueHint goes with a failing call while Issue id is open for the
+// Application: it names the Issue and where its fix is.
+func IssueHint(id string) string {
+	return "aiport Issue " + id + " is open for this Application: read what is wrong and the fix with GET " + IssuesPath + "/" + id + " or the MCP tool " + IssuesTool + "; see /_connect."
+}
+
 // WithMessage returns the refusal with a more specific message.
 func (r Refusal) WithMessage(m string) Refusal {
 	r.Message = m
