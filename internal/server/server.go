@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -37,6 +38,7 @@ type Handler struct {
 	keyMu            sync.Mutex
 	keySource        map[string]string
 	tasks            *tasks.Store
+	changesDB        *sql.DB          // where Changes are kept; nil = this session only
 	now              func() time.Time // nil = time.Now; tests set a fixed clock
 	pair             pairings
 	assets           http.Handler

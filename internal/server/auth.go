@@ -18,6 +18,8 @@ const sessionCookie = "aiport_session"
 func NewConfigured(c config.Config, s config.Secrets, collector *telemetry.Collector, path string) http.Handler {
 	h := NewWithTelemetry(c, s, collector).(*Handler)
 	h.live = config.NewLive(path, c)
+	h.live.SetClock(h.clock)
+	h.keepChanges(path)
 	h.live.OnChange(h.applyLive)
 	h.keys = config.EnvKeys(path)
 	h.auth = localauth.New(c.Auth, func(updated config.Auth) error {
