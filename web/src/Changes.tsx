@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
-import {History, Lightbulb, Undo2} from 'lucide-react';
+import {History, Lightbulb, Puzzle, Undo2} from 'lucide-react';
+import {type Upstream, UpstreamAction} from './Upstream';
 
 /** One applied Change to aiport's configuration, as GET /api/v1/changes lists it. */
 type Change = {
@@ -116,8 +117,9 @@ export default function Changes({tick, onChange, targets = []}: {tick: number; o
   const [pending, setPending] = useState<Decision[]>([]), [demand, setDemand] = useState<Demand[]>([]);
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
-  const [reload, setReload] = useState(0);
+  const [reload, setReload] = useState(0), [upstream, setUpstream] = useState<Upstream | null>(null);
   useEffect(() => {
+    send('GET', 'upstream').then(setUpstream).catch(() => setUpstream(null));
     send('GET', 'changes').then(d => { setChanges(d.changes || []); setRevertable(!!d.revertable); }).catch(e => setError(e.message));
     send('GET', 'decisions').then(d => { setPending(d.items || []); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
   }, [tick, reload]);
@@ -144,6 +146,14 @@ export default function Changes({tick, onChange, targets = []}: {tick: number; o
       <thead><tr><th>Kind</th><th>Requests</th><th>Applications</th><th>Last asked</th></tr></thead>
       <tbody>{demand.map(d => <tr key={d.kind}><td>{d.kind}</td><td>{d.requests}</td><td>{d.applications}</td><td>{when(d.last_at_ms)}</td></tr>)}</tbody>
     </table></div>
+    {upstream && !!upstream.suggestions.length && <ul className="askers" aria-label="Suggest to aiport">{upstream.suggestions.map(s => <li key={s.kind}>
+      <strong>{s.kind}</strong> <UpstreamAction label="Suggest to aiport" draft={s} what={{suggest: s.kind}} upstream={upstream}/>
+    </li>)}</ul>}
+  </section>}{upstream && !!upstream.shares.length && <section className="panel" aria-label="Extensions">
+    <div className="panel-heading"><h2><Puzzle size={16} aria-hidden/> Extensions</h2><span>Listed in aiport.yaml · share one upstream for others to use</span></div>
+    <ul className="askers">{upstream.shares.map(s => <li key={s.extension}>
+      <strong>{s.extension}</strong> ({s.hook}) <UpstreamAction label="Share upstream" draft={s} what={{share: s.extension}} upstream={upstream}/>
+    </li>)}</ul>
   </section>}<section className="panel">
     <div className="panel-heading"><h2>Applied changes</h2><span>Newest first · kept across restarts</span></div>
     {error && <div className="notice error" role="alert">{error}</div>}

@@ -5,7 +5,10 @@ VERSION ?= 0.0.0-dev
 export CGO_ENABLED = 0
 # Never download during builds: everything comes from vendor/.
 export GOFLAGS = -mod=vendor
-LDFLAGS = -s -w -X main.version=$(VERSION)
+# UPSTREAM (owner/name on GitHub) is where "Suggest to aiport" and "Share
+# upstream" drafts open unless aiport.yaml sets upstream.repository.
+UPSTREAM ?=
+LDFLAGS = -s -w -X main.version=$(VERSION) -X aiport/internal/config.BuiltInUpstream=$(UPSTREAM)
 PLATFORMS = darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64
 
 # Live development: Go rebuild/restart on save + Vite dashboard with live reload.
