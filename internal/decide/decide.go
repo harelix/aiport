@@ -473,7 +473,7 @@ func (q *Queue) mayApplyAutomatically(it Item) bool {
 	c := q.live.Config()
 	j := q.issueIndex(it.Issue)
 	return !c.Adapting.Disabled && c.Adapting.AutoFix && it.Issue != "" && j >= 0 &&
-		q.issues[j].State == IssueOpen && !refused(q.issues[j], it.Proposal)
+		q.issues[j].State == IssueOpen && !neverAuto(q.issues[j], it.Proposal)
 }
 
 // index returns the position of item id, or -1.

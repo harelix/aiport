@@ -459,8 +459,12 @@ own Revert. Guardrail Extensions judge automatic fixes like your approvals.
 If you revert an automatic fix, aiport records it and never applies the same
 fix automatically again for that Application and cause, also after a
 restart; the Issue opens again and its fix waits for your decision, which
-you can still approve. A fix you rejected is not applied automatically
-either.
+you can still approve. A fix you rejected is never applied automatically
+either, also if you turn automatic fixes on later; you can still approve it
+yourself. To keep these decisions, an Issue that holds a fix you reverted or
+rejected is kept beyond request-history retention
+(`telemetry.retention_days`), even once it is resolved or dismissed; it
+holds no more than any other Issue (ids, model names, counts).
 
 ### What the Application's coding agent sees
 
