@@ -105,7 +105,8 @@ listens on and Sign out (or "Authentication off" when it is turned off).
 - **Changes**: open Issues, what waits for your decision and every
   configuration Change made through aiport, with Revert.
 - **Tasks**: a queue of work for coding agents; you own intent and priority.
-- **Settings**: sign-in, authentication and the configuration file.
+- **Settings**: sign-in, authentication, the default coding agent for Agent
+  runs, and the configuration file.
 
 ## Connections and keys
 
@@ -174,12 +175,20 @@ what. Calls without an Application token show as `unknown`.
 An Application gets its token by **pairing**:
 
 1. It asks aiport (`POST /v1/aiport/pair` with its name; no token needed) and
-   shows you a short code.
+   shows you a short code. It may also report the path of its git
+   repository on this machine (the Application brief asks the integrating
+   coding agent to).
 2. The request appears at the top of the Applications list on the
    **Integrate** page (and in the Applications table on Routing) with that
    code. Check the application shows the same
    code. Optionally choose a Connection to bind it to and tick **May request
-   changes**, then **Approve**, or **Reject**.
+   changes**, then **Approve**, or **Reject**. A reported repository path
+   is shown in a field under the request, with what is wrong with it if it
+   is not a git repository here: confirm it, edit it or clear it before you
+   approve. aiport keeps only what the field holds when you approve; a
+   reported path you did not confirm is never used. A path that does not
+   exist or is not the top directory of a git repository is refused with
+   the reason, and the request keeps waiting.
 3. The application collects its token once. aiport adds it to the
    configuration without a restart; the token is stored in the private
    credential file.
@@ -208,8 +217,11 @@ narrow screen the strip moves below).
   and **Reject**.
 - The list shows each approved Application: name, client id, Connection (or
   the protocol default), the **May request changes** toggle, its last call
-  (in the last 7 days, when activity recording is on), its open **Issues**
-  and its onboarding progress, such as `3/5`.
+  (in the last 7 days, when activity recording is on), its open **Issues**,
+  its coding **Agent** and its onboarding progress, such as `3/6`.
+- **Agent** names the Application's coding agent once it has one and a
+  repository path (**Connect** otherwise). Select it to change them in step
+  6 of the wizard.
 - **Issues** shows how many open or resolving Issues the Application has
   and a short cause, such as "Unknown model llama3:8b" (None when there are
   none). Select it to list them under the row: each with its summary, **Open
@@ -285,8 +297,55 @@ itself from live state:
    decide each request in Changes.
 5. **MCP entry in the repository** (optional): the agent adds it in step 1;
    tick it by hand, or copy it from the **Coding agent brief** tile.
+6. **Connect a coding agent** (optional): see below. The step ticks when
+   the application has a coding agent (its own or the default) and a
+   repository path.
 
 Select an existing application in the list to see how far it got.
+
+### Connecting a coding agent
+
+aiport can start a Coding agent installed on this machine to work on an
+Application's Issues, only when you click (Agent runs). Each Application
+can have its own agent, **Claude Code**, **Codex** or **Gemini CLI**, and
+the path of its git repository; set them in step 6 of the wizard (or from
+the **Agent** column) and **Save**. Each save is one revertable Change on
+the Changes page. **Default coding agent** on the Settings page is the
+agent of every Application that has none of its own.
+
+- **What aiport looks for.** aiport talks to agents through the Agent
+  Client Protocol (ACP). Gemini CLI speaks it itself (`gemini --acp`);
+  Claude Code and Codex need an ACP adapter: `claude-agent-acp` (npm
+  package `@agentclientprotocol/claude-agent-acp`) and `codex-acp`
+  (`@agentclientprotocol/codex-acp`). aiport finds programs by absolute
+  path, in the absolute directories of its own `PATH` and the usual
+  install places (`~/.local/bin`, `~/.npm-global/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin` and a few more); it does not run them to look.
+- **Nothing is installed for you.** When an agent or its adapter is
+  missing, the step shows the exact command to install it, such as
+  `npm install -g @agentclientprotocol/codex-acp`; run it yourself, then
+  refresh. An agent that is not installed cannot be chosen.
+- **The repository path** must be absolute and the top directory of a git
+  repository (where `.git` is); otherwise it is refused with the reason.
+  aiport stores it with symbolic links resolved. Agent runs never work
+  outside it.
+
+In `aiport.yaml` this is `agent` and `repository` on the Application under
+`origins`, and `agent_runs.default_agent`:
+
+```yaml
+agent_runs:
+  default_agent: claude
+origins:
+  - id: docs-bot
+    name: Docs Bot
+    token_env: AIPORT_APP_DOCS_BOT_TOKEN
+    agent: gemini
+    repository: /home/you/src/docs-bot
+```
+
+`GET /api/v1/agents` lists what aiport found (`installed`, `ready`, the
+ACP entry point, and `install` when something is missing).
 
 ## Aliases
 
