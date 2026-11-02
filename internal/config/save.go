@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -144,6 +145,16 @@ func RemoveTarget(current Config, id string) (Edit, error) {
 			}
 		}
 	}
+	if current.Adapting.Explain.Connection == id {
+		return nil, errors.New("this connection writes Explanations; choose another one (or none) first")
+	}
+	if current.AgentRuns.Connection == id {
+		return nil, errors.New("Agent runs' model calls use this connection; choose another one (or none) first")
+	}
+	return removeTarget(id), nil
+}
+
+func removeTarget(id string) Edit {
 	return func(root *yaml.Node) error {
 		seq := mappingValue(root, "targets")
 		if seq == nil {
@@ -156,7 +167,210 @@ func RemoveTarget(current Config, id string) (Edit, error) {
 			}
 		}
 		return errors.New("connection not found in configuration")
+	}
+}
+
+// Dependent kinds: what can use a Connection.
+const (
+	DependentDefault          = "default"           // a protocol default
+	DependentBinding          = "binding"           // an Application bound to it
+	DependentAlias            = "alias"             // a shared Alias
+	DependentApplicationAlias = "application_alias" // an Application's own Alias
+	DependentExplain          = "explain"           // the Connection writing Explanations
+	DependentAgentRuns        = "agent_runs"        // Agent runs' model calls
+	DependentEvaluation       = "evaluation"        // the compression evaluator
+)
+
+// Dependent is one item that uses a Connection. ID names it in a removal
+// plan: "default:<protocol>", "binding:<application>", "alias:<name>",
+// "application_alias:<application>:<name>", "explain", "agent_runs" or
+// "evaluation".
+type Dependent struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Protocol    string `json:"protocol,omitempty"`
+	Application string `json:"application,omitempty"`
+	Alias       string `json:"alias,omitempty"`
+	// Model is the model the item asks the Connection for, when it names one.
+	Model string `json:"model,omitempty"`
+}
+
+// Dependents lists everything in c that uses Connection id: protocol
+// defaults, bindings, shared Aliases, Applications' own Aliases,
+// Explanations, Agent runs' model calls and the compression evaluator, in
+// that order.
+func Dependents(c Config, id string) []Dependent {
+	out := []Dependent{}
+	if c.Defaults.OpenAITarget == id {
+		out = append(out, Dependent{ID: "default:openai", Kind: DependentDefault, Protocol: "openai"})
+	}
+	if c.Defaults.AnthropicTarget == id {
+		out = append(out, Dependent{ID: "default:anthropic", Kind: DependentDefault, Protocol: "anthropic"})
+	}
+	for _, o := range c.Origins {
+		if o.Target == id {
+			out = append(out, Dependent{ID: "binding:" + o.ID, Kind: DependentBinding, Application: o.ID})
+		}
+	}
+	for _, a := range c.Aliases {
+		if a.Target == id {
+			out = append(out, Dependent{ID: "alias:" + a.Alias, Kind: DependentAlias, Alias: a.Alias, Model: a.Model})
+		}
+	}
+	for _, o := range c.Origins {
+		for _, a := range o.Aliases {
+			if a.Target == id {
+				out = append(out, Dependent{ID: "application_alias:" + o.ID + ":" + a.Alias, Kind: DependentApplicationAlias, Application: o.ID, Alias: a.Alias, Model: a.Model})
+			}
+		}
+	}
+	if e := c.Adapting.Explain; e.Connection == id {
+		out = append(out, Dependent{ID: DependentExplain, Kind: DependentExplain, Model: e.Model})
+	}
+	if a := c.AgentRuns; a.Connection == id {
+		out = append(out, Dependent{ID: DependentAgentRuns, Kind: DependentAgentRuns, Protocol: "anthropic", Model: a.Model})
+	}
+	if e := c.Evaluation; e.Connection == id {
+		out = append(out, Dependent{ID: DependentEvaluation, Kind: DependentEvaluation, Model: e.Model})
+	}
+	return out
+}
+
+// RemoveTargetWith removes Connection id after re-pointing everything that
+// uses it, as one edit (so one Change, reverted at once). plan maps each
+// Dependent's ID to its replacement Connection, or "" for none: a protocol
+// default is unset, a binding is removed (the Application follows the
+// defaults), an Alias is removed, and Explanations, Agent runs' model calls
+// or the evaluator are turned off. The plan must answer every Dependent and
+// nothing else, never with id itself. Validation of the result (a protocol
+// default on a Connection of another protocol, say) happens when the edit is
+// applied.
+func RemoveTargetWith(current Config, id string, plan map[string]string) (Edit, error) {
+	known := map[string]bool{}
+	for _, t := range current.Targets {
+		known[t.ID] = true
+	}
+	if !known[id] {
+		return nil, errors.New("connection not found in configuration")
+	}
+	deps := Dependents(current, id)
+	var problems []string
+	answered := map[string]bool{}
+	for _, d := range deps {
+		answered[d.ID] = true
+		to, ok := plan[d.ID]
+		switch {
+		case !ok:
+			problems = append(problems, d.ID+": choose a replacement Connection or none")
+		case to == id:
+			problems = append(problems, d.ID+": the replacement cannot be the Connection being removed")
+		case to != "" && !known[to]:
+			problems = append(problems, d.ID+": no Connection "+to)
+		}
+	}
+	for key := range plan {
+		if !answered[key] {
+			problems = append(problems, key+": does not use this Connection")
+		}
+	}
+	if len(problems) > 0 {
+		sort.Strings(problems)
+		return nil, errors.New("removal plan: " + strings.Join(problems, "; "))
+	}
+	edits := make([]Edit, 0, len(deps)+1)
+	for _, d := range deps {
+		to := plan[d.ID]
+		switch d.Kind {
+		case DependentDefault:
+			edits = append(edits, SetDefaultTarget(d.Protocol, to))
+		case DependentBinding:
+			edits = append(edits, BindOrigin(d.Application, to))
+		case DependentAlias:
+			edits = append(edits, repointAlias(id, d.Alias, to))
+		case DependentApplicationAlias:
+			edits = append(edits, repointOriginAlias(d.Application, d.Alias, to))
+		case DependentExplain:
+			edits = append(edits, SetExplainer(Explainer{Connection: to, Model: modelIf(to, d.Model)}))
+		case DependentAgentRuns:
+			edits = append(edits, SetAgentRunCalls(to, modelIf(to, d.Model)))
+		case DependentEvaluation:
+			edits = append(edits, SetEvaluation(Evaluation{Connection: to, Model: modelIf(to, d.Model)}))
+		}
+	}
+	edits = append(edits, removeTarget(id))
+	return func(root *yaml.Node) error {
+		for _, e := range edits {
+			if err := e(root); err != nil {
+				return err
+			}
+		}
+		return nil
 	}, nil
+}
+
+func modelIf(connection, model string) string {
+	if connection == "" {
+		return ""
+	}
+	return model
+}
+
+// repointAlias moves the shared Alias name on Connection from to Connection
+// to, or removes it when to is "".
+func repointAlias(from, name, to string) Edit {
+	return func(root *yaml.Node) error {
+		return repointIn(mappingValue(root, "aliases"), root, "aliases", func(item *yaml.Node) bool {
+			return scalarValue(item, "target") == from && scalarValue(item, "alias") == name
+		}, to)
+	}
+}
+
+// repointOriginAlias moves Application app's own Alias name to Connection
+// to, or removes it when to is "".
+func repointOriginAlias(app, name, to string) Edit {
+	return func(root *yaml.Node) error {
+		seq := mappingValue(root, "origins")
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return errors.New("Application not found in configuration")
+		}
+		for _, item := range seq.Content {
+			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == app {
+				return repointIn(mappingValue(item, "aliases"), item, "aliases", func(a *yaml.Node) bool {
+					return scalarValue(a, "alias") == name
+				}, to)
+			}
+		}
+		return errors.New("Application not found in configuration")
+	}
+}
+
+// repointIn sets the target of the first item of list (parent[key]) that
+// match accepts, or removes that item when to is "" (and the key with it
+// when the list ends up empty).
+func repointIn(list, parent *yaml.Node, key string, match func(*yaml.Node) bool, to string) error {
+	if list == nil || list.Kind != yaml.SequenceNode {
+		return errors.New("alias not found in configuration")
+	}
+	for i, item := range list.Content {
+		if item.Kind != yaml.MappingNode || !match(item) {
+			continue
+		}
+		if to != "" {
+			setScalar(item, "target", to)
+			return nil
+		}
+		list.Content = append(list.Content[:i], list.Content[i+1:]...)
+		if len(list.Content) == 0 {
+			for j := 0; j+1 < len(parent.Content); j += 2 {
+				if parent.Content[j].Value == key {
+					parent.Content = append(parent.Content[:j], parent.Content[j+2:]...)
+					break
+				}
+			}
+		}
+		return nil
+	}
+	return errors.New("alias not found in configuration")
 }
 
 // AddOrigin appends a client (an app or agent with its own token reference).

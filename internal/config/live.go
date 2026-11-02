@@ -208,9 +208,36 @@ func (l *Live) commit(c Config, ch Change) {
 	}
 }
 
+// Try applies edit to a copy of the configuration file and validates the
+// result, without writing or publishing anything: the configuration Change
+// would make.
+func (l *Live) Try(edit Edit) (Config, error) {
+	if l.path == "" {
+		return Config{}, ErrReadOnly
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, _, c, err := applyEdit(l.path, edit)
+	if err != nil {
+		return Config{}, err
+	}
+	return copyConfig(c), nil
+}
+
 // editFile applies edit to the YAML document at path, validates the complete
 // result and writes it atomically with private permissions.
 func editFile(path string, edit Edit) (before, after []byte, c Config, err error) {
+	if before, after, c, err = applyEdit(path, edit); err != nil {
+		return nil, nil, Config{}, err
+	}
+	if err = writePrivate(path, after, "configuration"); err != nil {
+		return nil, nil, Config{}, err
+	}
+	return before, after, c, nil
+}
+
+// applyEdit reads the file at path, applies edit and validates the result.
+func applyEdit(path string, edit Edit) (before, after []byte, c Config, err error) {
 	if _, err = Load(path); err != nil { // also enforces private permissions
 		return nil, nil, Config{}, err
 	}
@@ -230,9 +257,6 @@ func editFile(path string, edit Edit) (before, after []byte, c Config, err error
 		return nil, nil, Config{}, errors.New("cannot encode configuration")
 	}
 	if c, err = Parse(after); err != nil {
-		return nil, nil, Config{}, err
-	}
-	if err = writePrivate(path, after, "configuration"); err != nil {
 		return nil, nil, Config{}, err
 	}
 	return before, after, c, nil
