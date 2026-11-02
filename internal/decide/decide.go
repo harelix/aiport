@@ -650,16 +650,24 @@ func (q *Queue) Detect(at time.Time) []Item {
 	diagnose(finder, symptoms, c.Adapting.UnknownModel.Count, at)
 	found := failingConnections(c, q.history, at)
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	if q.failed != nil {
 		found = append(found, unknownTokens(c, q.failed, at)...)
 	}
 	out := q.trackUnknownModels(c, symptoms, at)
+	auto := q.automaticFixes(c, out, at.UnixMilli())
 	for _, s := range found {
 		if q.quiet(s, at) {
 			continue
 		}
 		out = append(out, q.submit(s, at.UnixMilli()))
+	}
+	q.mu.Unlock()
+	// Automatic fixes are decided like the Owner's, outside the lock
+	// (guardrail Extensions still judge them).
+	for _, j := range auto {
+		if it, _, err := q.Decide(out[j].ID, Decision{Action: Accept, By: Automatic}, at); err == nil {
+			out[j] = it
+		}
 	}
 	return out
 }

@@ -377,6 +377,36 @@ responses, provider messages, keys or tokens.
 
 The badge on Changes counts an Issue only while its fix waits for you.
 
+### Automatic fixes
+
+Automatic fixes are off by default. Turn them on with the **Automatic
+fixes** switch under Applied changes (or `adapting.auto_fix: true` in
+aiport.yaml); the switch itself is a Change you can revert. When they are
+on, aiport applies an Issue's aiport fix itself, without waiting for you,
+only when all of this holds:
+
+- the diagnosis is certain: exactly one enabled Connection serves the model
+  (never with none, several or unknown);
+- the error is sticky: the Issue's threshold (`adapting.unknown_model`) was
+  reached;
+- the fix touches only that Application: an Alias for it alone. Binding a
+  whole Application to another Connection, shared Aliases, protocol
+  defaults or anything for every Application are never automatic;
+- you have not refused that fix (below), and the adapting loop is on.
+
+For example, docs-bot keeps getting `404` for `llama3:8b` and only the
+local Connection serves it: aiport adds the Alias `llama3:8b` → local for
+docs-bot and the Issue becomes resolving. The Change is recorded as made by
+**aiport (automatic)**, and Applied changes shows it as "aiport fixed: …"
+with **Revert**; the Issue shows "aiport fixed this automatically" with its
+own Revert. Guardrail Extensions judge automatic fixes like your approvals.
+
+If you revert an automatic fix, aiport records it and never applies the same
+fix automatically again for that Application and cause, also after a
+restart; the Issue opens again and its fix waits for your decision, which
+you can still approve. A fix you rejected is not applied automatically
+either.
+
 ### What waits for your decision
 
 - **Suggestions** come from aiport itself, from patterns in request history,
@@ -419,7 +449,7 @@ decision.
 
 **Applied changes** lists every configuration Change made through aiport,
 newest first, with who made it: you, or an approved Suggestion or Change
-request. The list survives restarts. **Revert** restores the configuration
+request, or **aiport (automatic)** for an automatic fix. The list survives restarts. **Revert** restores the configuration
 file exactly as it was before that Change and makes it live at once. If the
 file was edited after a Change, revert the newer Changes first; aiport
 refuses rather than overwrite them.

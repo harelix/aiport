@@ -293,6 +293,19 @@ func ensureNode(root *yaml.Node, key string, kind yaml.Kind) *yaml.Node {
 	return n
 }
 
+// SetAutoFix turns automatic fixes (adapting.auto_fix) on, or off by
+// removing the key (off is the default).
+func SetAutoFix(on bool) Edit {
+	return func(root *yaml.Node) error {
+		value := ""
+		if on {
+			value = "true"
+		}
+		setScalar(ensureNode(root, "adapting", yaml.MappingNode), "auto_fix", value)
+		return nil
+	}
+}
+
 // SetHostnames sets (or, when empty, removes) the local names aiport
 // answers to; the first one is the address aiport hands out.
 func SetHostnames(names []string) Edit {

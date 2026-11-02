@@ -90,6 +90,7 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `adapting.unknown_token.window_minutes` | 60; range 1–10080; how far back those refusals are counted |
 | `adapting.failing_connection.count` | 5; range 1–1000000; failed calls (gateway errors, timeouts and upstream 5xx; never cancellations or refusals) from one Application to one Connection that lead to a Suggestion to bind the Application to a working Connection |
 | `adapting.failing_connection.window_minutes` | 60; range 1–10080; how far back those failures are counted |
+| `adapting.auto_fix` | false; `true` lets aiport apply an Issue's aiport fix itself, as a revertable Change made by "aiport (automatic)", only when exactly one Connection serves the model, the error reached its threshold and the fix is an Alias for that one Application. A fix the Owner reverted (or rejected) is never applied automatically again for that Application and cause. Also switchable on the Changes page |
 
 IDs and provider labels contain 1–64 ASCII alphanumerics, underscores or hyphens,
 starting with an alphanumeric. Protocol is `openai` or `anthropic`. Provider is a
