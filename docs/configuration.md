@@ -87,6 +87,8 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `adapting.unknown_model.window_minutes` | 60; range 1–10080; how far back those 404s are counted |
 | `adapting.unknown_token.count` | 10; range 1–1000000; requests refused for a missing or unknown token that lead to an informational Suggestion to pair the Application (only counts per minute are kept, never the token) |
 | `adapting.unknown_token.window_minutes` | 60; range 1–10080; how far back those refusals are counted |
+| `adapting.failing_connection.count` | 5; range 1–1000000; failed calls (gateway errors, timeouts and upstream 5xx; never cancellations or refusals) from one Application to one Connection that lead to a Suggestion to bind the Application to a working Connection |
+| `adapting.failing_connection.window_minutes` | 60; range 1–10080; how far back those failures are counted |
 
 IDs and provider labels contain 1–64 ASCII alphanumerics, underscores or hyphens,
 starting with an alphanumeric. Protocol is `openai` or `anthropic`. Provider is a

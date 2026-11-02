@@ -72,6 +72,10 @@ type Capabilities struct {
 // NotPermitted explains an empty ChangeKinds list.
 const NotPermitted = "This Application may not request changes. The Owner can allow it in the aiport dashboard (Routing → Applications)."
 
+// AdaptingOff explains an empty ChangeKinds list while the Owner has turned
+// adapting off: no Change requests are accepted from any Application.
+const AdaptingOff = "The Owner has turned adapting off in aiport: no Application may request changes now."
+
 const permitted = "This Application may request the listed kinds of Change. The Owner approves or rejects each request."
 
 // For answers for the Application with id origin in configuration c, with
@@ -105,7 +109,9 @@ func For(c config.Config, origin string, r Router) (caps Capabilities, ok bool) 
 		binding := app.Target
 		caps.Binding = &binding
 	}
-	if app.MayRequestChanges {
+	if c.Adapting.Disabled {
+		caps.MayRequestChanges, caps.Note = false, AdaptingOff
+	} else if app.MayRequestChanges {
 		caps.ChangeKinds = append(caps.ChangeKinds, Kinds...)
 		caps.Note = permitted
 	}
