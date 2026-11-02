@@ -195,25 +195,6 @@ func SetMayRequestChanges(id string, allowed bool) Edit {
 	}
 }
 
-// SetBinding binds one Application to a Connection: all its calls go there
-// (empty = unbound, back to the protocol defaults). Validation refuses a
-// missing Connection.
-func SetBinding(id, target string) Edit {
-	return func(root *yaml.Node) error {
-		seq := mappingValue(root, "origins")
-		if seq == nil || seq.Kind != yaml.SequenceNode {
-			return errors.New("application not found in configuration")
-		}
-		for _, item := range seq.Content {
-			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
-				setScalar(item, "target", target)
-				return nil
-			}
-		}
-		return errors.New("application not found in configuration")
-	}
-}
-
 // AddOriginAlias gives one Application its own Alias: a model name only it
 // sends, served by a Connection and model. Validation refuses a duplicate
 // alias or a missing Connection.
@@ -231,6 +212,39 @@ func AddOriginAlias(id string, a OriginAlias) Edit {
 				}
 				list := ensureNode(item, "aliases", yaml.SequenceNode)
 				list.Content = append(list.Content, &alias)
+				return nil
+			}
+		}
+		return errors.New("application not found in configuration")
+	}
+}
+
+// AddAlias adds a shared Alias: every Application sending model a.Alias to
+// Connection a.Target gets a.Model. Validation refuses a duplicate or a
+// missing Connection.
+func AddAlias(a Alias) Edit {
+	return func(root *yaml.Node) error {
+		var item yaml.Node
+		if err := item.Encode(a); err != nil {
+			return errors.New("cannot encode alias")
+		}
+		seq := ensureNode(root, "aliases", yaml.SequenceNode)
+		seq.Content = append(seq.Content, &item)
+		return nil
+	}
+}
+
+// BindOrigin sends all of one Application's calls to Connection target
+// (empty = follow the protocol defaults again).
+func BindOrigin(id, target string) Edit {
+	return func(root *yaml.Node) error {
+		seq := mappingValue(root, "origins")
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return errors.New("application not found in configuration")
+		}
+		for _, item := range seq.Content {
+			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
+				setScalar(item, "target", target)
 				return nil
 			}
 		}

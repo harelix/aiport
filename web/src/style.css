@@ -374,6 +374,9 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .decision-form{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
 .decision-form label{display:grid;gap:4px;font-size:12px;color:var(--text-2)}
 .decision-form .actions{display:flex;gap:8px}
+.request-text{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13px;margin:0}
+.request-text dt{color:var(--muted)}
+.request-text dd{margin:0;color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere}
 /* collapsed strip */
 .sidebar.collapsed{padding:20px 10px;align-items:center}
 .sidebar.collapsed .label{display:none}

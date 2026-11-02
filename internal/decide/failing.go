@@ -9,9 +9,6 @@ import (
 	"aiport/internal/telemetry"
 )
 
-// KindBindApplication sends all of one Application's calls to one Connection.
-const KindBindApplication = "bind_application"
-
 // failed reports whether a request counts against its Connection: an error by
 // request history's single definition (telemetry.IsError), except an upstream
 // answer below 500, which is about the request (an unknown model, a bad
@@ -85,16 +82,11 @@ func failingConnections(c config.Config, history History, at time.Time) []Item {
 	return out
 }
 
-// bindChange is the edit that applies an accepted binding Suggestion.
-func bindChange(it Item, p Proposal, scope string) (config.Edit, string, error) {
-	if scope != ScopeApplication {
-		return nil, "", Invalid{"this kind of Change can only be granted for this Application"}
+// failingTarget is the failing Connection a binding Suggestion moves away
+// from, or "" for any other item.
+func failingTarget(it Item) string {
+	if it.Source == FromSuggestion && it.Kind == KindBindApplication {
+		return it.Subject
 	}
-	if p.Target == "" {
-		return nil, "", Invalid{"choose the Connection to bind " + it.Application + " to"}
-	}
-	if p.Target == it.Subject {
-		return nil, "", Invalid{"choose another Connection than the failing one"}
-	}
-	return config.SetBinding(it.Application, p.Target), "bind " + it.Application + " → " + p.Target + " (was failing on " + it.Subject + ")", nil
+	return ""
 }
