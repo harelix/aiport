@@ -47,6 +47,8 @@ type Config struct {
 	Extensions []Extension `yaml:"extensions,omitempty" json:"extensions"`
 	// Upstream is where "Suggest to aiport" and "Share upstream" drafts go.
 	Upstream Upstream `yaml:"upstream,omitempty" json:"upstream"`
+	// AgentRuns configures the Coding agents aiport starts for Issues.
+	AgentRuns AgentRuns `yaml:"agent_runs,omitempty" json:"agent_runs"`
 }
 
 // Evaluation is the user-chosen evaluator: any configured connection.
@@ -99,6 +101,13 @@ type Origin struct {
 	// MayRequestChanges lets this Application file Change requests. Off by
 	// default: pairing alone never opens a channel into the Owner's queue.
 	MayRequestChanges bool `yaml:"may_request_changes,omitempty" json:"may_request_changes"`
+	// Agent is the Coding agent aiport starts for this Application's Agent
+	// runs: one of CodingAgents, or empty for agent_runs.default_agent.
+	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
+	// Repository is the absolute path of the Application's git repository,
+	// as the Owner confirmed it; empty when there is none. Agent runs never
+	// work outside it.
+	Repository string `yaml:"repository,omitempty" json:"repository,omitempty"`
 }
 
 type OriginAlias struct {
@@ -376,6 +385,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := c.Upstream.validate(); err != nil {
+		return err
+	}
+	if err := c.AgentRuns.validate(c.Origins); err != nil {
 		return err
 	}
 	t := c.Telemetry
