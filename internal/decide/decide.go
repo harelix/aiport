@@ -418,6 +418,9 @@ func change(c config.Config, it Item, p Proposal, scope string) (config.Edit, st
 		if p.Target == "" {
 			return nil, "", Invalid{"choose the Connection to bind to"}
 		}
+		if failingTarget(it) == p.Target {
+			return nil, "", Invalid{"choose another Connection than the failing one"}
+		}
 		if scope == ScopeApplication {
 			return config.BindOrigin(it.Application, p.Target), "bind " + it.Application + " → " + p.Target, nil
 		}
@@ -471,6 +474,7 @@ func (q *Queue) Detect(at time.Time) []Item {
 	}
 	c := q.live.Config()
 	found := unknownModels(c, q.history, at)
+	found = append(found, failingConnections(c, q.history, at)...)
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.failed != nil {

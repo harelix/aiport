@@ -9,7 +9,7 @@ type Change = {
 
 /** A Suggestion or Change request waiting for the Owner, as GET /api/v1/decisions lists it. */
 export type Decision = {
-  id: string; source: string; kind: string; application: string; need: string; scope: string;
+  id: string; source: string; kind: string; application: string; subject?: string; need: string; scope: string;
   details?: string; why?: string; scope_case?: string; filed_by?: string; repeats?: number;
   asked_by?: Asker[];
   evidence?: {count: number; from_ms: number; to_ms: number; window_minutes: number};
@@ -49,7 +49,10 @@ const when = (ms: number) => new Date(ms).toLocaleString();
  */
 function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision; targets: string[]; onDecided: (message: string) => void; onOpenApplications?: () => void}) {
   const request = item.source === 'request', alias = item.kind === 'application_alias';
-  const [target, setTarget] = useState(item.proposal.target || targets[0] || ''), [model, setModel] = useState(item.proposal.model || '');
+  // A failing-Connection Suggestion moves the Application away from its subject: never offer it back.
+  const failing = !request && item.kind === 'bind_application' ? item.subject : undefined;
+  const choices = targets.filter(t => t !== failing);
+  const [target, setTarget] = useState(item.proposal.target || choices[0] || ''), [model, setModel] = useState(item.proposal.model || '');
   const [name, setName] = useState(item.proposal.alias || ''), [scope, setScope] = useState(item.scope || 'application');
   const [note, setNote] = useState(''), [busy, setBusy] = useState(''), [error, setError] = useState('');
   const [blocked, setBlocked] = useState<Blocked | null>(null);
@@ -105,7 +108,7 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
         <option value="every_application">Every Application</option>
       </select></label>
       {alias && <label>Alias<input value={name} onChange={e => setName(e.target.value)} readOnly={!request} required maxLength={256} spellCheck={false} autoComplete="off"/></label>}
-      <label>{alias ? 'Connection' : scope === 'every_application' ? 'Default Connection' : 'Bind to Connection'}<select value={target} onChange={e => setTarget(e.target.value)}>{targets.map(t => <option key={t}>{t}</option>)}</select></label>
+      <label>{alias ? 'Connection' : scope === 'every_application' ? 'Default Connection' : 'Bind to Connection'}<select value={target} onChange={e => setTarget(e.target.value)}>{choices.map(t => <option key={t}>{t}</option>)}</select></label>
       {alias && <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} placeholder="model name on that connection" spellCheck={false} autoComplete="off"/></label>}
       <label>Note {request ? 'for ' + item.application : '(optional)'}<input value={note} onChange={e => setNote(e.target.value)} maxLength={2000}/></label>
       <div className="actions">

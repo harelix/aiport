@@ -15,6 +15,10 @@ type Adapting struct {
 	// UnknownToken: requests with a missing or unknown token were refused at
 	// least Count times within the last WindowMinutes.
 	UnknownToken Threshold `yaml:"unknown_token,omitempty" json:"unknown_token"`
+	// FailingConnection: one Application's calls to one Connection failed
+	// (gateway errors, timeouts) at least Count times within the last
+	// WindowMinutes.
+	FailingConnection Threshold `yaml:"failing_connection,omitempty" json:"failing_connection"`
 }
 
 // Threshold is how much evidence a detector needs: Count matching requests
@@ -26,7 +30,7 @@ type Threshold struct {
 
 // DefaultAdapting is the loop's configuration when aiport.yaml says nothing.
 func DefaultAdapting() Adapting {
-	return Adapting{IntervalSeconds: 60, UnknownModel: Threshold{Count: 5, WindowMinutes: 60}, UnknownToken: Threshold{Count: 10, WindowMinutes: 60}}
+	return Adapting{IntervalSeconds: 60, UnknownModel: Threshold{Count: 5, WindowMinutes: 60}, UnknownToken: Threshold{Count: 10, WindowMinutes: 60}, FailingConnection: Threshold{Count: 5, WindowMinutes: 60}}
 }
 
 func (a Adapting) validate() error {
@@ -35,6 +39,9 @@ func (a Adapting) validate() error {
 		return errors.New("adapting: interval_seconds must be 5–86400, unknown_model.count 1–1000000 and unknown_model.window_minutes 1–10080")
 	}
 	if err := a.UnknownToken.validate("unknown_token"); err != nil {
+		return err
+	}
+	if err := a.FailingConnection.validate("failing_connection"); err != nil {
 		return err
 	}
 	return nil
