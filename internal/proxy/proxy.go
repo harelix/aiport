@@ -87,24 +87,47 @@ func (g *Gateway) key(targetID string) string {
 // gateway. Path is relative to the connection URL, e.g. "/chat/completions".
 // The response body is read up to limit bytes.
 func (g *Gateway) Call(ctx context.Context, targetID, path string, body []byte, limit int64) ([]byte, int, error) {
+	resp, _, err := g.own(ctx, targetID, path, body, "evaluator connection")
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit))
+	if err != nil {
+		return nil, resp.StatusCode, errors.New("cannot read evaluator response")
+	}
+	return data, resp.StatusCode, nil
+}
+
+// Open sends aiport's own request to a connection like Call, and returns
+// the response unread, for the caller to stream and close, with the
+// connection it went to. Errors are aiport's own words, never the
+// provider's.
+func (g *Gateway) Open(ctx context.Context, targetID, path string, body []byte) (*http.Response, config.Target, error) {
+	return g.own(ctx, targetID, path, body, "connection")
+}
+
+// own builds and sends aiport's own request; what names the connection in
+// errors.
+func (g *Gateway) own(ctx context.Context, targetID, path string, body []byte, what string) (*http.Response, config.Target, error) {
 	g.targetsMu.RLock()
 	t, ok := g.routes.targets[targetID]
 	g.targetsMu.RUnlock()
 	if !ok || t.Disabled {
-		return nil, 0, errors.New("evaluator connection is not configured or is disabled")
+		return nil, t, errors.New(what + " is not configured or is disabled")
 	}
 	secret := g.key(targetID)
 	if t.APIKeyEnv != "" && secret == "" {
-		return nil, 0, errors.New("evaluator connection has no API key yet")
+		return nil, t, errors.New(what + " has no API key yet")
 	}
 	u, err := url.Parse(t.URL())
 	if err != nil {
-		return nil, 0, errors.New("evaluator connection URL is invalid")
+		return nil, t, errors.New(what + " URL is invalid")
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, errors.New("cannot create evaluator request")
+		return nil, t, errors.New("cannot create the request to the " + what)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if t.Protocol == "anthropic" {
@@ -113,14 +136,9 @@ func (g *Gateway) Call(ctx context.Context, targetID, path string, body []byte, 
 	setUpstreamAuth(req.Header, t.Protocol, secret)
 	resp, err := g.transport.RoundTrip(req)
 	if err != nil {
-		return nil, 0, errors.New("evaluator connection is unreachable")
+		return nil, t, errors.New(what + " is unreachable")
 	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, limit))
-	if err != nil {
-		return nil, resp.StatusCode, errors.New("cannot read evaluator response")
-	}
-	return data, resp.StatusCode, nil
+	return resp, t, nil
 }
 
 // Protocol reports a connection's protocol ("" if unknown).

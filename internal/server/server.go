@@ -50,7 +50,9 @@ type Handler struct {
 	adaptEvery       time.Duration          // 0 = adapting.interval_seconds; tests set a short one
 	gh               func() (string, error) // finds the gh CLI; nil = look it up on PATH; tests set a fake
 	pair             pairings
-	agentDirs        []string // where Coding agents are looked for; nil = agents.DefaultDirs; tests set a temporary one
+	explainMu        sync.Mutex
+	explaining       map[string]bool // Applications whose Issue explanation is being written (guarded by explainMu)
+	agentDirs        []string        // where Coding agents are looked for; nil = agents.DefaultDirs; tests set a temporary one
 	// requesters are the Applications that may request changes right now
 	// (none while adapting is off), rebuilt on every config change so the
 	// forwarding path checks a set instead of copying the configuration.

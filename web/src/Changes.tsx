@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {ArrowUpRight, CircleAlert, History, Lightbulb, Puzzle, Undo2} from 'lucide-react';
+import {ArrowUpRight, CircleAlert, History, Lightbulb, Puzzle, Sparkles, Undo2} from 'lucide-react';
 import {type Upstream, UpstreamAction} from './Upstream';
 import {DecisionSoundToggle} from './decisionSound';
 import {CopyButton} from './Integrate';
@@ -35,7 +35,71 @@ export type Issue = {
   diagnosis?: {protocol: string; answer: 'one' | 'none' | 'several' | 'unknown'; serving: string[]; unknown: string[]; available?: string[]; summary?: string};
   fix?: {suggestion: string; kind: string; scope: string; proposal: {alias?: string; target?: string; model?: string}; state: 'proposed' | 'applied' | 'rejected' | 'reverted'; change_id?: string; by?: string};
   resolving_by?: string; resolution?: {how: string; at_ms: number; change_id?: string}; reopened?: number;
+  /** The saved root cause (decide.Explanation); also at the start of application_fix. */
+  explanation?: Explanation;
 };
+
+/** An Issue's explanation and who wrote it: a Connection and model the Owner chose, or a Coding agent. */
+export type Explanation = {text: string; source: 'connection' | 'coding_agent'; connection?: string; model?: string; agent?: string; at_ms?: number};
+
+/** Whether Explain is available (the "explain" field of GET /api/v1/issues): who writes, or a hint why not. */
+export type ExplainStatus = {available: boolean; hint?: string; source?: string; connection?: string; model?: string};
+
+const writer = (e: {source?: string; connection?: string; model?: string; agent?: string}) =>
+  e.source === 'coding_agent' ? 'the Coding agent ' + e.agent : e.connection + ' (' + e.model + ')';
+
+/**
+ * Explain: the root cause of an Issue in words. POST /api/v1/issues/{id}/explain streams JSON lines (start, text…,
+ * then done or error); the text is shown as it arrives and, once saved, comes back with the Issue (and in its
+ * Application fix). Explain again replaces it. The text comes from a model: shown as plain text only.
+ */
+export function IssueExplanation({issue, explain, onExplained}: {issue: Issue; explain: ExplainStatus | null; onExplained: () => void}) {
+  const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [by, setBy] = useState('');
+  const run = async () => {
+    setBusy(true); setError(''); setText(''); setBy('');
+    try {
+      const r = await fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/explain', {method: 'POST', credentials: 'same-origin', headers: {'X-Aiport-CSRF': '1'}});
+      if (!r.ok || !r.body) { const d = await r.json().catch(() => ({})); throw new Error(d.error?.message || 'Explain failed (' + r.status + ').'); }
+      const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = '', done = false, failed = '';
+      while (!done) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += chunk.value;
+        let nl;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, nl).trim(); buffer = buffer.slice(nl + 1);
+          if (!line) continue;
+          const ev = JSON.parse(line);
+          if (ev.type === 'start') setBy(writer(ev.by || {}));
+          else if (ev.type === 'text') setText(t => t + ev.text);
+          else if (ev.type === 'done') done = true;
+          else if (ev.type === 'error') failed = ev.error?.message || 'Explain failed.';
+        }
+      }
+      if (failed) throw new Error(failed);
+      if (!done) throw new Error('The explanation broke off; nothing was saved.');
+      onExplained();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saved = issue.explanation;
+  const shown = busy || (text && error) ? text : saved?.text || '';
+  return <div className="explanation">
+    {shown && <div className="explanation-text" aria-live="polite"><strong>Root cause</strong>{(busy ? by : saved && writer(saved)) && <small> · written by {busy ? by : writer(saved!)}{!busy && saved?.source === 'connection' ? ' from the evidence only' : ''}</small>}<p>{shown}</p></div>}
+    {busy && !text && <p className="caption" role="status">Asking {by || 'the model'}…</p>}
+    {error && <div className="notice error" role="alert">{error}{saved ? ' The earlier explanation stays.' : ''}</div>}
+    <div className="actions">
+      <button type="button" className="secondary" disabled={busy || !explain?.available} onClick={run} title={explain?.available ? 'Explain the root cause with ' + writer(explain) : explain?.hint}>
+        <Sparkles size={14} aria-hidden/> {busy ? 'Explaining…' : saved ? 'Explain again' : 'Explain'}
+      </button>
+      {explain && !explain.available && explain.hint && <span className="caption">{explain.hint}</span>}
+    </div>
+  </div>;
+}
 
 /** Who makes a Change aiport applies itself (adapting.auto_fix). */
 const AUTOMATIC = 'aiport (automatic)';
@@ -46,7 +110,7 @@ const AUTOMATIC = 'aiport (automatic)';
  * with Approve / Dismiss, and the fix in the Application for its Coding agent. Approve stays while the Application
  * says it fixed the Issue (resolving); Dismiss is there for any Issue still open or resolving.
  */
-function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]; onDecided: (message: string) => void}) {
+function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Issue; targets: string[]; explain: ExplainStatus | null; onDecided: (message: string) => void; onExplained: () => void}) {
   const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection';
   const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || issue.subject);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [blocked, setBlocked] = useState<Blocked | null>(null);
@@ -107,6 +171,7 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
     {fix?.state !== 'proposed' && <div className="actions">
       <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
     </div>}
+    <IssueExplanation issue={issue} explain={explain} onExplained={onExplained}/>
     <ApplicationFix issue={issue}/>
   </div>;
 }
@@ -235,12 +300,12 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [reload, setReload] = useState(0), [upstream, setUpstream] = useState<Upstream | null>(null);
-  const [autoFix, setAutoFix] = useState<boolean | null>(null), [adapting, setAdapting] = useState(true);
+  const [autoFix, setAutoFix] = useState<boolean | null>(null), [adapting, setAdapting] = useState(true), [explain, setExplain] = useState<ExplainStatus | null>(null);
   useEffect(() => {
     send('GET', 'upstream').then(setUpstream).catch(() => setUpstream(null));
     send('GET', 'changes').then(d => { setChanges(d.changes || []); setRevertable(!!d.revertable); }).catch(e => setError(e.message));
     send('GET', 'decisions').then(d => { setPending((d.items || []).filter((i: Decision) => !i.issue)); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
-    send('GET', 'issues').then(d => { setIssues(d.issues || []); setAutoFix(!!d.auto_fix); setAdapting(d.adapting !== false); }).catch(() => { setIssues([]); setAutoFix(null); });
+    send('GET', 'issues').then(d => { setIssues(d.issues || []); setAutoFix(!!d.auto_fix); setAdapting(d.adapting !== false); setExplain(d.explain || null); }).catch(() => { setIssues([]); setAutoFix(null); });
   }, [tick, reload]);
   const revert = async (c: Change) => {
     setBusy(c.id); setError(''); setMessage('');
@@ -279,7 +344,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
   return <>{!!issues.length && <section className="panel" aria-label="Issues">
     <div className="panel-heading"><h2><CircleAlert size={16} aria-hidden/> Issues</h2><span>Problems aiport keeps seeing for one Application · they close themselves when its calls succeed again</span></div>
-    {issues.map(i => <IssueCard key={i.id + i.state + (i.fix?.suggestion || '')} issue={i} targets={targets} onDecided={decided}/>)}
+    {issues.map(i => <IssueCard key={i.id + i.state + (i.fix?.suggestion || '')} issue={i} targets={targets} explain={explain} onDecided={decided} onExplained={() => setReload(x => x + 1)}/>)}
   </section>}{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
     <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history and Change requests from Applications</span></div>
     {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided} onOpenApplications={onOpenApplications}/>)}

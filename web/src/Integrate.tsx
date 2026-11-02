@@ -1,7 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, Plus, Terminal} from 'lucide-react';
 import {forgetRejected, MayRequestToggle, Origin, Pairing, PairingList, Rejected, Target, usePairings, useRejected} from './Applications';
-import {ApplicationFix, type Issue, issueAnchor} from './Changes';
+import {ApplicationFix, type ExplainStatus, type Issue, IssueExplanation, issueAnchor} from './Changes';
 import {Inline} from './markdown';
 import {AgentSettings, agentConnected, agentName, type CodingAgents, effectiveAgent, useCodingAgents} from './CodingAgents';
 
@@ -72,34 +72,35 @@ function useLastCalls(ids: string[], tick: number): Calls {
   return calls;
 }
 
-/** The open and resolving Issues of every Application (GET /api/v1/issues), grouped by Application. */
-function useIssues(tick: number): Record<string, Issue[]> {
-  const [issues, setIssues] = useState<Record<string, Issue[]>>({});
+/** The open and resolving Issues of every Application (GET /api/v1/issues), grouped by Application, whether Explain is available, and reload. */
+function useIssues(tick: number): {issues: Record<string, Issue[]>; explain: ExplainStatus | null; reload: () => void} {
+  const [issues, setIssues] = useState<Record<string, Issue[]>>({}), [explain, setExplain] = useState<ExplainStatus | null>(null), [again, setAgain] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     fetch('/api/v1/issues', {credentials: 'same-origin', signal: controller.signal}).then(r => r.ok ? r.json() : {issues: []})
-      .then((d: {issues?: Issue[]}) => {
+      .then((d: {issues?: Issue[]; explain?: ExplainStatus}) => {
         const by: Record<string, Issue[]> = {};
         for (const i of d.issues || []) (by[i.application] ||= []).push(i);
-        setIssues(by);
+        setIssues(by); setExplain(d.explain || null);
       }).catch(() => {});
     return () => controller.abort();
-  }, [tick]);
-  return issues;
+  }, [tick, again]);
+  return {issues, explain, reload: () => setAgain(x => x + 1)};
 }
 
 /** A short cause for an Issue, for the Applications list. */
 const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : i.summary;
 
 /* An Application's Issues, under its row: each with its short cause, a link
-   to the Issue on the Changes page and "Copy fix for the Coding agent". */
-function AppIssues({issues, onOpen}: {issues: Issue[]; onOpen: (i: Issue) => void}) {
+   to the Issue on the Changes page, Explain and "Copy fix for the Coding agent". */
+function AppIssues({issues, explain, onOpen, onExplained}: {issues: Issue[]; explain: ExplainStatus | null; onOpen: (i: Issue) => void; onExplained: () => void}) {
   return <ul className="app-issues">{issues.map(i => <li key={i.id}>
     <div className="app-issue-head">
       <span className={'badge' + (i.state === 'resolving' ? ' good' : ' warn')}>{i.state === 'resolving' ? 'Resolving' : 'Issue'}</span>
       <span>{i.summary}</span>
       <button type="button" className="text-button" onClick={() => onOpen(i)} aria-label={'Open the Issue ' + shortCause(i) + ' in Changes'}>Open in Changes <ArrowUpRight size={14} aria-hidden/></button>
     </div>
+    <IssueExplanation issue={i} explain={explain} onExplained={onExplained}/>
     <ApplicationFix issue={i}/>
   </li>)}</ul>;
 }
@@ -141,8 +142,8 @@ function RejectedRow({x, onDone}: {x: Rejected; onDone: () => void}) {
 /* The Applications list: waiting pairings first (always shown), then the
    approved Applications; rejected ones only behind the filter. Selecting an
    Application makes the wizard follow it. */
-function ApplicationsList({origins, targets, pairings, rejected, calls, issues, agents, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue}: {
-  origins: Origin[]; targets: Target[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; agents: CodingAgents; app: string; onAgent: (id: string) => void;
+function ApplicationsList({origins, targets, pairings, rejected, calls, issues, explain, onExplained, agents, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue}: {
+  origins: Origin[]; targets: Target[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; explain: ExplainStatus | null; onExplained: () => void; agents: CodingAgents; app: string; onAgent: (id: string) => void;
   onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void; onIssue: (i: Issue) => void;
 }) {
   const [filter, setFilter] = useState<Filter>('approved');
@@ -182,7 +183,7 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, issues, 
             return <button type="button" className="text-button" onClick={() => onAgent(o.id)} aria-label={(connected ? 'Change the coding agent of ' : 'Connect a coding agent to ') + o.name}
               title={connected ? agentName(id, agents) + (o.agent ? '' : ' (default)') + ' in ' + o.repository : 'Connect a coding agent (onboarding step 6)'}>{connected ? agentName(id, agents) : 'Connect'}</button>; })()}</td>
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
-        </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={7}><AppIssues issues={own} onOpen={onIssue}/></td></tr>}</React.Fragment>;
+        </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={7}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}</React.Fragment>;
       })}</tbody>
     </table></div>}
     {showRejected && rejected.length > 0 && <div className="apps-table rejected-table"><table aria-label="Rejected applications">
@@ -297,7 +298,7 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
   const [pairings, refreshPairings] = usePairings();
   const [rejected, refreshRejected] = useRejected(tick);
   const calls = useLastCalls(origins.map(o => o.id), tick);
-  const issues = useIssues(tick);
+  const {issues, explain, reload: reloadIssues} = useIssues(tick);
   const [agents] = useCodingAgents(tick);
   // The wizard starts collapsed once an Application exists; null = not chosen yet.
   const [wizardOpen, setWizardOpen] = useState<boolean | null>(null);
@@ -340,7 +341,7 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
 
   return <div className="integrate-layout">
     <div className="integrate-main">
-      <ApplicationsList origins={origins} targets={targets} pairings={pairings} rejected={rejected} calls={calls} issues={issues} agents={agents} app={app} adapting={doc.adapting}
+      <ApplicationsList origins={origins} targets={targets} pairings={pairings} rejected={rejected} calls={calls} issues={issues} explain={explain} onExplained={reloadIssues} agents={agents} app={app} adapting={doc.adapting}
         onSelect={follow} onAgent={followAgent} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue}/>
       <div ref={wizardRef}>
         <Wizard origins={origins} app={app} setApp={setApp} pairings={pairings} seen={app ? calls.at[app] : null} off={calls.off} adapting={doc.adapting} agents={agents}

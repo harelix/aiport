@@ -376,6 +376,11 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .app-issues-row td{background:var(--inset)}
 .app-issues{list-style:none;margin:0;padding:4px 0;display:grid;gap:12px}
 .app-issue-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;margin-bottom:6px}
+.explanation{display:grid;gap:6px;margin:8px 0}
+.explanation .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.explanation-text{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--inset);font-size:13px}
+.explanation-text small{color:var(--text-2)}
+.explanation-text p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .application-fix{display:grid;gap:6px;justify-items:start}
 .application-fix details{justify-self:stretch}
 .application-fix summary{cursor:pointer;font-size:12px;color:var(--text-2)}
