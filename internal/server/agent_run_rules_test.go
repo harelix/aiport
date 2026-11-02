@@ -16,12 +16,13 @@ import (
 // run per Application, and where the run's model calls go.
 
 // Explain is read-only: aiport denies every edit and command the agent asks
-// for, and any read outside the repository, without asking the Owner;
-// reading inside the repository is allowed. aiport only ever answers once,
+// for, and any read outside the run's worktree (also the Owner's own
+// copy), without asking the Owner; reading inside the worktree is allowed. aiport only ever answers once,
 // so nothing is remembered in the agent's own settings.
 func TestExplainDeniesEveryEditAndCommand(t *testing.T) {
 	f := newAgentRunFixture(t, "claude", acpScript{Steps: []acpStep{
-		{Ask: &acpAsk{Kind: "read", Title: "Read config.py", Path: "REPO/config.py"}},
+		{Ask: &acpAsk{Kind: "read", Title: "Read config.py", Path: "CWD/README.md"}},
+		{Ask: &acpAsk{Kind: "read", Title: "Read the Owner's copy", Path: "REPO/README.md"}},
 		{Ask: &acpAsk{Kind: "edit", Title: "Edit config.py", Path: "REPO/config.py"}},
 		{Ask: &acpAsk{Kind: "execute", Title: "Run pytest"}},
 		{Ask: &acpAsk{Kind: "delete", Title: "Delete config.py", Path: "REPO/config.py"}},
@@ -30,7 +31,7 @@ func TestExplainDeniesEveryEditAndCommand(t *testing.T) {
 		{Ask: &acpAsk{Kind: "edit", Title: "Edit with no reject_once", Options: []string{"allow_once", "allow_always", "reject_always"}}},
 		{Say: "Done reading."},
 	}}, "")
-	// The script's paths are relative to the repository it runs in.
+	// REPO in the script's paths is the Owner's copy of the repository.
 	writeScript(t, f.agentDir, f.repo)
 
 	code, evs := f.explainEvents(t, f.id)
@@ -44,7 +45,7 @@ func TestExplainDeniesEveryEditAndCommand(t *testing.T) {
 			shown = append(shown, s["text"].(string)+"="+s["verdict"].(string))
 		}
 	}
-	want := "Read config.py=allowed|Edit config.py=denied|Run pytest=denied|Delete config.py=denied|Read /etc/hosts=denied|Read outside via ..=denied|Edit with no reject_once=denied"
+	want := "Read config.py=allowed|Read the Owner's copy=denied|Edit config.py=denied|Run pytest=denied|Delete config.py=denied|Read /etc/hosts=denied|Read outside via ..=denied|Edit with no reject_once=denied"
 	if strings.Join(shown, "|") != want {
 		t.Fatalf("permissions shown:\n%s\nwant\n%s", strings.Join(shown, "|"), want)
 	}
@@ -54,7 +55,7 @@ func TestExplainDeniesEveryEditAndCommand(t *testing.T) {
 		_ = json.Unmarshal(raw, &p)
 		got = append(got, p.Title+"="+p.Outcome+":"+p.Option)
 	}
-	want = "Read config.py=selected:opt-allow_once|Edit config.py=selected:opt-reject_once|Run pytest=selected:opt-reject_once|Delete config.py=selected:opt-reject_once|Read /etc/hosts=selected:opt-reject_once|Read outside via ..=selected:opt-reject_once|Edit with no reject_once=cancelled:"
+	want = "Read config.py=selected:opt-allow_once|Read the Owner's copy=selected:opt-reject_once|Edit config.py=selected:opt-reject_once|Run pytest=selected:opt-reject_once|Delete config.py=selected:opt-reject_once|Read /etc/hosts=selected:opt-reject_once|Read outside via ..=selected:opt-reject_once|Edit with no reject_once=cancelled:"
 	if strings.Join(got, "|") != want {
 		t.Fatalf("answers the agent got:\n%s\nwant\n%s", strings.Join(got, "|"), want)
 	}
@@ -214,5 +215,82 @@ func writeScript(t *testing.T, dir, repo string) {
 	}
 	if err := os.WriteFile(path, []byte(strings.ReplaceAll(string(data), "REPO", repo)), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// setMode is the mode the fake agent was asked to switch to, "" when none.
+func setMode(t *testing.T, dir string) string {
+	t.Helper()
+	rec := agentRecord(t, dir)["set_mode"]
+	if len(rec) == 0 {
+		return ""
+	}
+	var p struct {
+		SessionID string `json:"sessionId"`
+		ModeID    string `json:"modeId"`
+	}
+	_ = json.Unmarshal(rec[len(rec)-1], &p)
+	return p.SessionID + ":" + p.ModeID
+}
+
+// The session mode an agent starts in comes from its own settings. When it
+// offers modes, aiport picks the most restrictive suitable one: plan or
+// read-only for Explain, one that asks before acting for Fix it; never
+// bypass or auto-accept.
+func TestARunPicksTheMostRestrictiveSessionMode(t *testing.T) {
+	modes := &acpModes{Current: "bypassPermissions", Available: []string{"default", "acceptEdits", "plan", "bypassPermissions"}}
+	f := newAgentRunFixture(t, "claude", acpScript{Modes: modes, Steps: []acpStep{{Say: "Read it."}}}, "")
+	code, evs := f.explainEvents(t, f.id)
+	if code != 200 || evs[len(evs)-1]["type"] != "done" {
+		t.Fatalf("explain: %d %v", code, evs)
+	}
+	if got := setMode(t, f.agentDir); got != "sess-1:plan" {
+		t.Fatalf("Explain switched to %q", got)
+	}
+	_, out := call(f.h, "GET", "/api/v1/issues/"+f.id+"/run", "", issuesManagement, false)
+	if m(out["run"])["session_mode"] != "plan" {
+		t.Fatalf("the run: %v", out["run"])
+	}
+
+	fix, _ := newFixFixture(t, acpScript{Modes: modes, Steps: editConfig.Steps})
+	if code, out := fix.fix(t); code != 202 {
+		t.Fatalf("fix: %d %v", code, out)
+	}
+	fix.fixEnded(t)
+	if got := setMode(t, fix.agentDir); got != "sess-1:default" {
+		t.Fatalf("Fix it switched to %q", got)
+	}
+
+	// Already in the right mode: nothing to switch.
+	plan := newAgentRunFixture(t, "gemini", acpScript{Modes: &acpModes{Current: "plan", Available: []string{"default", "autoEdit", "yolo", "plan"}}, Steps: []acpStep{{Say: "ok"}}}, "")
+	plan.explainEvents(t, plan.id)
+	if got := setMode(t, plan.agentDir); got != "" {
+		t.Fatalf("switched from plan to %q", got)
+	}
+}
+
+// A session that starts in a mode acting without asking, with no other mode
+// offered, never gets the prompt.
+func TestARunRefusesASessionThatNeverAsks(t *testing.T) {
+	f := newAgentRunFixture(t, "codex", acpScript{Modes: &acpModes{Current: "full-access", Available: []string{"full-access", "auto"}}, Steps: []acpStep{{Say: "should not run"}}}, "")
+	code, evs := f.explainEvents(t, f.id)
+	last := evs[len(evs)-1]
+	if code != 200 || last["type"] != "error" || !strings.Contains(m(last["error"])["message"].(string), "without asking") {
+		t.Fatalf("explain: %d %v", code, evs)
+	}
+	if rec := agentRecord(t, f.agentDir); len(rec["prompt"]) != 0 {
+		t.Fatal("the agent was prompted")
+	}
+}
+
+// A permission request naming a session aiport did not open is denied.
+func TestAPermissionForAnotherSessionIsDenied(t *testing.T) {
+	f := newAgentRunFixture(t, "claude", acpScript{Steps: []acpStep{
+		{Ask: &acpAsk{Kind: "read", Title: "Read README.md", Path: "CWD/README.md", Session: "sess-other"}},
+		{Say: "ok"},
+	}}, "")
+	f.explainEvents(t, f.id)
+	if got := answers(t, f.agentDir); got != "Read README.md=reject_once" {
+		t.Fatalf("answers: %s", got)
 	}
 }

@@ -33,6 +33,15 @@ type acpScript struct {
 	Steps    []acpStep `json:"steps"`
 	// Stop is the prompt's stopReason (default end_turn).
 	Stop string `json:"stop,omitempty"`
+	// Modes, when set, are the session modes session/new offers.
+	Modes *acpModes `json:"modes,omitempty"`
+}
+
+// acpModes are ACP session modes: the current one and those offered (id =
+// name).
+type acpModes struct {
+	Current   string   `json:"current"`
+	Available []string `json:"available"`
 }
 
 // acpStep is one step: exactly one field set.
@@ -45,6 +54,16 @@ type acpStep struct {
 	Cancel bool    `json:"cancel,omitempty"` // wait for session/cancel, then end the turn as cancelled
 	Ignore bool    `json:"ignore,omitempty"` // hang forever, ignoring session/cancel
 	Exit   *int    `json:"exit,omitempty"`   // exit at once with this status
+	// Edit writes a file without asking (an edit the agent's own settings
+	// auto-allow) and reports it as a completed edit tool call.
+	Edit *acpEdit `json:"edit,omitempty"`
+}
+
+// acpEdit is an edit made without asking: Text written to Path (CWD in it
+// stands for the agent's working directory).
+type acpEdit struct {
+	Path string `json:"path"`
+	Text string `json:"text"`
 }
 
 type acpAsk struct {
@@ -59,6 +78,9 @@ type acpAsk struct {
 	// Input is the tool call's rawInput (for a command, {"command": ...});
 	// CWD in it stands for the agent's working directory.
 	Input map[string]any `json:"input,omitempty"`
+	// Session, when set, is the session id the request names (default the
+	// session aiport opened).
+	Session string `json:"session,omitempty"`
 	// Options are the option kinds offered (default allow_once,
 	// allow_always, reject_once, reject_always).
 	Options []string `json:"options,omitempty"`
@@ -145,7 +167,11 @@ func fakeACPAgent(script string) int {
 				if path != "" {
 					tc["locations"] = []map[string]any{{"path": path}}
 				}
-				send(map[string]any{"jsonrpc": "2.0", "id": askID, "method": "session/request_permission", "params": map[string]any{"sessionId": session, "toolCall": tc, "options": opts}})
+				asking := session
+				if st.Ask.Session != "" {
+					asking = st.Ask.Session
+				}
+				send(map[string]any{"jsonrpc": "2.0", "id": askID, "method": "session/request_permission", "params": map[string]any{"sessionId": asking, "toolCall": tc, "options": opts}})
 				var res struct {
 					Outcome struct {
 						Outcome  string `json:"outcome"`
@@ -172,6 +198,11 @@ func fakeACPAgent(script string) int {
 				return
 			case st.Ignore:
 				select {}
+			case st.Edit != nil:
+				path := strings.ReplaceAll(st.Edit.Path, "CWD", cwd)
+				_ = os.MkdirAll(filepath.Dir(path), 0o755)
+				_ = os.WriteFile(path, []byte(st.Edit.Text), 0o644)
+				update(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "t" + strconv.Itoa(i), "title": "Edit " + filepath.Base(path), "kind": "edit", "status": "completed", "locations": []map[string]any{{"path": path}}})
 			case st.Exit != nil:
 				os.Exit(*st.Exit)
 			}
@@ -212,7 +243,18 @@ func fakeACPAgent(script string) int {
 			reply(map[string]any{"protocolVersion": v, "agentCapabilities": map[string]any{"loadSession": false}, "authMethods": []any{}})
 		case m.Method == "session/new":
 			record("session", json.RawMessage(m.Params))
-			reply(map[string]any{"sessionId": "sess-1"})
+			res := map[string]any{"sessionId": "sess-1"}
+			if s.Modes != nil {
+				var modes []map[string]any
+				for _, id := range s.Modes.Available {
+					modes = append(modes, map[string]any{"id": id, "name": id})
+				}
+				res["modes"] = map[string]any{"currentModeId": s.Modes.Current, "availableModes": modes}
+			}
+			reply(res)
+		case m.Method == "session/set_mode":
+			record("set_mode", json.RawMessage(m.Params))
+			reply(map[string]any{})
 		case m.Method == "session/prompt":
 			var p struct {
 				SessionID string `json:"sessionId"`

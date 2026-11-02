@@ -188,7 +188,8 @@ type newSessionParams struct {
 }
 
 type newSessionResult struct {
-	SessionID string `json:"sessionId"`
+	SessionID string        `json:"sessionId"`
+	Modes     *sessionModes `json:"modes,omitempty"`
 }
 
 type contentBlock struct {
@@ -220,7 +221,7 @@ type sessionUpdate struct {
 	Content       *contentBlock `json:"content,omitempty"`
 	ToolCallID    string        `json:"toolCallId,omitempty"`
 	Title         string        `json:"title,omitempty"`
-	Kind          string        `json:"kind,omitempty"`
+	Kind          ToolKind      `json:"kind,omitempty"`
 	Status        string        `json:"status,omitempty"`
 	Entries       []struct {
 		Content string `json:"content"`
@@ -229,9 +230,9 @@ type sessionUpdate struct {
 }
 
 type toolCall struct {
-	ToolCallID string `json:"toolCallId"`
-	Title      string `json:"title"`
-	Kind       string `json:"kind"`
+	ToolCallID string   `json:"toolCallId"`
+	Title      string   `json:"title"`
+	Kind       ToolKind `json:"kind"`
 	Locations  []struct {
 		Path string `json:"path"`
 	} `json:"locations"`

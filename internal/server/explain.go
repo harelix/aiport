@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"aiport/internal/agentrun"
 	"aiport/internal/config"
 	"aiport/internal/decide"
 	"aiport/internal/explain"
@@ -17,24 +18,25 @@ import (
 // ExplainTimeout bounds one explanation written by a Connection.
 const ExplainTimeout = 2 * time.Minute
 
-// explainer is who writes the explanation of an Issue of Application app.
-// Without a writer, code and hint say why Explain is unavailable.
+// explainer is who writes the explanation of an Issue of Application app:
+// a Coding agent (agent, an Agent run) or a Connection (w). Without either,
+// code and hint say why Explain is unavailable.
 //
 // This is the one place that chooses the writer: an Application with a
 // connected Coding agent gets an Agent run here (spec #21, Explain by a
 // Coding agent), every other Application the Connection and model the Owner
 // chose in Settings (adapting.explain).
-func (h *Handler) explainer(app string) (w explain.Writer, code, hint string) {
+func (h *Handler) explainer(app string) (w explain.Writer, agent *agentWriter, code, hint string) {
 	if h.decisions == nil || !h.decisions.On() {
-		return nil, "adapting_off", "Explain is unavailable while adapting is turned off in the configuration."
+		return nil, nil, "adapting_off", "Explain is unavailable while adapting is turned off in the configuration."
 	}
 	if a := h.agentExplainer(app); a != nil {
-		return a, "", ""
+		return nil, a, "", ""
 	}
 	c := h.live.Config()
 	e := c.Adapting.Explain
 	if e.Connection == "" {
-		return nil, "explainer_not_chosen", "Choose the Connection and model that write explanations in Settings first."
+		return nil, nil, "explainer_not_chosen", "Choose the Connection and model that write explanations in Settings first."
 	}
 	protocol := ""
 	for _, t := range c.Targets {
@@ -42,7 +44,7 @@ func (h *Handler) explainer(app string) (w explain.Writer, code, hint string) {
 			protocol = t.Protocol
 		}
 	}
-	return explain.Connection{Gateway: h.gateway, Connection: e.Connection, Model: e.Model, Protocol: protocol, Record: h.recordOwn}, "", ""
+	return explain.Connection{Gateway: h.gateway, Connection: e.Connection, Model: e.Model, Protocol: protocol, Record: h.recordOwn}, nil, "", ""
 }
 
 // recordOwn records one of aiport's own model calls for Activity.
@@ -55,7 +57,7 @@ func (h *Handler) recordOwn(e telemetry.Event) {
 
 // explainStatus is what GET /api/v1/issues says about Explain.
 func (h *Handler) explainStatus() map[string]any {
-	w, _, hint := h.explainer("")
+	w, _, _, hint := h.explainer("")
 	if w == nil {
 		return map[string]any{"available": false, "hint": hint}
 	}
@@ -102,13 +104,17 @@ func (h *Handler) explainRoute(w http.ResponseWriter, r *http.Request, fail func
 		fail(404, "issue_not_found", "No Issue with this id")
 		return true
 	}
-	writer, code, hint := h.explainer(is.Application)
-	if writer == nil {
+	writer, agent, code, hint := h.explainer(is.Application)
+	if writer == nil && agent == nil {
 		fail(409, code, hint)
 		return true
 	}
 	if _, going := h.runner().Active(is.Application); going {
-		fail(409, "agent_run_running", "An Agent run for this Application is going; wait for it to end or stop it")
+		fail(409, "agent_run_running", agentrun.ErrBusy.Error())
+		return true
+	}
+	if agent != nil {
+		h.explainByAgent(w, r, agent, is, fail)
 		return true
 	}
 	if !h.startExplaining(is.Application) {
@@ -117,45 +123,71 @@ func (h *Handler) explainRoute(w http.ResponseWriter, r *http.Request, fail func
 	}
 	defer h.stopExplaining(is.Application)
 
+	send := stream(w)
+	send(map[string]any{"type": "start", "by": writer.By()})
+	ctx, cancel := context.WithTimeout(r.Context(), ExplainTimeout)
+	e, err := writer.Explain(ctx, is, func(text string) { send(map[string]any{"type": "text", "text": text}) })
+	cancel()
+	if err == nil {
+		is, err = h.decisions.Explain(id, e, h.clock())
+	}
+	h.sendOutcome(send, is, err, ExplainTimeout)
+	return true
+}
+
+// explainByAgent starts Explain by a Coding agent and streams its run until
+// it ends or the request does: the run goes on without the request (the
+// dashboard follows it again with GET /api/v1/issues/{id}/run) and saves its
+// explanation when it ends.
+func (h *Handler) explainByAgent(w http.ResponseWriter, r *http.Request, agent *agentWriter, is decide.Issue, fail func(int, string, string)) {
+	run, err := agent.start(is)
+	switch {
+	case errors.Is(err, agentrun.ErrBusy):
+		fail(409, "agent_run_running", err.Error())
+		return
+	case err != nil:
+		fail(409, "explanation_failed", "No explanation: "+err.Error())
+		return
+	}
+	send := stream(w)
+	send(map[string]any{"type": "start", "by": agent.By()})
+	send(map[string]any{"type": "run", "run": run.Info()})
+	if run.Follow(r.Context(), func(u agentrun.Update) {
+		switch u.Kind {
+		case agentrun.UpdateText:
+			send(map[string]any{"type": "text", "text": u.Text})
+		case agentrun.UpdateStatus:
+		default:
+			send(map[string]any{"type": "step", "step": u})
+		}
+	}) != nil {
+		return // the request ended; the run goes on
+	}
+	<-run.Done()
+	h.sendOutcome(send, run.issue, run.err, agent.limit)
+}
+
+// stream starts a JSON-lines answer and returns how to send one event.
+func stream(w http.ResponseWriter) func(any) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(200)
 	rc := http.NewResponseController(w)
 	enc := json.NewEncoder(w)
-	send := func(v any) {
+	return func(v any) {
 		_ = enc.Encode(v)
 		_ = rc.Flush()
 	}
-	send(map[string]any{"type": "start", "by": writer.By()})
-	text := func(text string) { send(map[string]any{"type": "text", "text": text}) }
-	var e decide.Explanation
-	var err error
-	limit := ExplainTimeout
-	if sw, ok := writer.(explain.StepWriter); ok {
-		// An Agent run keeps its own time limit; it ends with the request.
-		limit = sw.Limit()
-		e, err = sw.ExplainSteps(r.Context(), is, text, func(s explain.Step) {
-			if s.Kind == "run" {
-				send(map[string]any{"type": "run", "run": s.Run})
-				return
-			}
-			send(map[string]any{"type": "step", "step": s})
-		})
-	} else {
-		ctx, cancel := context.WithTimeout(r.Context(), ExplainTimeout)
-		e, err = writer.Explain(ctx, is, text)
-		cancel()
-	}
-	if err == nil {
-		is, err = h.decisions.Explain(id, e, h.clock())
-	}
-	switch {
-	case err != nil:
+}
+
+// sendOutcome sends the last event of an explain stream: done with the
+// saved Issue, or the error.
+func (h *Handler) sendOutcome(send func(any), is decide.Issue, err error, limit time.Duration) {
+	if err != nil {
 		code, message := runRefusal(err, limit)
 		send(map[string]any{"type": "error", "error": map[string]string{"code": code, "message": message}})
-	default:
-		send(map[string]any{"type": "done", "issue": is})
+		return
 	}
-	return true
+	send(map[string]any{"type": "done", "issue": is})
 }
 
 func (h *Handler) startExplaining(app string) bool {

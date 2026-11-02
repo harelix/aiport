@@ -1,10 +1,16 @@
 package server
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Explain by a Coding agent: an Application with a connected Coding agent
@@ -26,6 +32,12 @@ func newAgentRunFixture(t *testing.T, agent string, script acpScript, extra stri
 	t.Helper()
 	writer := newFakeWriter(t, "unused")
 	repo := gitRepository(t)
+	// One commit: an Agent run works in a worktree of the Owner's HEAD.
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("docs-bot\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "add", "-A")
+	gitIn(t, repo, "commit", "-q", "-m", "start")
 	bin := t.TempDir()
 	dir := installFakeAgent(t, bin, agent, script)
 	f := &agentRunFixture{repo: repo, agentDir: dir, bin: bin}
@@ -98,15 +110,25 @@ func TestExplainByACodingAgentStreamsAndSavesTheRootCause(t *testing.T) {
 		Cwd  string   `json:"cwd"`
 	}
 	_ = json.Unmarshal(rec["start"][0], &start)
-	if real, _ := filepath.EvalSymlinks(start.Cwd); real != f.repo {
-		t.Fatalf("the agent ran in %q, not the repository %q", start.Cwd, f.repo)
+	// It read a throwaway worktree of the Owner's HEAD, never the Owner's
+	// working copy, removed once the run ended; no branch was made.
+	root, _ := filepath.EvalSymlinks(filepath.Dir(f.h.worktreeRoot()))
+	root = filepath.Join(root, filepath.Base(f.h.worktreeRoot()))
+	if filepath.Dir(start.Cwd) != root {
+		t.Fatalf("the agent ran in %q, not a worktree under %q (repository %q)", start.Cwd, root, f.repo)
+	}
+	if _, err := os.Stat(start.Cwd); err == nil {
+		t.Fatalf("the Explain worktree %s is still there", start.Cwd)
+	}
+	if len(worktrees(t, f.repo)) != 1 || strings.Contains(gitIn(t, f.repo, "branch", "--list"), "aiport/") {
+		t.Fatalf("left behind: %v %s", worktrees(t, f.repo), gitIn(t, f.repo, "branch", "--list"))
 	}
 	var session struct {
 		Cwd        string `json:"cwd"`
 		MCPServers []any  `json:"mcpServers"`
 	}
 	_ = json.Unmarshal(rec["session"][0], &session)
-	if session.Cwd != f.repo || session.MCPServers == nil || len(session.MCPServers) != 0 {
+	if session.Cwd != start.Cwd || session.MCPServers == nil || len(session.MCPServers) != 0 {
 		t.Fatalf("session/new: %s", rec["session"][0])
 	}
 	var initialize struct {
@@ -140,5 +162,64 @@ func TestExplainByACodingAgentStreamsAndSavesTheRootCause(t *testing.T) {
 		if strings.Contains(prompt, s) {
 			t.Fatalf("the prompt holds %q", s)
 		}
+	}
+}
+
+// Explain reads a throwaway worktree: even an edit the agent's own settings
+// allow without asking (aiport never sees it) cannot touch the Owner's
+// working copy.
+func TestAnEditExplainNeverSeesStaysOutOfTheOwnersCopy(t *testing.T) {
+	f := newAgentRunFixture(t, "claude", acpScript{Steps: []acpStep{
+		{Edit: &acpEdit{Path: "CWD/README.md", Text: "changed by the agent\n"}},
+		{Say: "The model name is wrong."},
+	}}, "")
+	before, _ := os.ReadFile(filepath.Join(f.repo, "README.md"))
+	code, evs := f.explainEvents(t, f.id)
+	if code != 200 || evs[len(evs)-1]["type"] != "done" {
+		t.Fatalf("explain: %d %v", code, evs)
+	}
+	after, _ := os.ReadFile(filepath.Join(f.repo, "README.md"))
+	if string(after) != string(before) || gitIn(t, f.repo, "status", "--porcelain") != "" {
+		t.Fatalf("the Owner's working copy changed: %q", after)
+	}
+	if len(worktrees(t, f.repo)) != 1 {
+		t.Fatalf("the Explain worktree is left: %v", worktrees(t, f.repo))
+	}
+}
+
+// An Explain run does not depend on the dashboard's request: closing the
+// tab never stops it; it ends on its own, saves its explanation, and its
+// log stays readable at GET /api/v1/issues/{id}/run.
+func TestClosingTheTabDoesNotStopExplain(t *testing.T) {
+	f := newAgentRunFixture(t, "claude", acpScript{Steps: []acpStep{{Say: "Looking. "}, {Wait: "go"}, {Say: "Found it."}}}, "")
+	srv := httptest.NewServer(f.h)
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "POST", srv.URL+"/api/v1/issues/"+f.id+"/explain", nil)
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Authorization", "Bearer "+issuesManagement)
+	req.Header.Set("X-Aiport-CSRF", "1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("explain: %v %v", err, resp)
+	}
+	lines := bufio.NewScanner(resp.Body)
+	for lines.Scan() && !strings.Contains(lines.Text(), `"type":"text"`) {
+	}
+	cancel() // the Owner closes the tab
+	resp.Body.Close()
+	time.Sleep(100 * time.Millisecond)
+	_, out := call(f.h, "GET", "/api/v1/runs", "", issuesManagement, false)
+	if runs, _ := out["runs"].([]any); len(runs) != 1 {
+		t.Fatalf("the run ended with the request: %v", out)
+	}
+	release(t, f.agentDir, "go")
+	waitFor(t, func() bool {
+		ex := m(f.only(t)["explanation"])
+		return ex != nil && ex["text"] == "Looking. Found it."
+	})
+	_, logged := call(f.h, "GET", "/api/v1/issues/"+f.id+"/run", "", issuesManagement, false)
+	if m(logged["run"])["state"] != "done" || len(logged["log"].([]any)) < 2 {
+		t.Fatalf("the run log: %v", logged)
 	}
 }

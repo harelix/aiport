@@ -2,9 +2,8 @@
 // words, streamed as it is written. A Writer is anything that can write one;
 // Connection is the Writer that asks a Connection and model the Owner chose
 // (adapting.explain), from the Issue's evidence alone. A Coding agent that
-// explains an Issue (an Agent run) is another Writer behind the same
-// interface, so the dashboard's stream and the saved explanation are the
-// same whoever writes it.
+// explains an Issue is an Agent run (internal/server), which streams the
+// same events and saves its explanation the same way when it ends.
 package explain
 
 import (
@@ -35,30 +34,6 @@ type Writer interface {
 	// as it arrives, and returns the whole explanation (By plus Text). It
 	// stops when ctx ends. Errors are aiport's own words, safe to show.
 	Explain(ctx context.Context, is decide.Issue, emit func(text string)) (decide.Explanation, error)
-}
-
-// Step is one thing a Writer did besides writing (an Agent run: a thought,
-// a tool call, a permission it denied), shown in the run panel.
-type Step struct {
-	Kind    string `json:"kind"` // thought, tool, plan, permission, run
-	Text    string `json:"text"`
-	Tool    string `json:"tool,omitempty"`
-	Status  string `json:"status,omitempty"`
-	Verdict string `json:"verdict,omitempty"`
-	Reason  string `json:"reason,omitempty"`
-	// Run describes the Agent run (kind run, first): which agent, where
-	// its model calls go, its id for Stop.
-	Run any `json:"run,omitempty"`
-}
-
-// StepWriter is a Writer whose work has steps the dashboard shows as they
-// happen (an Agent run), and its own time limit.
-type StepWriter interface {
-	Writer
-	// ExplainSteps is Explain, also calling step with each step.
-	ExplainSteps(ctx context.Context, is decide.Issue, emit func(text string), step func(Step)) (decide.Explanation, error)
-	// Limit is how long it may take.
-	Limit() time.Duration
 }
 
 // Opener sends aiport's own request to a Connection (proxy.Gateway.Open).

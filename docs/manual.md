@@ -541,24 +541,43 @@ Connection from Settings explains, as above.
 
 - **How it starts**: only on your click, never by itself (not even with
   automatic fixes on), and never with adapting off. aiport starts the ACP
-  entry point it found, by absolute path, never through a shell, in the
-  repository, with a minimal environment: `PATH` (the agent's own
+  entry point it found, by absolute path, never through a shell, with a
+  minimal environment: `PATH` (the agent's own
   directory first, then the absolute directories of aiport's `PATH`, so an
   npm-installed adapter finds `node`), `HOME`, `TMPDIR`, `LANG`, `LC_ALL`,
   `USER`, `LOGNAME`, and, for Claude Code, the variables below. Never
   aiport's tokens or provider keys, and no MCP connection to aiport.
+- **A throwaway copy, never your working copy**: the agent reads a git
+  worktree of the repository that aiport makes for the run, detached at
+  your current commit (`HEAD`, no branch), in `aiport.yaml.worktrees/`,
+  and removes when the run ends. Your working copy is never where the
+  agent works, so even an edit the agent's own settings allow without
+  asking (see "What aiport cannot see" below) cannot touch your files.
+  Your uncommitted changes are not in that copy; the repository needs at
+  least one commit.
 - **What the agent is told**: the Issue's evidence (the same as above) and
-  that the run is read-only. Nothing an Application wrote.
+  that the run is read-only.
 - **Read-only**: aiport answers every permission request itself, without
-  asking you. Reading and searching inside the repository are allowed;
-  every edit, delete, command and anything outside the repository is
-  denied. aiport only ever answers "once", so nothing is remembered in the
-  agent's own settings.
+  asking you. Reading and searching inside the run's copy are allowed;
+  every edit, delete, command and anything outside that copy (also your
+  own working copy) is denied. aiport only ever answers "once", so nothing
+  is remembered in the agent's own settings. A permission request that
+  names a session aiport did not open is denied.
+- **Session modes**: when the agent offers modes (Claude Code's adapter
+  offers, for example, `default`, `acceptEdits`, `plan` and
+  `bypassPermissions`), aiport switches the session to the most
+  restrictive suitable one: plan or read-only for Explain, one that asks
+  before acting (such as `default`) for Fix it. It never picks a mode that
+  bypasses or auto-accepts. If the session starts in such a mode (from
+  your own settings) and the agent offers no other, aiport does not run
+  it. The run panel names the mode chosen.
 - **The run panel** under the Issue shows the agent's name, where its
   model calls go, its steps (thoughts, files read, permissions allowed or
   denied) and its words as they come. **Stop** ends the run at any time
-  (the agent is asked to cancel, then its whole process group is ended);
-  so does leaving the page. Nothing is saved from a stopped run.
+  (the agent is asked to cancel, then its whole process group is ended).
+  Nothing is saved from a stopped run. Closing the tab or leaving the page
+  does not stop it: the run goes on, saves its explanation when it ends,
+  and the run panel picks it up again when you come back.
 - **Limits**: one Agent run per Application at a time; an Explain run
   stops after 10 minutes (`agent_runs.explain_minutes`), and nothing is
   saved.

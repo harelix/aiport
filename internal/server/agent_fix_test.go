@@ -39,7 +39,7 @@ func newFixFixture(t *testing.T, script acpScript) (*agentRunFixture, string) {
 	if real, err := filepath.EvalSymlinks(outside); err == nil {
 		outside = real
 	}
-	gitIn(t, f.repo, "checkout", "-q", "-b", "main")
+	gitIn(t, f.repo, "checkout", "-q", "-B", "main")
 	if err := os.WriteFile(filepath.Join(f.repo, "config.py"), []byte("MODEL = 'llama3:8b'\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"aiport/internal/config"
 	"aiport/internal/decide"
 	"aiport/internal/explain"
+	"aiport/internal/worktree"
 )
 
 // Agent runs (spec harelix/aiport#21): aiport starts an Application's
@@ -223,50 +225,66 @@ func (a *agentWriter) By() decide.Explanation {
 	return decide.Explanation{Source: decide.ByCodingAgent, Agent: a.agent.ID}
 }
 
-func (a *agentWriter) Limit() time.Duration { return a.limit }
-
-func (a *agentWriter) Explain(ctx context.Context, is decide.Issue, emit func(string)) (decide.Explanation, error) {
-	return a.ExplainSteps(ctx, is, emit, nil)
+// explainRun is an Explain Agent run: once Done, Issue is the Issue with
+// the saved explanation, or Err says why nothing was saved.
+type explainRun struct {
+	*agentrun.Run
+	issue decide.Issue
+	err   error
 }
 
-// ExplainSteps runs the agent read-only in the repository until it ends its
-// turn, ctx ends, the Owner stops it or the time limit; the agent's words
-// are the explanation.
-func (a *agentWriter) ExplainSteps(ctx context.Context, is decide.Issue, emit func(string), step func(explain.Step)) (decide.Explanation, error) {
-	out := a.By()
-	env, token, revoke := a.h.runEnv(a.agent.ID, a.calls)
-	defer revoke()
-	run, err := a.h.runner().Start(ctx, agentrun.Spec{
+// start starts Explain for is: the agent reads a throwaway worktree of the
+// repository, detached at the Owner's HEAD (never the Owner's working
+// copy), read-only, until it ends its turn, the Owner stops it or the time
+// limit. The run does not depend on any request: when it ends, the agent's
+// words are saved as the explanation and the worktree is removed.
+func (a *agentWriter) start(is decide.Issue) (*explainRun, error) {
+	h := a.h
+	if _, going := h.runner().Active(a.app); going {
+		return nil, agentrun.ErrBusy
+	}
+	t, err := worktree.Detached(a.repo, h.worktreeRoot(), is.ID)
+	if err != nil {
+		return nil, err
+	}
+	env, token, revoke := h.runEnv(a.agent.ID, a.calls)
+	er := &explainRun{}
+	run, err := h.runner().Start(context.Background(), agentrun.Spec{
 		Application: a.app, Issue: is.ID, Mode: agentrun.Explain, Agent: a.agent.ID, AgentName: a.agent.Name,
-		Program: agentrun.Program{Path: a.agent.ACP.Path, Args: a.agent.ACP.Args}, Dir: a.repo,
-		Prompt: explainPrompt(is), Env: env, Secret: token, ModelCalls: a.calls, Limit: a.limit, Policy: readOnly(a.repo),
+		Program: agentrun.Program{Path: a.agent.ACP.Path, Args: a.agent.ACP.Args}, Dir: t.Dir,
+		Prompt: explainPrompt(is), Env: env, Secret: token, ModelCalls: a.calls, Limit: a.limit, Policy: readOnly(t.Dir),
+		OnEnd: func(run *agentrun.Run) {
+			revoke()
+			h.removeTree(t)
+			e := a.By()
+			e.Text = run.Text()
+			switch {
+			case run.Err() != nil:
+				er.err = run.Err()
+			case strings.TrimSpace(e.Text) == "":
+				er.err = errors.New("the agent ended its turn without an answer")
+			default:
+				er.issue, er.err = h.decisions.Explain(is.ID, e, h.clock())
+			}
+		},
 	})
 	if err != nil {
-		return out, err
+		revoke()
+		h.removeTree(t)
+		return nil, err
 	}
-	if step != nil {
-		step(explain.Step{Kind: "run", Run: run.Info()})
-	}
-	_ = run.Follow(context.Background(), func(u agentrun.Update) {
-		switch u.Kind {
-		case "text":
-			emit(u.Text)
-		case "status":
-		default:
-			if step != nil {
-				step(explain.Step{Kind: u.Kind, Text: u.Text, Tool: u.Tool, Status: u.Status, Verdict: u.Verdict, Reason: u.Reason})
-			}
-		}
-	})
-	out.Text = run.Text()
-	if err := run.Err(); err != nil {
-		return out, err
-	}
-	if strings.TrimSpace(out.Text) == "" {
-		return out, errors.New("the agent ended its turn without an answer")
-	}
-	return out, nil
+	er.Run = run
+	return er, nil
 }
+
+// removeTree removes worktree t (an Explain run's: no branch). A worktree
+// outside aiport's worktrees directory is left alone and logged.
+func (h *Handler) removeTree(t worktree.Tree) {
+	if err := t.Remove(); errors.Is(err, worktree.ErrNotOwned) {
+		log.Printf("aiport: left %s alone: it is not in aiport's worktrees directory %s", t.Dir, t.Root)
+	}
+}
+
 
 // explainBy says, for each Application whose Issues a Coding agent would
 // explain, which agent and where its model calls go (GET /api/v1/issues).

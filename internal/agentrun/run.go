@@ -94,9 +94,9 @@ type Spec struct {
 	Agent       string // the Coding agent id: claude, codex or gemini
 	AgentName   string
 	Program     Program
-	// Dir is where the agent works: the repository (Explain) or the run's
-	// own worktree (Fix). The session's cwd, and the root Policy confines
-	// paths to.
+	// Dir is where the agent works: a throwaway worktree of the repository
+	// (Explain) or the run's own worktree on a new branch (Fix). The
+	// session's cwd, and the root Policy confines paths to.
 	Dir    string
 	Prompt string
 	// Env is added to the minimal environment ("NAME=value").
@@ -106,8 +106,17 @@ type Spec struct {
 	Secret     string
 	ModelCalls ModelCalls
 	Limit      time.Duration
+	// Warnings are shown with the run (Info.Warnings): what aiport found
+	// before it started, such as agent settings in Dir that allow tools
+	// without asking.
+	Warnings []string
 	// Policy answers the agent's permission requests; nil denies all.
 	Policy Policy
+	// OnEdit, when set, is called whenever the agent edits, deletes or moves
+	// a file: a permission for that is allowed, or the agent reports such a
+	// tool call (one it made without asking). It may run concurrently with
+	// Policy.
+	OnEdit func()
 	// OnEnd, when set, runs once the agent has exited (or could not start)
 	// and the run's end is recorded (Info().State, Err), before the
 	// Application is free again and Done is closed (a Fix run collects its
@@ -115,16 +124,35 @@ type Spec struct {
 	OnEnd func(*Run)
 }
 
+// ToolKind is the ACP kind of a tool call.
+type ToolKind string
+
+const (
+	ToolRead       ToolKind = "read"
+	ToolEdit       ToolKind = "edit"
+	ToolDelete     ToolKind = "delete"
+	ToolMove       ToolKind = "move"
+	ToolSearch     ToolKind = "search"
+	ToolExecute    ToolKind = "execute"
+	ToolThink      ToolKind = "think"
+	ToolFetch      ToolKind = "fetch"
+	ToolSwitchMode ToolKind = "switch_mode"
+	ToolOther      ToolKind = "other"
+)
+
+// Changes reports whether a tool call of kind k changes files.
+func (k ToolKind) Changes() bool { return k == ToolEdit || k == ToolDelete || k == ToolMove }
+
 // Permission is one permission request from the agent: the tool call it
 // wants to make.
 type Permission struct {
+	// Run is the id of the run asking.
+	Run        string
 	ToolCallID string
 	Title      string
-	// Kind is the ACP tool kind: read, edit, delete, move, search, execute,
-	// think, fetch, switch_mode or other.
-	Kind string
-	// Paths are the absolute paths the tool call touches, as the agent
-	// reports them.
+	Kind       ToolKind
+	// Paths are the paths the tool call touches, as the agent reports them
+	// in its locations; Input may name more.
 	Paths []string
 	// Input is the tool call's raw input as the agent sent it (for a
 	// command, the command line); never shown unfiltered.
@@ -143,17 +171,38 @@ type Verdict struct {
 // the Owner; ctx ends when the run ends.
 type Policy func(ctx context.Context, p Permission) Verdict
 
+// UpdateKind is what an Update is.
+type UpdateKind string
+
+const (
+	UpdateText       UpdateKind = "text"       // the agent's words
+	UpdateThought    UpdateKind = "thought"    // its thinking
+	UpdateTool       UpdateKind = "tool"       // a tool call it made
+	UpdatePlan       UpdateKind = "plan"       // its plan
+	UpdatePermission UpdateKind = "permission" // a permission aiport answered
+	UpdateMode       UpdateKind = "mode"       // the session mode aiport chose
+	UpdateStatus     UpdateKind = "status"     // how the run ended
+)
+
+// Answer is how aiport answered a permission request.
+type Answer string
+
+const (
+	Allowed Answer = "allowed"
+	Denied  Answer = "denied"
+)
+
 // Update is one entry in a run's log, streamed as it happens.
 type Update struct {
-	Seq  int    `json:"seq"`
-	At   int64  `json:"at_ms"`
-	Kind string `json:"kind"` // text, thought, tool, plan, permission, status
-	Text string `json:"text"`
+	Seq  int        `json:"seq"`
+	At   int64      `json:"at_ms"`
+	Kind UpdateKind `json:"kind"`
+	Text string     `json:"text"`
 	// Tool is the tool kind (tool and permission updates).
-	Tool   string `json:"tool,omitempty"`
-	Status string `json:"status,omitempty"`
-	// Verdict is allowed or denied (permission updates), with Reason.
-	Verdict string `json:"verdict,omitempty"`
+	Tool   ToolKind `json:"tool,omitempty"`
+	Status string   `json:"status,omitempty"`
+	// Verdict is how a permission was answered, with Reason.
+	Verdict Answer `json:"verdict,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 }
 
@@ -166,12 +215,16 @@ type Info struct {
 	Agent       string     `json:"agent"`
 	AgentName   string     `json:"agent_name"`
 	ModelCalls  ModelCalls `json:"model_calls"`
-	State       State      `json:"state"`
-	StopReason  string     `json:"stop_reason,omitempty"`
-	Error       string     `json:"error,omitempty"`
-	StartedAt   int64      `json:"started_at_ms"`
-	EndedAt     int64      `json:"ended_at_ms,omitempty"`
-	LimitMS     int64      `json:"limit_ms"`
+	// SessionMode is the agent's session mode aiport chose (ACP session
+	// modes), when the agent offers modes.
+	SessionMode string   `json:"session_mode,omitempty"`
+	Warnings    []string `json:"warnings,omitempty"`
+	State       State    `json:"state"`
+	StopReason  string   `json:"stop_reason,omitempty"`
+	Error       string   `json:"error,omitempty"`
+	StartedAt   int64    `json:"started_at_ms"`
+	EndedAt     int64    `json:"ended_at_ms,omitempty"`
+	LimitMS     int64    `json:"limit_ms"`
 }
 
 // Runner holds the runs: at most one going per Application, and the last
@@ -233,7 +286,7 @@ func (r *Runner) Start(ctx context.Context, spec Spec) (*Run, error) {
 	runCtx, cancel := context.WithTimeout(ctx, limit)
 	run := &Run{spec: spec, r: r, id: r.id(), stop: cancel, changed: make(chan struct{}), done: make(chan struct{})}
 	run.info = Info{ID: run.id, Application: spec.Application, Issue: spec.Issue, Mode: spec.Mode, Agent: spec.Agent, AgentName: spec.AgentName,
-		ModelCalls: spec.ModelCalls, State: Running, StartedAt: r.now().UnixMilli(), LimitMS: spec.Limit.Milliseconds()}
+		ModelCalls: spec.ModelCalls, Warnings: spec.Warnings, State: Running, StartedAt: r.now().UnixMilli(), LimitMS: limit.Milliseconds()}
 	r.active[spec.Application] = run
 	r.last[spec.Issue] = run
 	r.mu.Unlock()
@@ -464,7 +517,7 @@ func (run *Run) loop(ctx context.Context) {
 			return
 		}
 		var n sessionNotification
-		if s := current.Load().(string); json.Unmarshal(params, &n) != nil || (s != "" && n.SessionID != s) {
+		if s := current.Load().(string); json.Unmarshal(params, &n) != nil || s == "" || n.SessionID != s {
 			return
 		}
 		run.update(n.Update)
@@ -476,6 +529,9 @@ func (run *Run) loop(ctx context.Context) {
 		var p permissionParams
 		if json.Unmarshal(params, &p) != nil {
 			return nil, &rpcError{Code: -32602, Message: "invalid permission request"}
+		}
+		if s := current.Load().(string); s == "" || p.SessionID != s {
+			return run.deny(p, "a permission request for a session aiport did not open"), nil
 		}
 		return run.permission(ctx, p), nil
 	}
@@ -497,6 +553,9 @@ func (run *Run) loop(ctx context.Context) {
 	}
 	session := ns.SessionID
 	current.Store(session)
+	if err = run.chooseMode(ctx, c, session, ns.Modes); err != nil {
+		return
+	}
 	type answer struct {
 		res promptResult
 		err error
@@ -532,6 +591,44 @@ func (run *Run) loop(ctx context.Context) {
 	default:
 		err = errors.New("the agent ended its turn with " + quote(stopReason))
 	}
+}
+
+// chooseMode selects the most restrictive suitable session mode the agent
+// offers (ACP session modes): read-only or plan for Explain, one that asks
+// for permission for Fix; never one that lets the agent act without asking.
+// It fails the run when the session starts in such a mode and the agent
+// offers no other.
+func (run *Run) chooseMode(ctx context.Context, c *conn, session string, modes *sessionModes) error {
+	if modes == nil || len(modes.AvailableModes) == 0 {
+		return nil
+	}
+	pick, why := choose(run.spec.Mode, *modes)
+	current := modes.CurrentModeID
+	if pick.ID == "" {
+		if classify(modeOf(*modes, current)) == modeUnsafe {
+			return errors.New("the agent's session starts in the mode " + quote(current) + ", which lets it act without asking, and it offers no mode that asks; aiport does not run it")
+		}
+		run.setMode(current, "aiport found no read-only or asking mode among the agent's modes; it keeps "+quote(current))
+		return nil
+	}
+	if pick.ID != current {
+		if e := c.call(ctx, "session/set_mode", setModeParams{SessionID: session, ModeID: pick.ID}, nil); e != nil {
+			if classify(modeOf(*modes, current)) != modeUnsafe {
+				run.setMode(current, "the agent refused the mode "+quote(pick.ID)+"; it keeps "+quote(current))
+				return nil
+			}
+			return run.failure("the agent refused the mode "+quote(pick.ID)+" and its session lets it act without asking", e)
+		}
+	}
+	run.setMode(pick.ID, why)
+	return nil
+}
+
+func (run *Run) setMode(id, text string) {
+	run.mu.Lock()
+	run.info.SessionMode = id
+	run.mu.Unlock()
+	run.add(Update{Kind: UpdateMode, Text: text})
 }
 
 // failure is a run's failure in aiport's words; an ACP error's message is
@@ -586,35 +683,43 @@ func (run *Run) end(ctx context.Context, err error, stopReason string) {
 	close(run.done)
 }
 
-// update logs one session update the run panel shows.
+// update logs one session update the run panel shows; an edit the agent
+// reports (made with or without asking) is passed to Spec.OnEdit.
 func (run *Run) update(u sessionUpdate) {
 	switch u.SessionUpdate {
 	case "agent_message_chunk":
 		if u.Content != nil && u.Content.Type == "text" {
-			run.add(Update{Kind: "text", Text: u.Content.Text})
+			run.add(Update{Kind: UpdateText, Text: u.Content.Text})
 		}
 	case "agent_thought_chunk":
 		if u.Content != nil && u.Content.Type == "text" {
-			run.add(Update{Kind: "thought", Text: u.Content.Text})
+			run.add(Update{Kind: UpdateThought, Text: u.Content.Text})
 		}
-	case "tool_call":
-		run.add(Update{Kind: "tool", Text: short(u.Title), Tool: u.Kind, Status: u.Status})
-	case "tool_call_update":
-		if u.Status == "completed" || u.Status == "failed" {
-			run.add(Update{Kind: "tool", Text: short(u.Title), Tool: u.Kind, Status: u.Status})
+	case "tool_call", "tool_call_update":
+		if u.Kind.Changes() {
+			run.edited()
+		}
+		if u.SessionUpdate == "tool_call" || u.Status == "completed" || u.Status == "failed" {
+			run.add(Update{Kind: UpdateTool, Text: short(u.Title), Tool: u.Kind, Status: u.Status})
 		}
 	case "plan":
 		var b strings.Builder
 		for _, e := range u.Entries {
 			b.WriteString("- " + e.Content + "\n")
 		}
-		run.add(Update{Kind: "plan", Text: strings.TrimSpace(b.String())})
+		run.add(Update{Kind: UpdatePlan, Text: strings.TrimSpace(b.String())})
+	}
+}
+
+func (run *Run) edited() {
+	if run.spec.OnEdit != nil {
+		run.spec.OnEdit()
 	}
 }
 
 // permission answers one permission request with the run's Policy.
 func (run *Run) permission(ctx context.Context, p permissionParams) permissionResult {
-	perm := Permission{ToolCallID: p.ToolCall.ToolCallID, Title: p.ToolCall.Title, Kind: p.ToolCall.Kind, Input: p.ToolCall.RawInput}
+	perm := Permission{Run: run.id, ToolCallID: p.ToolCall.ToolCallID, Title: p.ToolCall.Title, Kind: p.ToolCall.Kind, Input: p.ToolCall.RawInput}
 	for _, l := range p.ToolCall.Locations {
 		perm.Paths = append(perm.Paths, l.Path)
 	}
@@ -622,36 +727,38 @@ func (run *Run) permission(ctx context.Context, p permissionParams) permissionRe
 	if run.spec.Policy != nil {
 		v = run.spec.Policy(ctx, perm)
 	}
-	want := "reject_once"
-	if v.Allow {
-		want = "allow_once"
+	if !v.Allow {
+		return run.deny(p, v.Reason)
 	}
-	choice := ""
-	for _, o := range p.Options {
-		if o.Kind == want {
-			choice = o.OptionID
-			break
-		}
-	}
-	if choice == "" && v.Allow {
-		v = Verdict{Reason: "the agent offered no way to allow it once"}
-		for _, o := range p.Options {
-			if o.Kind == "reject_once" {
-				choice = o.OptionID
-				break
-			}
-		}
-	}
-	verdict := "denied"
-	if v.Allow {
-		verdict = "allowed"
-	}
-	run.add(Update{Kind: "permission", Text: short(p.ToolCall.Title), Tool: p.ToolCall.Kind, Verdict: verdict, Reason: v.Reason})
+	choice := option(p, "allow_once")
 	if choice == "" {
-		// No option answers it once: cancelled denies without remembering.
-		return permissionResult{Outcome: permissionOutcome{Outcome: "cancelled"}}
+		return run.deny(p, "the agent offered no way to allow it once")
 	}
+	if perm.Kind.Changes() {
+		run.edited()
+	}
+	run.add(Update{Kind: UpdatePermission, Text: short(p.ToolCall.Title), Tool: p.ToolCall.Kind, Verdict: Allowed, Reason: v.Reason})
 	return permissionResult{Outcome: permissionOutcome{Outcome: "selected", OptionID: choice}}
+}
+
+// deny answers p "reject once" (or cancelled, when the agent offers no
+// way to reject it once: that denies without remembering) and logs why.
+func (run *Run) deny(p permissionParams, reason string) permissionResult {
+	run.add(Update{Kind: UpdatePermission, Text: short(p.ToolCall.Title), Tool: p.ToolCall.Kind, Verdict: Denied, Reason: reason})
+	if choice := option(p, "reject_once"); choice != "" {
+		return permissionResult{Outcome: permissionOutcome{Outcome: "selected", OptionID: choice}}
+	}
+	return permissionResult{Outcome: permissionOutcome{Outcome: "cancelled"}}
+}
+
+// option is the id of p's first option of kind, "" when none.
+func option(p permissionParams, kind string) string {
+	for _, o := range p.Options {
+		if o.Kind == kind {
+			return o.OptionID
+		}
+	}
+	return ""
 }
 
 // Environ is the minimal environment of an agent at program: the variables
