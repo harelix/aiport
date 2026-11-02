@@ -251,9 +251,12 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 }
 
 // ApplicationFix is the fix in the Application for Issue is, written for
-// its Coding agent: what is wrong, why, and what to change in the
-// Application. It is the one place that writes it (the Issues routes, MCP
-// and "Copy fix for the coding agent" all show this text).
+// its Coding agent so it can be pasted as-is: what is wrong, the evidence,
+// what aiport found, what to change in the Application and how to confirm
+// the fix. It is the one place that writes it (the Issues routes, MCP and
+// "Copy fix for the coding agent" all show this text). It holds only ids,
+// model names, counts, times and request ids: never prompts, provider
+// messages, keys or tokens.
 func ApplicationFix(is Issue) string {
 	switch is.Cause {
 	case CauseUnknownModel:
@@ -266,35 +269,71 @@ func ApplicationFix(is Issue) string {
 
 func unknownModelFix(is Issue) string {
 	var b strings.Builder
-	model := strconv.Quote(is.Subject)
-	ev := is.Evidence
-	b.WriteString("aiport Issue " + is.ID + ": calls from " + is.Application + " for model " + model + " fail with " + statusText(ev))
-	b.WriteString(" (" + strconv.Itoa(ev.Count) + " times in the last " + strconv.Itoa(ev.WindowMinutes) + " minutes")
+	app, model := is.Application, strconv.Quote(is.Subject)
+	ev, d := is.Evidence, is.Diagnosis
+	b.WriteString("aiport Issue " + is.ID + ": calls from the Application " + app + " for model " + model + " fail with " + statusText(ev) + ".\n\n")
+
+	b.WriteString("What is wrong: the Connection these calls go to")
+	if len(ev.Connections) > 0 {
+		b.WriteString(" (" + strings.Join(ev.Connections, ", ") + ")")
+	}
+	b.WriteString(" does not serve " + model + ", and no Alias routes " + model + " for " + app + ".\n\n")
+
+	b.WriteString("Evidence: " + strconv.Itoa(ev.Count) + " failed calls")
+	if ev.FromMS > 0 && ev.ToMS > 0 {
+		b.WriteString(" between " + utc(ev.FromMS) + " and " + utc(ev.ToMS))
+	}
+	b.WriteString(" (looking back " + strconv.Itoa(ev.WindowMinutes) + " minutes)")
 	if len(ev.Connections) > 0 {
 		b.WriteString(", sent to Connection " + strings.Join(ev.Connections, ", "))
 	}
-	b.WriteString(").\n")
-	b.WriteString("Cause: the Connection these calls go to does not serve " + model + ", and no Alias routes it for " + is.Application + ".\n")
-	d := is.Diagnosis
+	b.WriteString(".")
+	if len(ev.Examples) > 0 {
+		b.WriteString(" Example request ids: " + strings.Join(ev.Examples, ", ") + ".")
+	}
+	b.WriteString("\n")
 	if d != nil {
+		b.WriteString("What aiport found: ")
 		switch d.Answer {
 		case ServedByOne:
-			b.WriteString("Connection " + strconv.Quote(d.Serving[0]) + " serves " + model + ".\n")
+			b.WriteString("Connection " + strconv.Quote(d.Serving[0]) + " serves " + model)
 		case ServedBySeveral:
-			b.WriteString("Connections " + strings.Join(d.Serving, ", ") + " serve " + model + ".\n")
+			b.WriteString("Connections " + strings.Join(d.Serving, ", ") + " serve " + model)
 		case ServedByNone:
-			b.WriteString("No enabled Connection of this gateway serves " + model + ".\n")
+			b.WriteString("no enabled Connection of this gateway serves " + model)
 		default:
-			b.WriteString("aiport could not list the models of every Connection, so it is not certain which serves " + model + ".\n")
+			b.WriteString("not every Connection could be listed, so it is not certain which serves " + model)
 		}
+		b.WriteString(" (from the Connections' free model lists).\n")
 	}
-	b.WriteString("Fix in the Application: send a model this gateway serves")
-	if d != nil && len(d.Available) > 0 {
-		b.WriteString(" for the " + d.Protocol + " protocol (" + strings.Join(d.Available, ", ") + ")")
+	b.WriteString("\n")
+
+	if f := is.Fix; f != nil && f.State == FixApplied && f.Proposal.Target != "" {
+		b.WriteString("Already fixed in aiport: calls from " + app + " for " + model + " now go to Connection " + strconv.Quote(f.Proposal.Target) + " (model " + strconv.Quote(f.Proposal.Model) + "). No code change is needed; aiport confirms the fix from the next calls.\n\n")
+	} else {
+		b.WriteString("What to change in " + app + ", one of:\n")
+		target := ""
+		if d != nil && d.Answer == ServedByOne {
+			target = d.Serving[0]
+		}
+		if target != "" {
+			b.WriteString("1. Ask aiport to route " + model + " for " + app + " to Connection " + strconv.Quote(target) + ": file a Change request of kind " + string(KindApplicationAlias) + " (alias " + model + ", Connection " + strconv.Quote(target) + ", model " + model + ").")
+		} else {
+			b.WriteString("1. Ask aiport to route " + model + " for " + app + " to a Connection that serves it: file a Change request of kind " + string(KindApplicationAlias) + " (alias " + model + ", the Connection, model " + model + ").")
+		}
+		b.WriteString(" If the Owner approves aiport's own fix for this Issue instead, no code change is needed.\n")
+		b.WriteString("2. Send a model the Connection these calls go to serves.")
+		if d != nil && len(d.Available) > 0 {
+			b.WriteString(" Models the " + d.Protocol + " Connections of this gateway list: " + strings.Join(d.Available, ", ") + ".")
+		}
+		b.WriteString("\nDo not retry " + model + " unchanged.\n\n")
 	}
-	b.WriteString(", or ask aiport to route " + model + " to a Connection that serves it with a Change request of kind " + string(KindApplicationAlias) + ". Do not retry the same model unchanged.")
+
+	b.WriteString("How to confirm: after the change, make one call through aiport with " + app + "'s own token and check it answers 200 instead of " + strconv.Itoa(ev.Status) + ". aiport marks this Issue resolved by itself when calls from " + app + " for " + model + " succeed again; it checks request history, so nothing else needs reporting.")
 	return b.String()
 }
+
+func utc(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.RFC3339) }
 
 func statusText(ev Evidence) string {
 	s := strconv.Itoa(ev.Status)

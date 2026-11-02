@@ -2,6 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {ArrowUpRight, CircleAlert, History, Lightbulb, Puzzle, Undo2} from 'lucide-react';
 import {type Upstream, UpstreamAction} from './Upstream';
 import {DecisionSoundToggle} from './decisionSound';
+import {CopyButton} from './Integrate';
 
 /** One applied Change to aiport's configuration, as GET /api/v1/changes lists it. */
 type Change = {
@@ -65,7 +66,7 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
       setBusy('');
     }
   };
-  return <div className="decision issue">
+  return <div className="decision issue" id={issueAnchor(issue.id)} tabIndex={-1}>
     <div className="need"><span className={'badge' + (issue.state === 'resolving' ? ' good' : '')}>{issue.state === 'resolving' ? 'Resolving' : 'Issue'}</span> {issue.summary}</div>
     <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>
     {issue.diagnosis && <div className="evidence">Diagnosis: {diagnosisText(issue.diagnosis, issue.subject)} Found from the Connections’ free model lists.</div>}
@@ -91,7 +92,22 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
         <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
       </div>
     </form>}
-    {issue.application_fix && <details className="application-fix"><summary>Fix in the Application, for its coding agent</summary><pre>{issue.application_fix}</pre></details>}
+    <ApplicationFix issue={issue}/>
+  </div>;
+}
+
+/** The id of an Issue's card on the Changes page, so Integrate can link to it. */
+export const issueAnchor = (id: string) => 'issue-' + id;
+
+/**
+ * The fix in the Application, for its coding agent: "Copy fix for the coding agent" copies the text the server
+ * writes (decide.ApplicationFix, the same text aiport_my_issues gives the agent), shown below it to read first.
+ */
+export function ApplicationFix({issue}: {issue: Issue}) {
+  if (!issue.application_fix) return null;
+  return <div className="application-fix">
+    <CopyButton text={issue.application_fix} label="Copy fix for the coding agent"/>
+    <details><summary>Read the fix for {issue.application}’s coding agent</summary><pre>{issue.application_fix}</pre></details>
   </div>;
 }
 
@@ -222,6 +238,13 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
       setBusy('');
     }
   };
+  // Integrate links to one Issue with #issue-<id>: bring it into view once listed.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id.startsWith('issue-') || !issues.length) return;
+    const el = document.getElementById(id);
+    if (el) { el.scrollIntoView({behavior: 'smooth', block: 'start'}); el.focus({preventScroll: true}); history.replaceState(null, '', window.location.pathname + window.location.search); }
+  }, [issues]);
   const byId = new Map((changes || []).map(c => [c.id, c]));
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
   return <>{!!issues.length && <section className="panel" aria-label="Issues">

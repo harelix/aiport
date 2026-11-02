@@ -101,27 +101,38 @@ func failingSummary(is Issue, working string) string {
 	return s + " Choose a working Connection to bind " + is.Application + " to."
 }
 
-// failingFix is the Application fix for a failing Connection: the request
-// is fine, the Connection is not.
+// failingFix is the Application fix for a failing Connection, in the same
+// shape as unknownModelFix: the request is fine, the Connection is not.
 func failingFix(is Issue) string {
 	var b strings.Builder
-	conn := strconv.Quote(is.Subject)
+	app, conn := is.Application, strconv.Quote(is.Subject)
 	ev := is.Evidence
-	b.WriteString("aiport Issue " + is.ID + ": calls from " + is.Application + " to Connection " + conn + " fail with " + statusText(ev))
-	b.WriteString(" (" + strconv.Itoa(ev.Count) + " times in the last " + strconv.Itoa(ev.WindowMinutes) + " minutes).\n")
-	b.WriteString("Cause: Connection " + conn + " itself keeps failing (gateway errors and timeouts); the requests are not at fault.\n")
+	b.WriteString("aiport Issue " + is.ID + ": calls from the Application " + app + " to Connection " + conn + " fail with " + statusText(ev) + ".\n\n")
+	b.WriteString("What is wrong: Connection " + conn + " itself keeps failing (gateway errors and timeouts); the requests are not at fault.\n\n")
+	b.WriteString("Evidence: " + strconv.Itoa(ev.Count) + " failed calls")
+	if ev.FromMS > 0 && ev.ToMS > 0 {
+		b.WriteString(" between " + utc(ev.FromMS) + " and " + utc(ev.ToMS))
+	}
+	b.WriteString(" (looking back " + strconv.Itoa(ev.WindowMinutes) + " minutes).")
+	if len(ev.Examples) > 0 {
+		b.WriteString(" Example request ids: " + strings.Join(ev.Examples, ", ") + ".")
+	}
+	b.WriteString("\n\n")
 	working := ""
 	if is.Fix != nil && is.Fix.Proposal.Target != "" {
 		working = strconv.Quote(is.Fix.Proposal.Target)
-		b.WriteString("Fix in aiport: the Owner can bind " + is.Application + " to Connection " + working + ", where other calls succeed.\n")
-	} else {
-		b.WriteString("Fix in aiport: the Owner can bind " + is.Application + " to a Connection that works.\n")
 	}
-	b.WriteString("Fix in the Application: nothing in the request needs to change. Do not retry in a tight loop: back off between retries and handle 5xx answers and timeouts. ")
-	if working != "" {
-		b.WriteString("To move " + is.Application + " to Connection " + working + ", ask aiport with a Change request of kind " + string(KindBindApplication) + " naming " + working + ".")
+	if f := is.Fix; f != nil && f.State == FixApplied && working != "" {
+		b.WriteString("Already fixed in aiport: " + app + " is now bound to Connection " + working + ". No code change is needed; aiport confirms the fix from the next calls.\n\n")
 	} else {
-		b.WriteString("To move " + is.Application + " to another Connection, ask aiport with a Change request of kind " + string(KindBindApplication) + ".")
+		b.WriteString("What to change in " + app + ": nothing in the request. Do not retry in a tight loop: back off between retries and handle 5xx answers and timeouts.\n")
+		if working != "" {
+			b.WriteString("To move " + app + " to Connection " + working + ", where other calls succeed, file a Change request of kind " + string(KindBindApplication) + " naming " + working + ".")
+		} else {
+			b.WriteString("To move " + app + " to a Connection that works, file a Change request of kind " + string(KindBindApplication) + ".")
+		}
+		b.WriteString(" If the Owner approves aiport's own fix for this Issue instead (binding " + app + " to a working Connection), no code change is needed.\n\n")
 	}
+	b.WriteString("How to confirm: make one call through aiport with " + app + "'s own token and check it answers 200 instead of " + strconv.Itoa(ev.Status) + ". aiport marks this Issue resolved by itself when calls from " + app + " succeed again; it checks request history, so nothing else needs reporting.")
 	return b.String()
 }

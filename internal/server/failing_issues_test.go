@@ -143,6 +143,9 @@ func TestFailingConnectionIssueStartToFinish(t *testing.T) {
 	if is["state"] != "resolving" || m(is["fix"])["state"] != "applied" || m(is["fix"])["change_id"] != out["change_id"] {
 		t.Fatalf("after approve: %v", is)
 	}
+	if text, _ := is["application_fix"].(string); !strings.Contains(text, "Already fixed in aiport: docs-bot is now bound to Connection \"local\". No code change is needed") {
+		t.Fatalf("Application fix after the aiport fix:\n%s", text)
+	}
 
 	if codes := f.chat(t, docsBotToken, "llama3:8b", 1); fmt.Sprint(codes) != "[200]" {
 		t.Fatalf("call after the fix: %v", codes)
