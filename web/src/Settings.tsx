@@ -450,7 +450,7 @@ function ExplainerPanel({config, providers, onChange}: {config: SettingsConfig |
 export default function SettingsPage({config, providers, onChange}: Props) {
   return <>
     <AuthenticationSettings username={config?.auth.username || ''} onChange={onChange}/>
-    <DefaultAgentPanel tick={0} onChange={onChange}/>
+    <DefaultAgentPanel tick={0} targets={config?.targets || []} onChange={onChange}/>
     <ExplainerPanel key={JSON.stringify(config?.adapting?.explain || {})} config={config} providers={providers} onChange={onChange}/>
     <section className="panel setup">
       <p className="eyebrow">CONFIGURATION</p>

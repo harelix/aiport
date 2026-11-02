@@ -32,6 +32,11 @@ func buildRoutes(c config.Config) routes {
 			rt.originAliases[o.ID][a.Alias] = a
 		}
 	}
+	// The model calls of Agent runs, under the built-in Application, go to
+	// the Connection the Owner chose for them (or the protocol default).
+	if c.AgentRuns.Connection != "" {
+		rt.origins[config.BuiltinApplication] = c.AgentRuns.Connection
+	}
 	for _, a := range c.Aliases {
 		if rt.aliases[a.Target] == nil {
 			rt.aliases[a.Target] = map[string]string{}

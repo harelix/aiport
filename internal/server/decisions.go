@@ -45,6 +45,7 @@ func (h *Handler) Detect(at time.Time) {
 	if h.decisions != nil {
 		h.decisions.Prune(at)
 		h.decisions.Detect(at)
+		h.forgetClosedRuns()
 	}
 }
 

@@ -189,6 +189,11 @@ func Environ(extra ...string) []string {
 	return env
 }
 
+// Isolate starts cmd in its own process group, and makes cancelling its
+// context stop everything it started, not only the program itself (the same
+// for Extensions and Agent runs).
+func Isolate(cmd *exec.Cmd) { isolate(cmd) }
+
 // capped keeps at most max bytes and notes when more were written.
 type capped struct {
 	buf  bytes.Buffer

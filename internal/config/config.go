@@ -398,7 +398,7 @@ func (c Config) Validate() error {
 	if err := c.Upstream.validate(); err != nil {
 		return err
 	}
-	if err := c.AgentRuns.validate(c.Origins); err != nil {
+	if err := c.AgentRuns.validate(c.Origins, targets); err != nil {
 		return err
 	}
 	t := c.Telemetry

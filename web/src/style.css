@@ -698,3 +698,14 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .install-command{display:block;font-size:12.5px;overflow-wrap:anywhere;user-select:all}
 .pairing-repository{display:grid;gap:4px;margin-top:8px;font-size:13px}
 .pairing-repository input{padding:6px 10px;font-size:13px;width:100%;max-width:520px}
+
+/* Agent runs: the run panel next to an Issue (spec #21). */
+.subheading{font-size:14px;margin:18px 0 8px}
+.run-panel{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--inset);font-size:13px}
+.run-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.run-head button{margin-left:auto}
+.run-own-login{color:var(--text-2)}
+.run-steps{margin:0;padding-left:18px;display:grid;gap:2px;max-height:220px;overflow:auto;overflow-wrap:anywhere}
+.run-step small{color:var(--text-2)}
+.run-thought{color:var(--text-2)}
+.run-denied{color:var(--bad)}

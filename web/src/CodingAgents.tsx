@@ -8,7 +8,7 @@ import type {Origin} from './Applications';
    anything: a missing agent or ACP adapter shows the command to run. */
 
 export type CodingAgent = {id: string; name: string; program?: string; acp?: {path: string; args?: string[]}; adapter?: string; installed: boolean; ready: boolean; install?: string};
-export type CodingAgents = {agents: CodingAgent[]; default_agent?: string};
+export type CodingAgents = {agents: CodingAgent[]; default_agent?: string; agent_runs?: {connection?: string; model?: string; explain_minutes?: number}};
 
 async function send(path: string, body: object, method: string) {
   const r = await fetch('/api/v1/' + path, {method, credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-Aiport-CSRF': '1'}, body: JSON.stringify(body)});
@@ -84,8 +84,49 @@ export function AgentSettings({o, agents, onDone}: {o: Origin; agents: CodingAge
   </div>;
 }
 
-/** Settings: the coding agent of every Application that has none of its own. */
-export function DefaultAgentPanel({tick, onChange}: {tick: number; onChange: () => void}) {
+/** A Connection, as Settings lists them. */
+type RunTarget = {id: string; provider: string; protocol: string; disabled: boolean};
+
+/**
+ * Where Agent runs' model calls go: Claude Code is pointed at aiport (a run-scoped credential, attributed to the
+ * built-in Application "aiport" in Activity) and its calls go to an Anthropic-protocol Connection; empty means the
+ * Anthropic protocol default. Codex and Gemini CLI use their own login.
+ */
+function RunCalls({agents, targets, onSaved}: {agents: CodingAgents; targets: RunTarget[]; onSaved: () => void}) {
+  const saved = agents.agent_runs || {};
+  const [connection, setConnection] = useState(saved.connection || ''), [model, setModel] = useState(saved.model || '');
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
+  useEffect(() => { setConnection(saved.connection || ''); setModel(saved.model || ''); }, [saved.connection, saved.model]);
+  const anthropic = targets.filter(t => t.protocol === 'anthropic' && (!t.disabled || t.id === saved.connection));
+  const dirty = connection !== (saved.connection || '') || model.trim() !== (saved.model || '');
+  async function save() {
+    setBusy(true); setError(''); setMessage('');
+    try { await send('agents/calls', {connection, model: model.trim()}, 'PUT'); setMessage('Saved as a Change you can revert.'); onSaved(); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <>
+    <h3 className="subheading">Model calls of Agent runs</h3>
+    <div className="agent-fields">
+      <label htmlFor="run-connection">Connection</label>
+      <select id="run-connection" value={connection} disabled={busy} onChange={e => setConnection(e.target.value)}>
+        <option value="">Anthropic protocol default</option>
+        {anthropic.map(t => <option key={t.id} value={t.id}>{t.id} ({t.provider})</option>)}
+      </select>
+      <label htmlFor="run-model">Model</label>
+      <input id="run-model" value={model} disabled={busy} maxLength={256} spellCheck={false} autoComplete="off" placeholder="the agent's own choice" onChange={e => setModel(e.target.value)}/>
+    </div>
+    <small className="muted">Claude Code runs call models through aiport, with a credential that lives only as long as the run, and show in Activity under the Application <code>aiport</code>. Codex and Gemini CLI runs use their own login; aiport never edits an agent's configuration files. Explain runs stop after {saved.explain_minutes || 10} minutes (<code>agent_runs.explain_minutes</code>).</small>
+    {!anthropic.length && <p className="muted-small">No Anthropic-protocol Connection is configured, so Claude Code runs use their own login.</p>}
+    <div className="button-row">
+      <button type="button" className="secondary" disabled={busy || !dirty} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+      {message && !dirty && <span className="muted-small" role="status">{message}</span>}
+    </div>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+  </>;
+}
+
+/** Settings: the coding agent of every Application that has none of its own, and where runs' model calls go. */
+export function DefaultAgentPanel({tick, targets, onChange}: {tick: number; targets: RunTarget[]; onChange: () => void}) {
   const [agents, refresh] = useCodingAgents(tick);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   async function choose(agent: string) {
@@ -103,5 +144,6 @@ export function DefaultAgentPanel({tick, onChange}: {tick: number; onChange: () 
     </div>
     <InstallHint agent={current}/>
     {error && <p className="auth-error" role="alert">{error}</p>}
+    <RunCalls agents={agents} targets={targets} onSaved={() => { refresh(); onChange(); }}/>
   </section>;
 }
