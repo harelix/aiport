@@ -37,9 +37,12 @@ func (h *Handler) openDecisions() {
 	h.decisions = q
 }
 
-// Detect runs one detection pass over request history at time at.
+// Detect runs one background pass at time at, as the ticker does: it
+// forgets decided items older than request history, then detects over
+// request history.
 func (h *Handler) Detect(at time.Time) {
 	if h.decisions != nil {
+		h.decisions.Prune(at)
 		h.decisions.Detect(at)
 	}
 }

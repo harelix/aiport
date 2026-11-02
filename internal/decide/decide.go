@@ -158,10 +158,11 @@ type Filter struct {
 	Application, Status, Source string
 }
 
-// Store keeps items across restarts (store.Decisions in the database).
+// Store keeps items across restarts (SQLStore in the database).
 type Store interface {
 	Load() ([]Item, error)
 	Save(Item) error
+	Delete(ids []string) error
 }
 
 // History is where detectors read request metadata (telemetry.Collector).
@@ -523,9 +524,44 @@ func (q *Queue) Run(stop <-chan struct{}, every func() time.Duration, now func()
 		case <-stop:
 			return
 		case <-t.C:
-			q.Detect(now())
+			at := now()
+			q.Prune(at)
+			q.Detect(at)
 			t.Reset(every())
 		}
+	}
+}
+
+// Prune forgets decided items (accepted, rejected or dismissed) decided
+// longer ago than request history is kept (telemetry.retention_days), so a
+// Change request's text is kept no longer than the requests it was about.
+// Dismissed and rejected items are kept at least QuietFor, so they stay
+// quiet as long as promised. Items still waiting, demand for unsupported
+// kinds and the Changes themselves (config.Live) are kept. Prune runs
+// whether or not the loop is on.
+func (q *Queue) Prune(at time.Time) {
+	retention := time.Duration(q.live.Config().Telemetry.RetentionDays) * 24 * time.Hour
+	if retention <= 0 {
+		return
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	kept, gone := q.items[:0], []string{}
+	for _, it := range q.items {
+		keep := retention
+		if it.Status == Dismissed || it.Status == Rejected {
+			keep = max(retention, QuietFor)
+		}
+		decided := it.Status == Accepted || it.Status == Rejected || it.Status == Dismissed
+		if decided && at.UnixMilli()-it.UpdatedAt > keep.Milliseconds() {
+			gone = append(gone, it.ID)
+			continue
+		}
+		kept = append(kept, it)
+	}
+	q.items = kept
+	if len(gone) > 0 && q.store != nil {
+		_ = q.store.Delete(gone) // forgotten for this session even if the database fails
 	}
 }
 
