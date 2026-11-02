@@ -136,6 +136,7 @@ func Describe(c config.Config) Document {
 			{404, "request_not_found", "No retained request with this id for this application."},
 			{403, "change_requests_not_allowed", "The owner has not allowed this application to request changes; the owner can enable it in the dashboard (Routing → Applications)."},
 			{400, "invalid_change_request", "The change request is incomplete or too large; error.problems lists every problem as {field, problem}."},
+			{403, "change_request_refused", "A policy Extension the owner added refused this change request; error.reason says why and error.extension names it."},
 			{429, "change_requests_rate_limited", "Too many change requests from this application in the last hour; retry after Retry-After seconds."},
 			{404, "change_request_not_found", "No change request with this id for this application."},
 			{400, "ambiguous_model", "Body must be one JSON object with a single model field when aliases apply."},
