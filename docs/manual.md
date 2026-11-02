@@ -603,6 +603,79 @@ stream adds `run` (the run: its id, agent and model calls) and `step`
 events for an Agent run; `error` codes include `run_stopped` and
 `explanation_timed_out`.
 
+#### Fix it
+
+**Fix it** on an open Issue lets the Application's Coding agent change the
+Application's code, on a branch of its own, and ends with a diff you
+review. It shows when the Application has a Coding agent and a repository
+path, as for Explain by a Coding agent; otherwise a one-line hint under
+the Issue says what is missing (for example "Add the repository path of
+docs-bot").
+
+- **Its own worktree and branch**: aiport makes a git worktree of the
+  repository on a new branch named for the Issue, `aiport/fix-<issue id>`
+  (`-2`, `-3`… if that branch exists), starting at your current commit
+  (`HEAD`). The worktree lives next to the configuration
+  (`aiport.yaml.worktrees/`), not inside your repository. Your working
+  copy, its uncommitted changes and your branch are never touched; your
+  uncommitted changes are not in the worktree either. The repository needs
+  at least one commit.
+- **What the agent may do**: aiport answers every permission request
+  itself. Reading, searching and editing, creating, deleting or moving
+  files inside the worktree are allowed (symbolic links are followed, so a
+  link pointing out of the worktree is outside; the worktree's `.git` is
+  not the agent's to change). Every command (tests, builds, git) and
+  anything outside the worktree, including your own copy of the
+  repository, is denied. Asking you before commands is coming next. aiport
+  only ever answers "once", so nothing is remembered in the agent's own
+  settings. The agent starts as for Explain: by absolute path, with the
+  minimal environment, only on your click.
+- **What the agent is told**: the Issue's evidence, the saved explanation
+  if there is one, the branch it works on, and that it must not commit,
+  merge or push.
+- **The run panel** shows its steps and the permissions allowed or denied,
+  with **Stop**. The run goes on if you leave the page.
+- **The diff**: when the agent ends its turn, the Issue shows **Review the
+  change** with the branch, the summary ("2 files changed, 3
+  insertions(+), 1 deletion(-)") and the whole diff. Nothing is committed
+  yet.
+  - **Keep the branch**: aiport commits the diff on the new branch, as one
+    commit authored by `aiport <aiport@localhost>`, and removes the
+    worktree. The branch stays in your repository for you to look at,
+    merge or delete; aiport never commits to your branch, merges or
+    pushes. The Issue becomes resolving as an Application fix and resolves
+    when the Application's calls succeed again, that is after you merged
+    and deployed the change. "Copy fix for the Coding agent" names the
+    branch.
+  - **Discard**: aiport removes the worktree and deletes the branch; the
+    Issue stays open, and you can Fix it again.
+- **Nothing left behind**: Stop, the time limit (30 minutes,
+  `agent_runs.fix_minutes`), a run that fails and a run that changed
+  nothing remove the worktree and the branch; the Issue stays open and
+  shows why the run ended.
+- **What is kept**: the branch name, the commit it started from, the diff
+  summary and the changed files are saved with the Issue (and, once kept,
+  the commit aiport made), also across restarts. The diff itself is read
+  from the worktree or the branch when you look at it. The run's log is
+  kept as for Explain.
+- **git, safely**: aiport runs git by absolute path with a minimal
+  environment and with hooks, fsmonitor, commit signing and external diff
+  programs turned off, so nothing configured in the repository runs.
+
+```yaml
+agent_runs:
+  fix_minutes: 30
+```
+
+For scripts: `POST /api/v1/issues/{id}/fix` starts it (`202` with the run;
+`409` with `fix_unavailable` and the hint, `fix_waiting` while an earlier
+diff waits for you, `agent_run_running`, `issue_not_open` or
+`worktree_failed`); `GET /api/v1/issues/{id}/fix` gives `branch_fix` and
+the `diff`; `POST /api/v1/issues/{id}/fix/keep` and `…/fix/discard`.
+`GET /api/v1/issues` says per Application in `fix_by` whether Fix it is
+available, with which agent and time limit, or the hint; each Issue
+carries its `branch_fix`.
+
 ### Automatic fixes
 
 Automatic fixes are off by default. Turn them on with the **Automatic
