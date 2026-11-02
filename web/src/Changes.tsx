@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {History, Lightbulb, Undo2} from 'lucide-react';
+import {ArrowUpRight, History, Lightbulb, Undo2} from 'lucide-react';
 
 /** One applied Change to aiport's configuration, as GET /api/v1/changes lists it. */
 type Change = {
@@ -14,6 +14,10 @@ export type Decision = {
   asked_by?: Asker[];
   evidence?: {count: number; from_ms: number; to_ms: number; window_minutes: number};
   proposal: {alias?: string; target?: string; model?: string};
+  /** Informational Suggestions have nothing to apply: only Dismiss. */
+  informational?: boolean;
+  /** The panel where the Owner acts on it ('applications': the Applications panel, where Pairing is). */
+  opens?: string;
 };
 
 /** One Application that asked for a Change for every Application, with its own argument. */
@@ -43,7 +47,7 @@ const when = (ms: number) => new Date(ms).toLocaleString();
  * the Scope to grant, and Approve / Dismiss (Suggestions) or Approve / Reject (Change requests, whose note goes
  * back to the requester). Request text comes from Applications: it is shown as plain text only, never as markup.
  */
-function Pending({item, targets, onDecided}: {item: Decision; targets: string[]; onDecided: (message: string) => void}) {
+function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision; targets: string[]; onDecided: (message: string) => void; onOpenApplications?: () => void}) {
   const request = item.source === 'request', alias = item.kind === 'application_alias';
   const [target, setTarget] = useState(item.proposal.target || targets[0] || ''), [model, setModel] = useState(item.proposal.model || '');
   const [name, setName] = useState(item.proposal.alias || ''), [scope, setScope] = useState(item.scope || 'application');
@@ -72,7 +76,8 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
   const ready = !!target && (!alias || (!!name.trim() && !!model.trim()));
   return <div className="decision">
     <div className="need">{request && <span className="badge">{merged ? 'Asked by ' + askers.length + ' Applications' : 'Change request from ' + item.application}</span>} {item.need}</div>
-    {ev && <div className="evidence">Evidence: {ev.count} requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only request metadata was used.</div>}
+    {ev && item.kind === 'pair_application' && <div className="evidence">Evidence: {ev.count} refused requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only counts are kept, never the token.</div>}
+    {ev && item.kind !== 'pair_application' && <div className="evidence">Evidence: {ev.count} requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only request metadata was used.</div>}
     {request && !merged && <dl className="request-text">
       <dt>Kind</dt><dd>{item.kind}{item.kind !== 'application_alias' && item.kind !== 'bind_application' ? ' (not supported)' : ''}</dd>
       <dt>Details</dt><dd>{item.details}</dd>
@@ -108,11 +113,15 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
         <button type="button" className="secondary" disabled={!!busy} onClick={() => decide(no)}>{busy === no ? (request ? 'Rejecting…' : 'Dismissing…') : (request ? 'Reject' : 'Dismiss')}</button>
       </div>
     </form>}
+    {item.informational && <div className="actions">
+      {item.opens === 'applications' && onOpenApplications && <button type="button" className="primary" onClick={onOpenApplications}>Open Applications to pair it <ArrowUpRight size={14} aria-hidden/></button>}
+      <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
+    </div>}
   </div>;
 }
 
 /** Changes: Suggestions waiting for a decision (only when there are any), then every configuration edit made through aiport, newest first, with Revert. */
-export default function Changes({tick, onChange, targets = []}: {tick: number; onChange: () => void; targets?: string[]}) {
+export default function Changes({tick, onChange, targets = [], onOpenApplications}: {tick: number; onChange: () => void; targets?: string[]; onOpenApplications?: () => void}) {
   const [pending, setPending] = useState<Decision[]>([]), [demand, setDemand] = useState<Demand[]>([]);
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
@@ -137,7 +146,7 @@ export default function Changes({tick, onChange, targets = []}: {tick: number; o
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
   return <>{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
     <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history and Change requests from Applications</span></div>
-    {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided}/>)}
+    {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided} onOpenApplications={onOpenApplications}/>)}
   </section>}{!!demand.length && <section className="panel" aria-label="Demand for things aiport cannot do yet">
     <div className="panel-heading"><h2>Asked for, not supported yet</h2><span>Change requests aiport cannot apply · kept and counted, no decision needed</span></div>
     <div className="table-scroll"><table>

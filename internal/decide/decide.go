@@ -57,6 +57,15 @@ const (
 	KindBindApplication  = capability.BindApplication  // all of one Application's calls to one Connection; for every Application the protocol default
 )
 
+// KindPairApplication tells the Owner that something keeps trying to connect
+// without a valid token and should be paired. It is informational: there is
+// nothing to apply, the Owner dismisses it.
+const KindPairApplication = "pair_application"
+
+// OpensApplications is where the dashboard sends the Owner for a
+// KindPairApplication Suggestion: the Applications panel, where Pairing is.
+const OpensApplications = "applications"
+
 // QuietFor is how long a dismissed Suggestion stays hidden unless its
 // evidence doubles.
 const QuietFor = 7 * 24 * time.Hour
@@ -121,6 +130,10 @@ type Item struct {
 	CreatedAt int64    `json:"created_at_ms"`
 	UpdatedAt int64    `json:"updated_at_ms"`
 	Decision  *Verdict `json:"decision,omitempty"`
+	// Informational items have nothing to apply: they can only be dismissed.
+	Informational bool `json:"informational,omitempty"`
+	// Opens names the dashboard panel the Owner acts in (OpensApplications).
+	Opens string `json:"opens,omitempty"`
 }
 
 // Decision is what the Owner sends: an action, a note for the requester, the
@@ -151,6 +164,13 @@ type History interface {
 	Find(telemetry.Query) []telemetry.Event
 }
 
+// FailedAuth is where the unknown-token detector reads how many
+// authentications failed in a time range (telemetry.FailedAuth): counts only,
+// never tokens.
+type FailedAuth interface {
+	Count(from, to time.Time) (n int, first, last int64)
+}
+
 var (
 	ErrNotFound = errors.New("no such item")
 	ErrDecided  = errors.New("this item was already decided")
@@ -170,6 +190,15 @@ type Queue struct {
 	store   Store
 	items   []Item
 	filed   map[string][]int64 // Application → when it filed Change requests, for the rate limit
+	failed  FailedAuth
+}
+
+// WatchFailedAuth lets detection read failed-authentication counts from f, so
+// repeated failures become a Suggestion to pair an Application.
+func (q *Queue) WatchFailedAuth(f FailedAuth) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.failed = f
 }
 
 // New returns a queue that applies Changes through live, reads request
@@ -368,6 +397,9 @@ func (q *Queue) index(id string) int {
 // The Scope decides the edit: for this Application an Alias or binding of
 // its own; for every Application a shared Alias or the protocol default.
 func change(c config.Config, it Item, p Proposal, scope string) (config.Edit, string, error) {
+	if it.Informational {
+		return nil, "", Invalid{"this Suggestion has nothing to apply: pair the Application in the Applications panel, then dismiss it"}
+	}
 	if scope != ScopeApplication && scope != ScopeEvery {
 		return nil, "", Invalid{"scope must be application or every_application"}
 	}
@@ -441,6 +473,9 @@ func (q *Queue) Detect(at time.Time) []Item {
 	found := unknownModels(c, q.history, at)
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if q.failed != nil {
+		found = append(found, unknownTokens(c, q.failed, at)...)
+	}
 	var out []Item
 	for _, s := range found {
 		if q.quiet(s, at) {
@@ -542,4 +577,23 @@ func newID() string {
 		panic("secure random source unavailable")
 	}
 	return hex.EncodeToString(b[:])
+}
+
+// unknownTokens suggests pairing when requests with a missing or unknown token
+// were refused at least the configured number of times within the window.
+// Who sent them is unknown (only counts are kept), so the Suggestion belongs
+// to no Application.
+func unknownTokens(c config.Config, f FailedAuth, at time.Time) []Item {
+	th := c.Adapting.UnknownToken
+	n, first, last := f.Count(at.Add(-time.Duration(th.WindowMinutes)*time.Minute), at)
+	if n < th.Count {
+		return nil
+	}
+	ev := Evidence{Count: n, FromMS: first, ToMS: last, WindowMinutes: th.WindowMinutes}
+	return []Item{{
+		Source: FromSuggestion, Kind: KindPairApplication, Subject: "unknown_token", Scope: ScopeApplication,
+		Need:          "Requests without a valid token were refused " + strconv.Itoa(n) + " times in the last " + strconv.Itoa(th.WindowMinutes) + " minutes: an Application may be trying to connect without being paired. Pair it in the Applications panel.",
+		Evidence:      &ev,
+		Informational: true, Opens: OpensApplications,
+	}}
 }
