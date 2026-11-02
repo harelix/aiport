@@ -744,9 +744,10 @@ to a working Connection).
   yet.
   - **Keep the branch**: aiport commits the diff on the new branch, as one
     commit authored by `aiport <aiport@localhost>`, and removes the
-    worktree. The branch stays in your repository for you to look at,
-    merge or delete; aiport never commits to your branch, merges or
-    pushes. The Issue becomes resolving as an Application fix and resolves
+    worktree. This is the only commit aiport ever makes, and only when
+    you click Keep: on the new branch, never on yours, with hooks off. The
+    branch stays in your repository for you to look at, merge or delete;
+    aiport never commits to your branch, merges or pushes. The Issue becomes resolving as an Application fix and resolves
     when the Application's calls succeed again, that is after you merged
     and deployed the change. "Copy fix for the Coding agent" names the
     branch.
@@ -759,9 +760,13 @@ to a working Connection).
 - **Nothing left behind**: Stop, a run that fails and a run that changed
   nothing (also one that timed out or went unanswered before changing
   anything) remove the worktree and the branch; the Issue stays open and
-  shows why the run ended. A run that was going when aiport stopped is
-  marked stopped the next time aiport starts, and its worktree and branch
-  are removed.
+  shows why the run ended.
+- **Cleanup at startup**: a Fix it run that was going when aiport stopped
+  (or crashed) is marked stopped the next time aiport starts, and its
+  worktree and branch are removed; so are the throwaway worktrees of
+  Explain runs that were going. Only directories inside
+  `aiport.yaml.worktrees/` and branches named `aiport/fix-…` are ever
+  removed.
 - **What is kept**: the branch name, the commit it started from, the diff
   summary and the changed files are saved with the Issue (and, once kept,
   the commit aiport made), also across restarts. The diff itself is read

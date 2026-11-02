@@ -118,7 +118,7 @@ func Detached(repo, root, issue string) (Tree, error) {
 	if err != nil || base == "" {
 		return Tree{}, errors.New("the repository has no commit yet: commit once, then try again")
 	}
-	dir, err := newDir(root, "explain-"+issue)
+	dir, err := newDir(root, ExplainPrefix+issue)
 	if err != nil {
 		return Tree{}, err
 	}
@@ -127,6 +127,37 @@ func Detached(repo, root, issue string) (Tree, error) {
 		return Tree{}, errors.New("git could not make the worktree: " + err.Error())
 	}
 	return Tree{Repo: repo, Dir: dir, Base: base, Root: root}, nil
+}
+
+// ExplainPrefix starts the directory name of every Detached worktree.
+const ExplainPrefix = "explain-"
+
+// RemoveDetached removes every Detached worktree directory directly under
+// root (left by an Explain run aiport could not finish, such as after a
+// crash) and returns how many; then repos are pruned of what git still
+// records about them.
+func RemoveDetached(root string, repos []string) int {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), ExplainPrefix) {
+			continue
+		}
+		if os.RemoveAll(filepath.Join(root, e.Name())) == nil {
+			n++
+		}
+	}
+	if n > 0 {
+		for _, repo := range repos {
+			if filepath.IsAbs(repo) {
+				_, _ = git(repo, nil, "worktree", "prune")
+			}
+		}
+	}
+	return n
 }
 
 // newDir makes a new directory for a worktree directly under root.

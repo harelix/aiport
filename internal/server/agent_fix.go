@@ -255,6 +255,16 @@ func (h *Handler) fixEnded(issue string, b decide.BranchFix, info agentrun.Info)
 // with no run going: aiport stopped (or crashed) while it ran. Its worktree
 // and branch are removed, as for a stopped run.
 func (h *Handler) stopLeftFixes() {
+	if h.worktrees != "" && len(h.runner().Running()) == 0 {
+		// Explain's throwaway worktrees of runs aiport did not finish.
+		var repos []string
+		for _, o := range h.snapshot().Origins {
+			repos = append(repos, o.Repository)
+		}
+		if n := worktree.RemoveDetached(h.worktreeRoot(), repos); n > 0 {
+			log.Printf("aiport: removed %d Explain worktrees left from before the restart", n)
+		}
+	}
 	if h.decisions == nil || !h.decisions.On() {
 		return
 	}

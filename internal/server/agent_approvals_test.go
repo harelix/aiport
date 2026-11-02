@@ -251,6 +251,24 @@ func TestARunLeftGoingByARestartIsMarkedStopped(t *testing.T) {
 	old.Close()
 }
 
+// An Explain run's throwaway worktree left by a crash is removed the next
+// time aiport starts.
+func TestAnExplainWorktreeLeftByARestartIsRemoved(t *testing.T) {
+	f := newAgentRunFixture(t, "claude", acpScript{Steps: []acpStep{{Say: "Reading"}, {Wait: "never"}}}, "")
+	events := f.explainStream(t)
+	until(t, events, "text")
+	var start struct{ Cwd string }
+	_ = json.Unmarshal(agentRecord(t, f.agentDir)["start"][0], &start)
+	if _, err := os.Stat(start.Cwd); err != nil {
+		t.Fatalf("no Explain worktree: %v", err)
+	}
+	t.Cleanup(f.h.Close) // before the stream's server closes
+	f.start(t)           // as after a crash
+	if _, err := os.Stat(start.Cwd); err == nil {
+		t.Fatalf("the Explain worktree %s is left", start.Cwd)
+	}
+}
+
 // run is a command request for argv (a list of arguments) in the worktree.
 func run(title string, argv ...any) acpStep {
 	return acpStep{Ask: &acpAsk{Kind: "execute", Title: title, Input: map[string]any{"command": argv, "cwd": "CWD"}}}
