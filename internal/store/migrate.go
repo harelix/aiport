@@ -135,6 +135,21 @@ var migrations = []string{
 		items         TEXT NOT NULL
 	);
 	CREATE INDEX proposals_workspace ON proposals(workspace, status);`,
+
+	// 4: Changes: every configuration edit made through aiport, with the
+	// exact file before and after so it can be reverted after a restart.
+	// Changes are kept (no retention).
+	`CREATE TABLE changes (
+		id             TEXT PRIMARY KEY,
+		at_ms          INTEGER NOT NULL,
+		what           TEXT NOT NULL,
+		made_by        TEXT NOT NULL,
+		revert_of      TEXT NOT NULL DEFAULT '',
+		reverted_by    TEXT NOT NULL DEFAULT '',
+		reverted_at_ms INTEGER NOT NULL DEFAULT 0,
+		before_config  BLOB NOT NULL,
+		after_config   BLOB NOT NULL
+	);`,
 }
 
 // SchemaVersion is the newest schema this build understands.
