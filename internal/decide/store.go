@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-// SQLStore keeps the decision queue's items in the database (Store). The table is created by store migration 5.
+// SQLStore keeps the decision queue's items in the database (Store). The table is created by store migration 4.
 type SQLStore struct{ DB *sql.DB }
 
 // Load returns every kept item, oldest first.

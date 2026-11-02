@@ -136,10 +136,15 @@ var migrations = []string{
 	);
 	CREATE INDEX proposals_workspace ON proposals(workspace, status);`,
 
-	// 4: Changes: every configuration edit made through aiport, with the
-	// exact file before and after so it can be reverted after a restart.
-	// Changes are kept (no retention).
-	`CREATE TABLE changes (
+	// 4: adapting aiport. Changes: every configuration edit made through
+	// aiport, with the exact file before and after so it can be reverted
+	// after a restart (kept, no retention). Decisions: Suggestions and
+	// Change requests waiting for or given the Owner's decision; the item
+	// itself is JSON in body, the columns are what the queue looks items up
+	// by. Metadata only, never prompts or responses. IF NOT EXISTS because
+	// pre-release databases may already have one of the tables (see
+	// preRelease).
+	`CREATE TABLE IF NOT EXISTS changes (
 		id             TEXT PRIMARY KEY,
 		at_ms          INTEGER NOT NULL,
 		what           TEXT NOT NULL,
@@ -149,24 +154,43 @@ var migrations = []string{
 		reverted_at_ms INTEGER NOT NULL DEFAULT 0,
 		before_config  BLOB NOT NULL,
 		after_config   BLOB NOT NULL
-	);`,
-
-	// 5: the decision queue: Suggestions (and later Change requests) waiting
-	// for or given the Owner's decision. The item itself is JSON in body; the
-	// columns are what the queue looks items up by. Metadata only, never
-	// prompts or responses.
-	`CREATE TABLE decisions (
+	);
+	CREATE TABLE IF NOT EXISTS decisions (
 		id             TEXT PRIMARY KEY,
 		source         TEXT NOT NULL, -- suggestion, request
 		kind           TEXT NOT NULL,
 		application    TEXT NOT NULL,
 		subject        TEXT NOT NULL, -- what repeats of the same item share
-		status         TEXT NOT NULL, -- pending, accepted, rejected, dismissed
+		status         TEXT NOT NULL, -- pending, not_supported, accepted, rejected, dismissed
 		created_at_ms  INTEGER NOT NULL,
 		updated_at_ms  INTEGER NOT NULL,
 		body           TEXT NOT NULL
 	);
-	CREATE INDEX decisions_subject ON decisions(source, kind, application, subject);`,
+	CREATE INDEX IF NOT EXISTS decisions_subject ON decisions(source, kind, application, subject);`,
+}
+
+// preRelease maps the schema version of a database written by a pre-release
+// build to this one. Those builds added the changes table as migration 4 and
+// the decisions table as migration 5; both are migration 4 now. A version-5
+// database has both tables, so it is at 4; a version-4 one may lack
+// decisions, so migration 4 (idempotent) runs again. Remove this, and think
+// again, before adding a migration 5.
+func preRelease(db *sql.DB, current int) (int, error) {
+	if len(migrations) != 4 || current < 4 || current > 5 {
+		return current, nil
+	}
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'decisions'`).Scan(&n); err != nil {
+		return current, errors.New("cannot read database tables")
+	}
+	to := 4
+	if n == 0 {
+		to = 3
+	}
+	if _, err := db.Exec(`UPDATE schema_version SET version = ?`, to); err != nil {
+		return current, errors.New("cannot update database version")
+	}
+	return to, nil
 }
 
 // SchemaVersion is the newest schema this build understands.
@@ -184,6 +208,9 @@ func migrate(db *sql.DB) error {
 		}
 	} else if err != nil {
 		return errors.New("cannot read database version")
+	}
+	if current, err = preRelease(db, current); err != nil {
+		return err
 	}
 	if current > len(migrations) {
 		return ErrNewerSchema
