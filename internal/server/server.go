@@ -286,13 +286,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// The provider's 404 for a requested model passes through unchanged;
 		// an Application allowed to request changes learns how to ask for an
 		// Alias from a header.
-		// While an Issue is open for the Application, a failing call's hint
-		// names it instead.
+		// When the failing call is one of an open Issue's failures, the hint
+		// names that Issue instead.
 		writer.before = func(status int) {
 			if status < 400 {
 				return
 			}
-			if hint := h.issueHint(originID, o.Event.RequestedModel); hint != "" {
+			e := o.Event
+			e.Outcome, e.Status = "upstream_error", status
+			if hint := h.issueHint(originID, e); hint != "" {
 				w.Header().Set(refusal.HintHeader, hint)
 			} else if status == http.StatusNotFound && o.Event.RequestedModel != nil && h.mayRequestChanges(originID) {
 				w.Header().Set(refusal.HintHeader, refusal.UnknownModelHint)
@@ -321,7 +323,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if len(ref.Changes) > 0 && h.mayRequestChanges(originID) {
 				ref = ref.ForRequester()
 			}
-			if hint := h.issueHint(originID, o.Event.RequestedModel); hint != "" {
+			// aiport's own refusal names an Issue only when it is the
+			// Issue's cause (a failing Connection that timed out or could
+			// not be reached).
+			e := o.Event
+			e.Outcome, e.Status = ref.Outcome, ref.Status
+			if hint := h.issueHint(originID, e); hint != "" {
 				w.Header().Set(refusal.HintHeader, hint)
 			}
 			writer.status = ref.Status

@@ -468,8 +468,14 @@ management token gets `403`):
   notes.
 - The capabilities answer (`aiport_capabilities`) shows `open_issues`, the
   number of its Issues that are open or resolving.
-- While an Issue is open, a failing call carries an `X-Aiport-Hint` header
-  naming it, so the Application's own logs point the agent to it.
+- A failing call that is one of an open Issue's failures carries an
+  `X-Aiport-Hint` header naming that Issue, so the Application's own logs
+  point the agent to it: for an unknown model, a provider `404` for the
+  same model; for a failing Connection, a `5xx`, timeout or connection
+  error from that Connection. Other failing calls, and aiport's own
+  refusals that are not the Issue's cause, name no Issue. Issue hints are
+  sent whether or not the Application may request changes: telling it about
+  its Issues is not a Change request.
 - The `AGENTS.md` line from the Coding agent brief tells later sessions to
   check `aiport_my_issues` at the start.
 

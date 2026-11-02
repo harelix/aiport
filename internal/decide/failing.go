@@ -69,7 +69,7 @@ func failingSymptoms(c config.Config, history History, at time.Time) (out []*sym
 				others[id] = n
 			}
 		}
-		g.target = mostUsed(others)
+		g.proposedConnection = mostUsed(others)
 		out = append(out, g)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].app+"\x00"+out[i].subject < out[j].app+"\x00"+out[j].subject })

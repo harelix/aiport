@@ -3,6 +3,8 @@ package decide
 import (
 	"errors"
 	"time"
+
+	"aiport/internal/telemetry"
 )
 
 // Issues as the Application's coding agent sees them (GET /v1/aiport/issues
@@ -90,19 +92,44 @@ func (q *Queue) OpenIssues(app string) int {
 	return len(q.Issues(IssueFilter{Application: app, States: []IssueState{IssueOpen, IssueResolving}}))
 }
 
-// HintIssue is the Issue a failing call from app for model should name:
-// an open (or resolving) Issue about that model, else app's newest open one.
-func (q *Queue) HintIssue(app, model string) (Issue, bool) {
-	list := q.Issues(IssueFilter{Application: app, States: []IssueState{IssueOpen, IssueResolving}})
-	for _, is := range list {
-		if is.Subject == model {
-			return is, true
+// HintIssue is the open (or resolving) Issue a failing call from app names
+// in its X-Aiport-Hint: the one whose failures the call is one of (e as
+// request history will record it: for an unknown model, a provider 404 for
+// the Issue's model; for a failing Connection, a call to that Connection
+// that failed against it). Any other failing call names none. It reads the
+// snapshot published after each change to the Issues and never takes the
+// queue's lock, so it is safe on the forwarding path.
+func (q *Queue) HintIssue(app string, e telemetry.Event) (string, bool) {
+	snap := q.hints.Load()
+	if snap == nil || app == "" {
+		return "", false
+	}
+	for _, is := range (*snap)[app] {
+		if r, ok := causes[is.cause]; ok && r.counts(e, is.subject) {
+			return is.id, true
 		}
 	}
-	if len(list) > 0 {
-		return list[0], true
+	return "", false
+}
+
+// hintIssue is an open or resolving Issue as HintIssue reads it.
+type hintIssue struct {
+	id, subject string
+	cause       Cause
+}
+
+// publishHints swaps in a fresh snapshot of the open and resolving Issues
+// per Application for HintIssue. Called with the lock held after each change
+// to the Issues.
+func (q *Queue) publishHints() {
+	snap := map[string][]hintIssue{}
+	for i := len(q.issues) - 1; i >= 0; i-- {
+		is := q.issues[i]
+		if is.State == IssueOpen || is.State == IssueResolving {
+			snap[is.Application] = append(snap[is.Application], hintIssue{id: is.ID, subject: is.Subject, cause: is.Cause})
+		}
 	}
-	return Issue{}, false
+	q.hints.Store(&snap)
 }
 
 // FixedByApplication records that Application app fixed its open Issue id

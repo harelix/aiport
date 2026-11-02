@@ -3,6 +3,7 @@ package decide
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -205,7 +206,7 @@ func (q *Queue) Issues(f IssueFilter) []Issue {
 		if f.Application != "" && is.Application != f.Application {
 			continue
 		}
-		if len(f.States) > 0 && !containsState(f.States, is.State) {
+		if len(f.States) > 0 && !slices.Contains(f.States, is.State) {
 			continue
 		}
 		out = append(out, is)
@@ -265,11 +266,8 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 // model names, counts, times and request ids: never prompts, provider
 // messages, keys or tokens.
 func ApplicationFix(is Issue) string {
-	switch is.Cause {
-	case CauseUnknownModel:
-		return unknownModelFix(is)
-	case CauseFailingConnection:
-		return failingFix(is)
+	if r, ok := causes[is.Cause]; ok {
+		return r.applicationFix(is)
 	}
 	return ""
 }
@@ -350,15 +348,6 @@ func statusText(ev Evidence) string {
 	return s
 }
 
-func containsState(list []IssueState, s IssueState) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 func (q *Queue) issueIndex(id string) int {
 	for i := range q.issues {
 		if q.issues[i].ID == id {
@@ -381,23 +370,24 @@ func (q *Queue) issueFor(app string, cause Cause, subject string) int {
 func (q *Queue) saveIssue(is *Issue) {
 	is.NeedsOwner = is.State == IssueOpen && is.Fix != nil && is.Fix.State == FixProposed
 	is.ApplicationFix = ApplicationFix(*is)
-	if s, ok := q.store.(IssueStore); ok && q.store != nil {
+	if s, ok := q.store.(IssueStore); ok {
 		_ = s.SaveIssue(*is) // kept for this session even if the database fails
 	}
+	q.publishHints()
 }
 
 // symptom is what one detection pass saw for one Application and Subject
 // of a Cause in the window: the errors that count, and the successful
 // calls. For an unknown model, protocol and diagnosis; for a failing
-// Connection, target, the working Connection to propose.
+// Connection, proposedConnection, the working Connection to propose.
 type symptom struct {
-	cause        Cause
-	app, subject string
-	protocol     string
-	errors       []telemetry.Event // oldest first
-	lastSuccess  int64
-	diagnosis    *Diagnosis
-	target       string
+	cause              Cause
+	app, subject       string
+	protocol           string
+	errors             []telemetry.Event // oldest first
+	lastSuccess        int64
+	diagnosis          *Diagnosis
+	proposedConnection string
 }
 
 func (s *symptom) since(ms int64) int {
@@ -457,7 +447,7 @@ func unknownModelSymptoms(c config.Config, history History, at time.Time) []*sym
 		if !known || e.RequestedModel == nil || *e.RequestedModel == "" {
 			continue
 		}
-		failed := e.Outcome == "upstream_error" && e.Status == 404 && !hasAlias(o, *e.RequestedModel)
+		failed := notFound(e) && !hasAlias(o, *e.RequestedModel)
 		if !failed && e.Outcome != "success" {
 			continue
 		}
@@ -514,21 +504,25 @@ func diagnose(finder ModelFinder, symptoms []*symptom, count int, at time.Time) 
 	}
 }
 
-// causeRules is what tracking needs to know about one Cause: its
-// threshold, its aiport fix and its summary. succeeded, when set, says when
-// an Application's last successful call for an Issue's Subject was (for
-// Causes whose successes are not grouped with the errors).
+// causeRules is everything aiport knows about one Cause, so adding a Cause
+// touches only its entry in causes (and its detector): its threshold, its
+// aiport fix, its summary, its Application fix and which failing calls
+// count as its errors.
 type causeRules struct {
-	cause     Cause
-	threshold config.Threshold
-	fix       func(is Issue, s *symptom) (Kind, Proposal)
-	summary   func(is Issue, p Proposal) string
-	succeeded func(app, subject string) int64
+	threshold func(config.Config) config.Threshold
+	// fix is the aiport fix for is from this pass's symptom s.
+	fix     func(is Issue, s *symptom) (Kind, Proposal)
+	summary func(is Issue, p Proposal) string
+	// applicationFix writes the Application fix (see ApplicationFix).
+	applicationFix func(is Issue) string
+	// counts reports whether call e is one of the errors of an Issue about
+	// subject (what X-Aiport-Hint uses to name the Issue).
+	counts func(e telemetry.Event, subject string) bool
 }
 
-func unknownModelRules(c config.Config) causeRules {
-	return causeRules{
-		cause: CauseUnknownModel, threshold: c.Adapting.UnknownModel,
+var causes = map[Cause]causeRules{
+	CauseUnknownModel: {
+		threshold: func(c config.Config) config.Threshold { return c.Adapting.UnknownModel },
 		fix: func(is Issue, _ *symptom) (Kind, Proposal) {
 			p := Proposal{Alias: is.Subject, Model: is.Subject}
 			if d := is.Diagnosis; d != nil && d.Answer == ServedByOne && len(d.Serving) == 1 {
@@ -536,26 +530,37 @@ func unknownModelRules(c config.Config) causeRules {
 			}
 			return KindApplicationAlias, p
 		},
-		summary: func(is Issue, _ Proposal) string { return unknownModelSummary(is) },
-	}
+		summary:        func(is Issue, _ Proposal) string { return unknownModelSummary(is) },
+		applicationFix: unknownModelFix,
+		counts: func(e telemetry.Event, model string) bool {
+			return notFound(e) && e.RequestedModel != nil && *e.RequestedModel == model
+		},
+	},
+	CauseFailingConnection: {
+		threshold: func(c config.Config) config.Threshold { return c.Adapting.FailingConnection },
+		fix: func(_ Issue, s *symptom) (Kind, Proposal) {
+			return KindBindApplication, Proposal{Target: s.proposedConnection} // empty: the Owner chooses
+		},
+		summary:        func(is Issue, p Proposal) string { return failingSummary(is, p.Target) },
+		applicationFix: failingFix,
+		counts:         func(e telemetry.Event, target string) bool { return failed(e) && e.Target == target },
+	},
 }
 
-func failingRules(c config.Config, succeeded func(app, target string) int64) causeRules {
-	return causeRules{
-		cause: CauseFailingConnection, threshold: c.Adapting.FailingConnection,
-		fix: func(_ Issue, s *symptom) (Kind, Proposal) {
-			return KindBindApplication, Proposal{Target: s.target} // empty: the Owner chooses
-		},
-		summary:   func(is Issue, p Proposal) string { return failingSummary(is, p.Target) },
-		succeeded: succeeded,
-	}
-}
+// notFound reports whether the provider answered e with a 404: the error
+// of an unknown model.
+func notFound(e telemetry.Event) bool { return e.Outcome == "upstream_error" && e.Status == 404 }
 
 // track opens, updates, reopens and resolves the Issues of one Cause from
 // one pass's symptoms, offering each open Issue's aiport fix as a
 // Suggestion. It returns the Suggestions offered. Called with the lock held.
-func (q *Queue) track(r causeRules, symptoms []*symptom, at time.Time) []Item {
-	th := r.threshold
+//
+// succeeded, when set, says when an Application's last successful call for
+// an Issue's Subject was (for Causes whose successes are not grouped with
+// the errors).
+func (q *Queue) track(c config.Config, cause Cause, symptoms []*symptom, succeeded func(app, subject string) int64, at time.Time) []Item {
+	r := causes[cause]
+	th := r.threshold(c)
 	window := time.Duration(th.WindowMinutes) * time.Minute
 	now := at.UnixMilli()
 	var offered []Item
@@ -565,7 +570,7 @@ func (q *Queue) track(r causeRules, symptoms []*symptom, at time.Time) []Item {
 		appSuccess[s.app] = max(appSuccess[s.app], s.lastSuccess)
 	}
 	for _, s := range symptoms {
-		i := q.issueFor(s.app, r.cause, s.subject)
+		i := q.issueFor(s.app, cause, s.subject)
 		if i >= 0 {
 			seen[i] = s
 		}
@@ -573,7 +578,7 @@ func (q *Queue) track(r causeRules, symptoms []*symptom, at time.Time) []Item {
 			continue
 		}
 		if i < 0 {
-			q.issues = append(q.issues, Issue{ID: newID(), Application: s.app, Cause: r.cause, Subject: s.subject, State: IssueOpen, SinceMS: now, CreatedAt: now})
+			q.issues = append(q.issues, Issue{ID: newID(), Application: s.app, Cause: cause, Subject: s.subject, State: IssueOpen, SinceMS: now, CreatedAt: now})
 			i = len(q.issues) - 1
 			seen[i] = s
 		}
@@ -585,7 +590,7 @@ func (q *Queue) track(r causeRules, symptoms []*symptom, at time.Time) []Item {
 			}
 			q.reopen(is, now)
 		case IssueDismissed:
-			if quietUntil(is.Dismissal, len(s.errors), at) {
+			if stillQuiet(is.Dismissal, len(s.errors), at) {
 				continue
 			}
 			q.reopen(is, now)
@@ -611,7 +616,7 @@ func (q *Queue) track(r causeRules, symptoms []*symptom, at time.Time) []Item {
 	// the fix), or a whole window passed without the error.
 	for i := range q.issues {
 		is := &q.issues[i]
-		if is.Cause != r.cause || (is.State != IssueOpen && is.State != IssueResolving) {
+		if is.Cause != cause || (is.State != IssueOpen && is.State != IssueResolving) {
 			continue
 		}
 		after := is.Evidence.ToMS
@@ -626,8 +631,8 @@ func (q *Queue) track(r causeRules, symptoms []*symptom, at time.Time) []Item {
 				after = max(after, s.errors[len(s.errors)-1].StartedAt) // errors below the threshold still mean it goes on
 			}
 		}
-		if r.succeeded != nil {
-			success = max(success, r.succeeded(is.Application, is.Subject))
+		if succeeded != nil {
+			success = max(success, succeeded(is.Application, is.Subject))
 		}
 		if is.State == IssueResolving && is.ResolvingBy == ByApplicationFix {
 			// The Application's word is not enough: its calls must succeed.
@@ -741,14 +746,7 @@ func (q *Queue) automaticFixes(c config.Config, offered []Item, now int64) []int
 }
 
 // refused reports whether the Owner refused fix p for Issue is.
-func refused(is Issue, p Proposal) bool {
-	for _, r := range is.Refused {
-		if r == p {
-			return true
-		}
-	}
-	return false
-}
+func refused(is Issue, p Proposal) bool { return slices.Contains(is.Refused, p) }
 
 // settledFix keeps an Issue in step with the Owner's decision on the
 // Suggestion that offers its aiport fix. Called with the lock held.
@@ -781,9 +779,9 @@ func (q *Queue) settledFix(it Item) {
 	q.saveIssue(is)
 }
 
-// quietUntil reports whether a dismissal d still keeps an Issue quiet at
+// stillQuiet reports whether a dismissal d still keeps an Issue quiet at
 // time at with count errors: within QuietFor, unless the evidence doubled.
-func quietUntil(d *Verdict, count int, at time.Time) bool {
+func stillQuiet(d *Verdict, count int, at time.Time) bool {
 	if d == nil {
 		return false
 	}
@@ -825,6 +823,7 @@ func (q *Queue) pruneIssues(at time.Time, retention time.Duration) {
 		kept = append(kept, is)
 	}
 	q.issues = kept
+	q.publishHints()
 	if s, ok := q.store.(IssueStore); ok && len(gone) > 0 {
 		_ = s.DeleteIssues(gone)
 	}

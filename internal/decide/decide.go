@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"aiport/internal/capability"
@@ -230,6 +231,9 @@ type Queue struct {
 	failed  FailedAuth
 	issues  []Issue
 	finder  ModelFinder
+	// hints is the open and resolving Issues per Application, read without
+	// the lock on the forwarding path (HintIssue); publishHints swaps it.
+	hints atomic.Pointer[map[string][]hintIssue]
 }
 
 // WatchFailedAuth lets detection read failed-authentication counts from f, so
@@ -259,6 +263,7 @@ func New(live *config.Live, history History, store Store) (*Queue, error) {
 			q.issues = issues
 		}
 	}
+	q.publishHints()
 	return q, nil
 }
 
@@ -663,11 +668,11 @@ func (q *Queue) Detect(at time.Time) []Item {
 		found = unknownTokens(c, q.failed, at)
 	}
 	q.revertedFixes(at.UnixMilli())
-	out := q.track(unknownModelRules(c), symptoms, at)
+	out := q.track(c, CauseUnknownModel, symptoms, nil, at)
 	// Only unknown-model Issues can be fixed automatically: a failing
 	// Connection has no diagnosis, so automaticFixes never picks it.
 	auto := q.automaticFixes(c, out, at.UnixMilli())
-	out = append(out, q.track(failingRules(c, succeeded), failing, at)...)
+	out = append(out, q.track(c, CauseFailingConnection, failing, succeeded, at)...)
 	for _, s := range found {
 		if q.quiet(s, at) {
 			continue
@@ -704,12 +709,7 @@ func (q *Queue) quiet(s Item, at time.Time) bool {
 }
 
 func hasAlias(o config.Origin, model string) bool {
-	for _, a := range o.Aliases {
-		if a.Alias == model {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(o.Aliases, func(a config.OriginAlias) bool { return a.Alias == model })
 }
 
 func mostUsed(counts map[string]int) string {

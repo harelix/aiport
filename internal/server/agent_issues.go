@@ -7,6 +7,7 @@ import (
 
 	"aiport/internal/decide"
 	"aiport/internal/refusal"
+	"aiport/internal/telemetry"
 )
 
 // IssuesPath is where an Application's coding agent reads its own Issues
@@ -73,20 +74,19 @@ func (h *Handler) serveIssues(w http.ResponseWriter, r *http.Request, applicatio
 	fail(405, "method_not_allowed", "Use "+allow)
 }
 
-// issueHint is the hint for a failing call from applicationID for model:
-// it names the open Issue about that model (else the Application's newest
-// open one). Empty when there is none or aiport does not adapt.
-func (h *Handler) issueHint(applicationID string, model *string) string {
-	if h.decisions == nil || !h.isApplication(applicationID) {
+// issueHint is the hint for a failing call from applicationID, e as
+// request history will record it: it names the open Issue the call is one
+// of the failures of, if any. Empty when there is none or aiport does not
+// adapt. Delivering an Issue is not a Change request, so it needs no
+// permission to request changes. It reads only snapshots: nothing on the
+// forwarding path waits for the decision queue.
+func (h *Handler) issueHint(applicationID string, e telemetry.Event) string {
+	if h.decisions == nil || h.snapshot().Adapting.Disabled || !h.isApplication(applicationID) {
 		return ""
 	}
-	m := ""
-	if model != nil {
-		m = *model
-	}
-	is, ok := h.decisions.HintIssue(applicationID, m)
+	id, ok := h.decisions.HintIssue(applicationID, e)
 	if !ok {
 		return ""
 	}
-	return refusal.IssueHint(is.ID)
+	return refusal.IssueHint(id)
 }
