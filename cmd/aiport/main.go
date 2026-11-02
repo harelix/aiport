@@ -112,7 +112,9 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	collector, closeDB := openTelemetry(c, *path, errOut)
 	defer closeDB()
 	defer collector.Close(time.Duration(c.Telemetry.ShutdownDrainMS) * time.Millisecond)
-	srv := &http.Server{Handler: server.NewConfigured(c, secrets, collector, *path), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
+	handler := server.NewConfigured(c, secrets, collector, *path).(*server.Handler)
+	defer handler.Close()
+	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
 	ctx, cancelServe := context.WithCancel(ctx)
 	defer cancelServe()
 	done := make(chan struct{})

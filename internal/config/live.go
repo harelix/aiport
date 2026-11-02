@@ -15,15 +15,37 @@ import (
 // Edit changes the YAML document in place (other keys and comments are kept).
 type Edit func(root *yaml.Node) error
 
-// Change is one applied configuration change: what it was and the exact file
-// contents before and after, which is everything Revert needs.
+// Change is one applied configuration change: what it was, who or what made
+// it, and the exact file contents before and after, which is everything Revert
+// needs. A revert is itself a Change (RevertOf names the Change it undid), and
+// the reverted Change is marked with RevertedBy and RevertedAt.
 type Change struct {
-	ID     string `json:"id"`
-	At     int64  `json:"at_ms"`
-	What   string `json:"what"`
-	Before []byte `json:"-"`
-	After  []byte `json:"-"`
+	ID         string `json:"id"`
+	At         int64  `json:"at_ms"`
+	What       string `json:"what"`
+	By         string `json:"by"`
+	RevertOf   string `json:"revert_of,omitempty"`
+	RevertedBy string `json:"reverted_by,omitempty"`
+	RevertedAt int64  `json:"reverted_at_ms,omitempty"`
+	Before     []byte `json:"-"`
+	After      []byte `json:"-"`
 }
+
+// Owner is who made a Change applied from the dashboard.
+const Owner = "Owner"
+
+// ChangeLog keeps Changes across restarts. Load returns the kept Changes,
+// oldest first; Save stores a new Change or updates a kept one (by ID).
+type ChangeLog interface {
+	Load(limit int) ([]Change, error)
+	Save(Change) error
+}
+
+// ErrAlreadyReverted means the Change was reverted before.
+var ErrAlreadyReverted = errors.New("this change was already reverted")
+
+// ErrNoChange means no recorded Change has the given id.
+var ErrNoChange = errors.New("no such change")
 
 // ErrConflict means the file changed since a change was applied, so it can
 // no longer be reverted safely.
@@ -44,6 +66,7 @@ type Live struct {
 	cfg       Config
 	listeners []func(Config)
 	changes   []Change
+	log       ChangeLog
 	now       func() time.Time
 }
 
@@ -51,6 +74,13 @@ type Live struct {
 // read-only: Change and Revert return ErrReadOnly.
 func NewLive(path string, c Config) *Live {
 	return &Live{path: path, cfg: copyConfig(c), now: time.Now}
+}
+
+// SetClock sets where Change times come from (tests use a fixed clock).
+func (l *Live) SetClock(now func() time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.now = now
 }
 
 // Config returns a copy of the current configuration.
@@ -63,6 +93,22 @@ func (l *Live) Config() Config {
 // Writable reports whether changes can be saved.
 func (l *Live) Writable() bool { return l.path != "" }
 
+// Keep loads the Changes kept in log, so they can be listed and reverted after
+// a restart, and saves every later Change and revert to it. Call it before
+// serving requests. If log fails later, Changes are still applied and kept
+// for this session.
+func (l *Live) Keep(log ChangeLog) error {
+	kept, err := log.Load(maxChanges)
+	if err != nil {
+		return err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.log = log
+	l.changes = append(kept, l.changes...)
+	return nil
+}
+
 // OnChange registers fn to run after every successful change, with the new
 // configuration, before Change returns. Register before serving requests.
 func (l *Live) OnChange(fn func(Config)) {
@@ -71,9 +117,15 @@ func (l *Live) OnChange(fn func(Config)) {
 	l.listeners = append(l.listeners, fn)
 }
 
-// Change applies edit, saves and publishes the result, and records it. Nothing
-// is written or published when the edit or validation fails.
+// Change applies edit on behalf of the Owner; see ChangeAs.
 func (l *Live) Change(what string, edit Edit) (Config, Change, error) {
+	return l.ChangeAs(Owner, what, edit)
+}
+
+// ChangeAs applies edit, saves and publishes the result, and records it as
+// made by by. Nothing is written or published when the edit or validation
+// fails.
+func (l *Live) ChangeAs(by, what string, edit Edit) (Config, Change, error) {
 	if l.path == "" {
 		return Config{}, Change{}, ErrReadOnly
 	}
@@ -83,14 +135,18 @@ func (l *Live) Change(what string, edit Edit) (Config, Change, error) {
 	if err != nil {
 		return Config{}, Change{}, err
 	}
-	ch := Change{ID: changeID(), At: l.now().UnixMilli(), What: what, Before: before, After: after}
+	ch := Change{ID: changeID(), At: l.now().UnixMilli(), What: what, By: by, Before: before, After: after}
 	l.commit(c, ch)
 	return copyConfig(c), ch, nil
 }
 
-// Revert restores the file as it was before change id, if nothing has edited
-// it since. The revert is itself recorded as a change.
-func (l *Live) Revert(id string) (Config, Change, error) {
+// Revert reverts change id on behalf of the Owner; see RevertAs.
+func (l *Live) Revert(id string) (Config, Change, error) { return l.RevertAs(Owner, id) }
+
+// RevertAs restores the file as it was before change id, if nothing has edited
+// it since (ErrConflict otherwise). The revert is itself recorded as a change
+// made by by, and change id is marked as reverted.
+func (l *Live) RevertAs(by, id string) (Config, Change, error) {
 	if l.path == "" {
 		return Config{}, Change{}, ErrReadOnly
 	}
@@ -103,7 +159,10 @@ func (l *Live) Revert(id string) (Config, Change, error) {
 		}
 	}
 	if target == nil {
-		return Config{}, Change{}, errors.New("no such change")
+		return Config{}, Change{}, ErrNoChange
+	}
+	if target.RevertedBy != "" {
+		return Config{}, Change{}, ErrAlreadyReverted
 	}
 	current, err := os.ReadFile(l.path)
 	if err != nil {
@@ -119,7 +178,11 @@ func (l *Live) Revert(id string) (Config, Change, error) {
 	if err := writePrivate(l.path, target.Before, "configuration"); err != nil {
 		return Config{}, Change{}, err
 	}
-	ch := Change{ID: changeID(), At: l.now().UnixMilli(), What: "revert: " + target.What, Before: current, After: target.Before}
+	ch := Change{ID: changeID(), At: l.now().UnixMilli(), What: "revert: " + target.What, By: by, RevertOf: target.ID, Before: current, After: target.Before}
+	target.RevertedBy, target.RevertedAt = ch.ID, ch.At
+	if l.log != nil {
+		_ = l.log.Save(*target)
+	}
 	l.commit(c, ch)
 	return copyConfig(c), ch, nil
 }
@@ -133,6 +196,9 @@ func (l *Live) Changes() []Change {
 
 func (l *Live) commit(c Config, ch Change) {
 	l.cfg = c
+	if l.log != nil {
+		_ = l.log.Save(ch)
+	}
 	l.changes = append(l.changes, ch)
 	if len(l.changes) > maxChanges {
 		l.changes = l.changes[len(l.changes)-maxChanges:]
