@@ -41,6 +41,7 @@ type Handler struct {
 	tasks            *tasks.Store
 	changesDB        *sql.DB                // where Changes are kept; nil = this session only
 	decisions        *decide.Queue          // Suggestions waiting for the Owner; nil in bare test handlers
+	failedAuth       *telemetry.FailedAuth  // failed authentications per minute (counts only, never tokens); nil in bare test handlers
 	now              func() time.Time       // nil = time.Now; tests set a fixed clock
 	gh               func() (string, error) // finds the gh CLI; nil = look it up on PATH; tests set a fake
 	pair             pairings
@@ -195,6 +196,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		management = 1
 	}
 	if authenticated != 1 || strings.HasPrefix(r.URL.Path, "/api/") && management != 1 {
+		// Only an Application route refused for a missing or unknown token is
+		// counted (never the token); the dashboard's own sign-in is not.
+		if authenticated != 1 && !strings.HasPrefix(r.URL.Path, "/api/") && h.failedAuth != nil {
+			h.failedAuth.Add(h.clock())
+		}
 		w.Header().Set("WWW-Authenticate", `Bearer realm="aiport"`)
 		fail(401, "unauthorized", "A valid local bearer credential is required")
 		return
