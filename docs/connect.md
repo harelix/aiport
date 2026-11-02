@@ -28,6 +28,21 @@ delivered exactly once. Unapproved requests expire after 10 minutes. The token
 lives in the private credential file as `AIPORT_APP_<ID>_TOKEN`. The source of truth is
 `internal/connect/connect.go`; bump `Version` on incompatible changes.
 
+## Hints and the handover brief
+
+Applications the Owner allows to request changes are told how to ask when
+they hit a wall a Change could remove: `target_unconfigured` and
+`target_disabled` errors gain `error.hint` (the request kind, the
+`/v1/aiport/requests` endpoint and the MCP tool `aiport_request_change`), and a
+provider `404` for the requested model gains an `X-Aiport-Hint` response
+header, with the provider's body passed through unchanged. Status codes and
+error codes never change, and other Applications see no hint.
+
+The handover brief tells the coding agent to add a project-level MCP entry
+pointing at this gateway's `/mcp`, with the token taken from
+`${AIPORT_APP_TOKEN}` (never the value), and the line from
+`connect.AgentsLine` to the application's `AGENTS.md`.
+
 ## Extensions
 
 The Owner can list Extensions (programs that act as a policy when a Change
