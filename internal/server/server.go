@@ -39,10 +39,11 @@ type Handler struct {
 	keyMu            sync.Mutex
 	keySource        map[string]string
 	tasks            *tasks.Store
-	changesDB        *sql.DB               // where Changes are kept; nil = this session only
-	decisions        *decide.Queue         // Suggestions waiting for the Owner; nil in bare test handlers
-	failedAuth       *telemetry.FailedAuth // failed authentications per minute (counts only, never tokens); nil in bare test handlers
-	now              func() time.Time      // nil = time.Now; tests set a fixed clock
+	changesDB        *sql.DB                // where Changes are kept; nil = this session only
+	decisions        *decide.Queue          // Suggestions waiting for the Owner; nil in bare test handlers
+	failedAuth       *telemetry.FailedAuth  // failed authentications per minute (counts only, never tokens); nil in bare test handlers
+	now              func() time.Time       // nil = time.Now; tests set a fixed clock
+	gh               func() (string, error) // finds the gh CLI; nil = look it up on PATH; tests set a fake
 	pair             pairings
 	assets           http.Handler
 	auth             *localauth.Manager

@@ -258,3 +258,24 @@ deciding about Change requests: `name`, `hook` (`policy` or `guardrail`), an
 absolute `path`, optional `args` and `timeout_ms` (default 5000, at most 60000).
 Only listed programs run; failure, a crash or a timeout denies. See
 [extensions.md](extensions.md).
+
+## Upstream
+
+`upstream.repository` (`owner/name` on GitHub) is where "Suggest to aiport"
+and "Share upstream" drafts open. Empty means the repository aiport was built
+with (`make build UPSTREAM=owner/name`), if any; with neither, the dashboard
+still shows each draft to copy.
+
+- `GET /api/v1/upstream` lists the drafts: `suggestions` (one per kind in
+  demand, from `demand` in `GET /api/v1/decisions`) and `shares` (one per
+  listed Extension), each with `title`, `body` and, when the repository is
+  known, a GitHub `url` that opens the prefilled issue. `gh` says whether the
+  gh CLI can file them.
+- `POST /api/v1/upstream/issues` `{"suggest": kind}` or `{"share": extension}`
+  with `"confirm": true` runs `gh issue create` with the Owner's own gh login.
+  Without `confirm` it is `400 confirmation_required` and nothing runs.
+
+Drafts carry kinds, hooks and anonymous counts only: never configuration
+values, tokens, paths, Application names, request text or Extension settings.
+aiport stores no GitHub credential and sends nothing on its own; gh gets only
+`PATH`, `HOME` and the variables it needs to find its own login.

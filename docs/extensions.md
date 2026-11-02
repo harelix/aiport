@@ -143,3 +143,12 @@ esac
 
 A real Extension should parse the JSON (for example with `jq` or a small
 program) rather than match text.
+
+## Sharing an Extension upstream
+
+The Changes page lists the Extensions in `aiport.yaml` with **Share upstream**.
+It prefills a GitHub contribution for aiport that names only the hook and the
+input protocol, never the Extension's name, path, arguments or timeout; you
+paste the program yourself after removing anything private. aiport opens it in
+your browser, or runs `gh issue create` after you confirm. See
+[Upstream](configuration.md#upstream).

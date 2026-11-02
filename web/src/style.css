@@ -380,6 +380,11 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .askers{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:10px}
 .askers li{border-left:2px solid var(--line);padding-left:10px;font-size:13px}
 .askers li .request-text{margin-top:4px}
+.upstream-draft{display:grid;gap:8px;padding:8px 0}
+.upstream-draft .draft-title{font-weight:600;color:var(--text);font-size:13px;overflow-wrap:anywhere}
+.upstream-draft .draft-body{margin:0;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--text-2);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+.upstream-draft .actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.upstream-draft a.primary{text-decoration:none;padding:8px 14px;font-size:13px}
 /* collapsed strip */
 .sidebar.collapsed{padding:20px 10px;align-items:center}
 .sidebar.collapsed .label{display:none}

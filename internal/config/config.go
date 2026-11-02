@@ -41,6 +41,8 @@ type Config struct {
 	// Extensions are the programs the Owner listed to take part in deciding
 	// about Change requests (policies and guardrails).
 	Extensions []Extension `yaml:"extensions,omitempty" json:"extensions"`
+	// Upstream is where "Suggest to aiport" and "Share upstream" drafts go.
+	Upstream Upstream `yaml:"upstream,omitempty" json:"upstream"`
 }
 
 // Evaluation is the user-chosen evaluator: any configured connection.
@@ -295,6 +297,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := validateExtensions(c.Extensions); err != nil {
+		return err
+	}
+	if err := c.Upstream.validate(); err != nil {
 		return err
 	}
 	t := c.Telemetry
