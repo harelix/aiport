@@ -81,6 +81,16 @@ type Origin struct {
 	Name     string `yaml:"name" json:"name"`
 	TokenEnv string `yaml:"token_env" json:"token_env"`
 	Target   string `yaml:"target,omitempty" json:"target,omitempty"`
+	// Aliases apply only to this client and take priority over the global
+	// aliases. Each maps a model name the client sends to a connection and
+	// the model to use there.
+	Aliases []OriginAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+}
+
+type OriginAlias struct {
+	Alias  string `yaml:"alias" json:"alias"`
+	Target string `yaml:"target" json:"target"`
+	Model  string `yaml:"model" json:"model"`
 }
 type Defaults struct {
 	OpenAITarget    string `yaml:"openai_target,omitempty" json:"openai_target,omitempty"`
@@ -232,6 +242,19 @@ func (c Config) Validate() error {
 			if _, ok := targets[o.Target]; !ok {
 				return errors.New("origin references a missing target")
 			}
+		}
+		seen := map[string]bool{}
+		for _, a := range o.Aliases {
+			if _, ok := targets[a.Target]; !ok {
+				return fmt.Errorf("origin %q alias references a missing target", o.ID)
+			}
+			if !boundedModel(a.Alias) || !boundedModel(a.Model) {
+				return errors.New("alias and model must contain 1–256 non-control bytes")
+			}
+			if seen[a.Alias] {
+				return fmt.Errorf("origin %q has a duplicate alias %q", o.ID, a.Alias)
+			}
+			seen[a.Alias] = true
 		}
 	}
 	aliases := map[string]bool{}

@@ -17,13 +17,11 @@ import (
 
 	"aiport/internal/compress"
 	"aiport/internal/config"
+	"aiport/internal/refusal"
 )
 
 type Gateway struct {
-	targets   map[string]config.Target
-	origins   map[string]string
-	aliases   map[string]map[string]string
-	defaults  config.Defaults
+	routes    routes // guarded by targetsMu
 	keysMu    sync.RWMutex
 	targetsMu sync.RWMutex
 	keys      map[string]string
@@ -37,21 +35,9 @@ func New(c config.Config, s config.Secrets) *Gateway {
 	if limits.MaxConcurrent == 0 {
 		limits = config.DefaultProxyLimits()
 	}
-	g := &Gateway{targets: map[string]config.Target{}, origins: map[string]string{}, aliases: map[string]map[string]string{}, defaults: c.Defaults, keys: map[string]string{}, limits: limits, slots: make(chan struct{}, limits.MaxConcurrent)}
-	for _, t := range c.Targets {
-		g.targets[t.ID] = t
-	}
-	for _, o := range c.Origins {
-		g.origins[o.ID] = o.Target
-	}
+	g := &Gateway{routes: buildRoutes(c), keys: map[string]string{}, limits: limits, slots: make(chan struct{}, limits.MaxConcurrent)}
 	for k, v := range s.Upstream {
 		g.keys[k] = v
-	}
-	for _, a := range c.Aliases {
-		if g.aliases[a.Target] == nil {
-			g.aliases[a.Target] = map[string]string{}
-		}
-		g.aliases[a.Target][a.Alias] = a.Model
 	}
 	// Fresh connections prevent net/http's implicit replay on stale pooled connections.
 	g.transport = &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: ms(limits.ConnectTimeoutMS)}).DialContext, TLSHandshakeTimeout: ms(limits.ConnectTimeoutMS), ResponseHeaderTimeout: ms(limits.ResponseHeaderTimeoutMS), DisableCompression: true, DisableKeepAlives: true, MaxResponseHeaderBytes: 64 << 10}
@@ -62,25 +48,13 @@ func New(c config.Config, s config.Secrets) *Gateway {
 // for new requests; in-flight requests keep what they started with. Keys of
 // removed connections are dropped.
 func (g *Gateway) Apply(c config.Config) {
-	targets, origins, aliases := map[string]config.Target{}, map[string]string{}, map[string]map[string]string{}
-	for _, t := range c.Targets {
-		targets[t.ID] = t
-	}
-	for _, o := range c.Origins {
-		origins[o.ID] = o.Target
-	}
-	for _, a := range c.Aliases {
-		if aliases[a.Target] == nil {
-			aliases[a.Target] = map[string]string{}
-		}
-		aliases[a.Target][a.Alias] = a.Model
-	}
+	rt := buildRoutes(c)
 	g.targetsMu.Lock()
-	g.targets, g.origins, g.aliases, g.defaults = targets, origins, aliases, c.Defaults
+	g.routes = rt
 	g.targetsMu.Unlock()
 	g.keysMu.Lock()
 	for id := range g.keys {
-		if _, ok := targets[id]; !ok {
+		if _, ok := rt.targets[id]; !ok {
 			delete(g.keys, id)
 		}
 	}
@@ -110,7 +84,7 @@ func (g *Gateway) key(targetID string) string {
 // The response body is read up to limit bytes.
 func (g *Gateway) Call(ctx context.Context, targetID, path string, body []byte, limit int64) ([]byte, int, error) {
 	g.targetsMu.RLock()
-	t, ok := g.targets[targetID]
+	t, ok := g.routes.targets[targetID]
 	g.targetsMu.RUnlock()
 	if !ok || t.Disabled {
 		return nil, 0, errors.New("evaluator connection is not configured or is disabled")
@@ -131,12 +105,8 @@ func (g *Gateway) Call(ctx context.Context, targetID, path string, body []byte, 
 	req.Header.Set("Content-Type", "application/json")
 	if t.Protocol == "anthropic" {
 		req.Header.Set("anthropic-version", "2023-06-01")
-		if secret != "" {
-			req.Header.Set("X-Api-Key", secret)
-		}
-	} else if secret != "" {
-		req.Header.Set("Authorization", "Bearer "+secret)
 	}
+	setUpstreamAuth(req.Header, t.Protocol, secret)
 	resp, err := g.transport.RoundTrip(req)
 	if err != nil {
 		return nil, 0, errors.New("evaluator connection is unreachable")
@@ -153,61 +123,48 @@ func (g *Gateway) Call(ctx context.Context, targetID, path string, body []byte, 
 func (g *Gateway) Protocol(targetID string) string {
 	g.targetsMu.RLock()
 	defer g.targetsMu.RUnlock()
-	return g.targets[targetID].Protocol
+	return g.routes.targets[targetID].Protocol
 }
 
 func ms(n int) time.Duration { return time.Duration(n) * time.Millisecond }
 
-type ErrorWriter func(int, string, string)
+// Refuse writes a refusal to the client and records its outcome.
+type Refuse func(refusal.Refusal)
 
-func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string, fail ErrorWriter) {
+func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string, fail Refuse) {
 	protocol := "openai"
 	if r.URL.Path == "/v1/messages" {
 		protocol = "anthropic"
 	}
 	g.targetsMu.RLock()
-	targetID := g.origins[origin]
-	if targetID == "" {
-		if protocol == "openai" {
-			targetID = g.defaults.OpenAITarget
-		} else {
-			targetID = g.defaults.AnthropicTarget
-		}
-	}
-	t, ok := g.targets[targetID]
-	aliases := g.aliases[targetID]
+	rt := g.routes
 	g.targetsMu.RUnlock()
-	if !ok {
-		fail(503, "target_unconfigured", "Configure a target for this protocol or origin")
-		return
+	refuse := func(route Route, ref *refusal.Refusal) bool {
+		if o := observation(r); o != nil && route.Target.ID != "" {
+			o.Event.Target = route.Target.ID
+			o.Event.Provider = route.Target.Provider
+			o.Event.Protocol = route.Target.Protocol
+		}
+		if ref != nil {
+			fail(*ref)
+			return true
+		}
+		return false
 	}
-	if o := observation(r); o != nil {
-		o.Event.Target = t.ID
-		o.Event.Provider = t.Provider
-		o.Event.Protocol = t.Protocol
-	}
-	if t.Disabled {
-		fail(503, "target_disabled", "The selected target is disabled")
-		return
-	}
-	if t.Protocol != protocol {
-		fail(400, "incompatible_protocol", "The selected target does not accept this native protocol")
-		return
-	}
-	secret := g.key(targetID)
-	if t.APIKeyEnv != "" && secret == "" {
-		fail(503, "upstream_key_missing", "No API key is set for this connection; add it in the dashboard under Settings")
+	// Refuse early on the client's own binding, before admitting the body.
+	route, ref := rt.resolve(origin, protocol, "")
+	if refuse(route, ref) {
 		return
 	}
 	select {
 	case g.slots <- struct{}{}:
 		defer func() { <-g.slots }()
 	default:
-		fail(429, "concurrency_limit", "Gateway concurrency limit reached")
+		fail(refusal.ConcurrencyLimit)
 		return
 	}
 	if r.ContentLength > g.limits.MaxRequestBytes {
-		fail(413, "request_too_large", "Request exceeds the configured admission limit")
+		fail(refusal.RequestTooLarge)
 		return
 	}
 	rc := http.NewResponseController(w)
@@ -218,25 +175,40 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 	if err != nil {
 		var large *http.MaxBytesError
 		if errors.As(err, &large) {
-			fail(413, "request_too_large", "Request exceeds the configured admission limit")
+			fail(refusal.RequestTooLarge)
 		} else {
-			fail(400, "request_read_failed", "Could not read request body")
+			fail(refusal.RequestReadFailed)
 		}
 		return
 	}
-	if o := observation(r); o != nil {
-		var meta struct {
-			Model string `json:"model"`
+	var meta struct {
+		Model string `json:"model"`
+	}
+	model := ""
+	if json.Unmarshal(body, &meta) == nil && len(meta.Model) > 0 && len(meta.Model) <= 256 && !strings.ContainsAny(meta.Model, "\r\n\x00") {
+		model = meta.Model
+		if o := observation(r); o != nil {
+			o.Event.RequestedModel = &model
 		}
-		if json.Unmarshal(body, &meta) == nil && len(meta.Model) > 0 && len(meta.Model) <= 256 && !strings.ContainsAny(meta.Model, "\r\n\x00") {
-			o.Event.RequestedModel = &meta.Model
+	}
+	// The model is known now: a client alias may pick another connection.
+	if model != "" && len(rt.originAliases[origin]) > 0 {
+		route, ref = rt.resolve(origin, protocol, model)
+		if refuse(route, ref) {
+			return
 		}
+	}
+	t := route.Target
+	secret := g.key(t.ID)
+	if t.APIKeyEnv != "" && secret == "" {
+		fail(refusal.UpstreamKeyMissing)
+		return
 	}
 	// Opt-in compression, requested per request by the application.
 	if raw := r.Header.Values(compress.Header); len(raw) > 0 {
 		methods, perr := compress.Parse(strings.Join(raw, ","))
 		if perr != nil {
-			fail(400, "unknown_compression", perr.Error())
+			fail(refusal.UnknownCompression.WithMessage(perr.Error()))
 			return
 		}
 		if len(methods) > 0 {
@@ -258,16 +230,16 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 			}
 		}
 	}
-	if len(aliases) > 0 {
-		body, err = rewriteModel(body, aliases)
+	if len(route.Rewrite) > 0 {
+		body, err = rewriteModel(body, route.Rewrite)
 		if err != nil {
-			fail(400, "ambiguous_model", "Alias routing requires an unambiguous JSON object")
+			fail(refusal.AmbiguousModel)
 			return
 		}
 	}
 	base, err := url.Parse(t.URL())
 	if err != nil {
-		fail(503, "target_invalid", "Selected target configuration is invalid")
+		fail(refusal.TargetInvalid)
 		return
 	}
 	// Base is a fixed API prefix, not a path to resolve relative to /v1 again.
@@ -278,7 +250,7 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 	defer cancel()
 	upstream, err := http.NewRequestWithContext(ctx, r.Method, base.String(), bytes.NewReader(body))
 	if err != nil {
-		fail(502, "upstream_request_failed", "Could not create upstream request")
+		fail(refusal.UpstreamRequestFailed)
 		return
 	}
 	upstream.GetBody = nil
@@ -291,23 +263,17 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 		}
 	}
 	// Headers named by Connection cannot remove our selected upstream credential.
-	if secret != "" {
-		if protocol == "anthropic" {
-			upstream.Header.Set("X-Api-Key", secret)
-		} else {
-			upstream.Header.Set("Authorization", "Bearer "+secret)
-		}
-	}
+	setUpstreamAuth(upstream.Header, protocol, secret)
 	response, err := g.transport.RoundTrip(upstream)
 	if err != nil {
 		if r.Context().Err() != nil {
-			fail(499, "client_cancelled", "Client cancelled request")
+			fail(refusal.ClientCancelled)
 		} else {
 			var timeout net.Error
 			if errors.As(err, &timeout) && timeout.Timeout() {
-				fail(504, "upstream_timeout", "Upstream response deadline exceeded")
+				fail(refusal.UpstreamTimeout)
 			} else {
-				fail(502, "upstream_unavailable", "Upstream connection failed")
+				fail(refusal.UpstreamUnavailable)
 			}
 		}
 		return
@@ -447,7 +413,7 @@ func (g *Gateway) Probe(ctx context.Context, targetID string) ProbeResult {
 		return ProbeResult{OK: ok, State: state, Status: status, LatencyMS: time.Since(started).Milliseconds(), Message: msg, CheckedAt: time.Now().UnixMilli()}
 	}
 	g.targetsMu.RLock()
-	t, ok := g.targets[targetID]
+	t, ok := g.routes.targets[targetID]
 	g.targetsMu.RUnlock()
 	if !ok {
 		return res(false, "unknown", 0, "No connection with this id.")
@@ -470,12 +436,8 @@ func (g *Gateway) Probe(ctx context.Context, targetID string) ProbeResult {
 	}
 	if t.Protocol == "anthropic" {
 		req.Header.Set("anthropic-version", "2023-06-01")
-		if secret != "" {
-			req.Header.Set("X-Api-Key", secret)
-		}
-	} else if secret != "" {
-		req.Header.Set("Authorization", "Bearer "+secret)
 	}
+	setUpstreamAuth(req.Header, t.Protocol, secret)
 	resp, err := g.transport.RoundTrip(req)
 	if err != nil {
 		if ctx.Err() != nil {

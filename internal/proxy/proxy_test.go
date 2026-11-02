@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"aiport/internal/config"
+	"aiport/internal/refusal"
 )
 
 type roundTrip func(*http.Request) (*http.Response, error)
@@ -43,7 +44,7 @@ func call(g *Gateway, path, body, origin string) (*httptest.ResponseRecorder, st
 	r.Header.Set("Anthropic-Beta", "tools-test")
 	w := httptest.NewRecorder()
 	code := ""
-	g.Forward(w, r, origin, func(status int, c, message string) { code = c; w.WriteHeader(status) })
+	g.Forward(w, r, origin, func(ref refusal.Refusal) { code = ref.Code; w.WriteHeader(ref.Status) })
 	return w, code
 }
 func TestNativeFidelity(t *testing.T) {
@@ -107,7 +108,7 @@ func TestAdmissionAndRouting(t *testing.T) {
 	}{
 		{"oversize", func(g *Gateway) { g.limits.MaxRequestBytes = 2 }, "/v1/responses", "123", "unknown", "request_too_large", 413},
 		{"overload", func(g *Gateway) { g.slots = make(chan struct{}, 1); g.slots <- struct{}{} }, "/v1/responses", "{}", "unknown", "concurrency_limit", 429},
-		{"disabled", func(g *Gateway) { v := g.targets["main"]; v.Disabled = true; g.targets["main"] = v }, "/v1/responses", "{}", "unknown", "target_disabled", 503},
+		{"disabled", func(g *Gateway) { v := g.routes.targets["main"]; v.Disabled = true; g.routes.targets["main"] = v }, "/v1/responses", "{}", "unknown", "target_disabled", 503},
 		{"protocol", func(g *Gateway) {}, "/v1/responses", "{}", "claude-code", "incompatible_protocol", 400},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -133,7 +134,7 @@ func TestCancellation(t *testing.T) {
 	})
 	r := httptest.NewRequest("POST", "http://local/v1/responses", strings.NewReader("{}")).WithContext(ctx)
 	w := httptest.NewRecorder()
-	g.Forward(w, r, "unknown", func(status int, _, _ string) { w.WriteHeader(status) })
+	g.Forward(w, r, "unknown", func(ref refusal.Refusal) { w.WriteHeader(ref.Status) })
 	if w.Code != 499 {
 		t.Fatal(w.Code)
 	}
@@ -151,7 +152,7 @@ func TestFlushBeforeCompletion(t *testing.T) {
 	go func() {
 		defer close(done)
 		r := httptest.NewRequest("POST", "http://local/v1/responses", strings.NewReader("{}"))
-		g.Forward(w, r, "unknown", func(int, string, string) { t.Error("unexpected failure") })
+		g.Forward(w, r, "unknown", func(refusal.Refusal) { t.Error("unexpected failure") })
 	}()
 	if _, err := writer.Write([]byte(": heartbeat\n\n")); err != nil {
 		t.Fatal(err)

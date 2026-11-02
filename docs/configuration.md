@@ -71,10 +71,10 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `listen` | `127.0.0.1:8787`; literal IPv4/IPv6 loopback and port 1–65535 only |
 | `auth.token_env` | Required name of the global management/local bearer token environment variable |
 | `targets` | List of `id`, `provider`, and for built-in providers optionally nothing else. `protocol`, `base_url` and `api_key_env` default from the provider preset (required for custom providers). `region` is required by regional providers (Bedrock) and fills `{region}`. `endpoint` picks a provider API surface (Bedrock: `runtime` default, or `mantle`). Optional `disabled` (false) |
-| `origins` | List of `id`, `name`, `token_env`, optional `target` |
+| `origins` | List of `id`, `name`, `token_env`, optional `target`, optional `aliases` (`alias`, `target`, `model`): models only this client can ask for, checked before global aliases and allowed to pick another connection |
 | `defaults` | Optional `openai_target` and `anthropic_target`; matching target protocols required |
 | `aliases` | List of `target`, `alias`, `model`; unique alias per target; model strings 1–256 bytes |
-| `telemetry.enabled` | true; accepted as configuration only, persistence not implemented |
+| `telemetry.enabled` | true; request metadata is saved to `<config>.db` (SQLite) |
 | `telemetry.retention_days` | 7; range 1–3650 |
 | `telemetry.queue_capacity` | 4096; range 1–65536 |
 | `telemetry.batch_size` | 100; range 1–queue capacity |
@@ -142,7 +142,9 @@ transport replay; connection pooling and performance tuning remain unmeasured.
 
 Raw query semantics are retained without logging. The base URL prefix is appended
 once (`/v1/chat/completions` appends `/chat/completions`, for example). Native
-unknown request fields and body bytes pass unchanged. Explicit model aliases
+unknown request fields and body bytes pass unchanged. A client's own alias for the requested model is applied first and may select
+another connection; otherwise the client's bound connection (or the protocol
+default) and its global aliases apply. Explicit model aliases
 replace only the top-level model value while preserving other bytes; ambiguous
 model fields are rejected when aliases are configured. No generic required-model
 validation is imposed. Native validation/errors remain upstream responsibilities.

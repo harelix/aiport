@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"aiport/internal/config"
+	"aiport/internal/refusal"
 )
 
 func TestRuntimeKeyUpdate(t *testing.T) {
@@ -29,7 +30,7 @@ defaults: {anthropic_target: claude}
 	send := func() (int, string) {
 		code := ""
 		w := httptest.NewRecorder()
-		g.Forward(w, httptest.NewRequest("POST", "http://local/v1/messages", strings.NewReader("{}")), "unknown", func(status int, c, _ string) { code = c; w.WriteHeader(status) })
+		g.Forward(w, httptest.NewRequest("POST", "http://local/v1/messages", strings.NewReader("{}")), "unknown", func(ref refusal.Refusal) { code = ref.Code; w.WriteHeader(ref.Status) })
 		return w.Code, code
 	}
 	if status, code := send(); status != 503 || code != "upstream_key_missing" {

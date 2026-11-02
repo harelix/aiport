@@ -19,6 +19,7 @@ import (
 	"aiport/internal/config"
 	"aiport/internal/connect"
 	"aiport/internal/proxy"
+	"aiport/internal/refusal"
 	"aiport/internal/tasks"
 )
 
@@ -174,18 +175,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				panic(recovered)
 			}
 		}()
-		localFail := func(status int, code, message string) {
-			writer.status = status
-			o.Event.Outcome = "rejected"
-			switch code {
-			case "upstream_timeout":
-				o.Event.Outcome = "timeout"
-			case "upstream_unavailable", "upstream_request_failed":
-				o.Event.Outcome = "gateway_error"
-			case "client_cancelled":
-				o.Event.Outcome = "cancelled"
-			}
-			fail(status, code, message)
+		localFail := func(ref refusal.Refusal) {
+			writer.status = ref.Status
+			o.Event.Outcome = ref.Outcome
+			writeJSON(w, ref.Status, ref.Body(id))
 		}
 		h.gateway.Forward(writer, r.WithContext(proxy.WithObservation(r.Context(), o)), originID, localFail)
 		return
