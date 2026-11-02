@@ -64,6 +64,7 @@ type Document struct {
 	Errors      []ErrorCode `json:"errors"`
 	Features    []Feature   `json:"features"`
 	Privacy     []string    `json:"privacy"`
+	Integration Integration `json:"integration"`
 }
 type Auth struct {
 	Required    bool   `json:"required"`
@@ -102,7 +103,7 @@ func Describe(c config.Config) Document {
 		Auth: Auth{
 			Required:    !c.Auth.Disabled,
 			Credential:  "A per-application aiport token. Never send provider API keys to aiport; it adds them upstream.",
-			HowToObtain: "Ask the aiport owner for an application (origin) token. Self-service pairing is planned.",
+			HowToObtain: "Pair: POST /v1/aiport/pair {\"name\":\"<application name>\"} (no token needed), show the returned code to the owner, who approves it in the aiport dashboard, then GET the returned poll path to collect your token once.",
 		},
 		Request: []Header{
 			{"X-Aiport-Effort", "low, medium, high", "Task difficulty used to pick a model within a tier.", "planned"},
@@ -127,6 +128,9 @@ func Describe(c config.Config) Document {
 			{405, "method_not_allowed", "Use the documented method."},
 			{400, "incompatible_protocol", "The selected target speaks the other protocol; aiport does not translate."},
 			{400, "unknown_compression", "X-Aiport-Compress names a method aiport does not offer."},
+			{400, "invalid_pairing", "Pairing needs the application's name (1–128 characters)."},
+			{404, "pairing_not_found", "The pairing request expired, was collected or never existed; pair again."},
+			{429, "pairing_busy", "Too many pairing requests are waiting; retry after a minute."},
 			{400, "invalid_feedback", "Feedback needs request_id and a score between 0 and 1."},
 			{404, "request_not_found", "No retained request with this id for this application."},
 			{400, "ambiguous_model", "Body must be one JSON object with a single model field when aliases apply."},
@@ -142,12 +146,13 @@ func Describe(c config.Config) Document {
 			{"native_forwarding", "available", "Requests and streams are forwarded byte-for-byte to the selected provider, unless the application asks for compression."},
 			{"compression", "available", "X-Aiport-Compress shrinks message text (tools and schemas untouched). Sizes and outcomes are recorded per request to compare against uncompressed traffic."},
 			{"feedback", "available", "POST /v1/aiport/feedback {\"request_id\":\"<X-Aiport-Request-Id>\",\"score\":0..1} scores a response, so the owner can see whether compression hurts quality."},
-			{"model_aliases", "available", "Owner-defined alias -> model per target (only the model field is rewritten)."},
+			{"model_aliases", "available", "Owner-defined alias -> model, per connection or per application (only the model field is rewritten; an application's own alias may select another connection)."},
 			{"model_allowlist", "planned", "Owner restricts which models an application may request (403 model_not_allowed)."},
 			{"effort_tiers", "planned", "Virtual model names routed to a model by X-Aiport-Effort or the native reasoning effort field."},
 			{"capabilities", "planned", "GET /aiport/v1/capabilities: models, tiers and hints allowed for the calling application."},
-			{"pairing", "planned", "POST /aiport/v1/connect: request a token, approved by the owner in the dashboard."},
+			{"pairing", "available", "POST /v1/aiport/pair {name}: an application asks for its own token; the owner approves the shown code in the dashboard; the application collects the token once from the poll path. Requests expire after 10 minutes."},
 		},
+		Integration: integration(base + "/v1"),
 		Privacy: []string{
 			"aiport records request metadata only (time, route, model, status, latency) when telemetry is on; never prompts or responses.",
 			"X-Aiport-* request headers are removed before forwarding to providers.",
@@ -195,6 +200,7 @@ func Markdown(d Document) string {
 	for _, e := range d.Errors {
 		w("| %d | `%s` | %s |\n", e.Status, e.Code, e.Meaning)
 	}
+	integrating(w, d)
 	w("\n## Features\n\n| Feature | Status | Description |\n|---|---|---|\n")
 	for _, f := range d.Features {
 		w("| %s | %s | %s |\n", f.Name, f.Status, f.Description)
@@ -203,5 +209,55 @@ func Markdown(d Document) string {
 	for _, p := range d.Privacy {
 		w("- %s\n", p)
 	}
+	return b.String()
+}
+
+// Integration is the checklist for a coding agent wiring an application to
+// this gateway. It is part of the live document, so it always matches the
+// gateway being integrated with.
+type Integration struct {
+	Intro string   `json:"intro"`
+	Steps []string `json:"steps"`
+	Note  string   `json:"note"`
+}
+
+func integration(base string) Integration {
+	root := strings.TrimSuffix(base, "/v1")
+	return Integration{
+		Intro: "You are changing an application so its LLM calls go through the aiport gateway on this machine. aiport is a pass-through: keep the provider's native SDK and request format, change only where calls go and which key is sent.",
+		Steps: []string{
+			"**Get the application its own token by pairing.** If the application has no `AIPORT_APP_TOKEN` yet: `POST " + root + "/v1/aiport/pair` with `{\"name\":\"<application name>\",\"description\":\"<what it uses LLMs for>\"}` (no token needed). Show the returned `code` to the user and tell them to approve it in the aiport dashboard (Routing → Applications). Then `GET` the returned `poll` path every `poll_interval_s` seconds until `status` is `approved` (the reply then contains `token`, shown only once) or `rejected`; requests expire after 10 minutes. Store the token in the application's private, uncommitted configuration as `AIPORT_APP_TOKEN`. Pair once per application, not per run; pair again only if aiport answers `401`.",
+			"**Configuration, not code.** Read `AIPORT_BASE_URL` (default `" + root + "`) and `AIPORT_APP_TOKEN` from the application's environment or config. Never hard-code either, and never commit the token.",
+			"**Point the SDK at aiport.** OpenAI SDK: `base_url = AIPORT_BASE_URL + \"/v1\"`, `api_key = AIPORT_APP_TOKEN`. Anthropic SDK: `base_url = AIPORT_BASE_URL` (no `/v1`), `api_key = AIPORT_APP_TOKEN`. Plain HTTP: `POST /v1/chat/completions`, `/v1/responses` or `/v1/messages` with `Authorization: Bearer <token>` (Anthropic also accepts `x-api-key`).",
+			"**Remove provider keys from the application.** aiport adds the real key upstream. The application must not need `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` for calls routed through aiport.",
+			"**Use a protocol the gateway has configured.** `GET " + root + Path + "` lists which protocols are available. A protocol that is not configured returns `503 target_unconfigured`; aiport does not translate between protocols.",
+			"**Model names.** Send the model the owner gave you, or an alias the owner set up for this application. aiport forwards unknown models unchanged; the provider decides.",
+			"**Errors.** A body of `{\"error\":{\"code\":...}}` with a code listed at `" + root + Path + "?format=markdown` came from aiport; anything else is the provider's own error, passed through. Retry only `429 concurrency_limit`, `502` and `504`, with backoff. On `401` the token is missing or no longer valid: pair again, do not retry.",
+			"**Log `X-Aiport-Request-Id`** from responses next to your own request logs; the owner finds the call in aiport's Activity page with it.",
+			"**Optional:** send `X-Aiport-Compress` to shrink large prompts, and `POST /v1/aiport/feedback` with the request id and a 0–1 score so the owner can see whether compression hurts answers. Do not rely on features marked `planned`.",
+			"**Verify.** Make one real call, check it succeeds, and ask the owner to confirm it appears under the application's name in aiport's Activity page. If it shows as `unknown`, the token is not the application's own.",
+		},
+		Note: "aiport stores no prompts or responses, only request metadata, and listens on this machine only. Full protocol reference: " + root + Path + "?format=markdown",
+	}
+}
+
+func integrating(w func(string, ...any), d Document) {
+	w("\n## Integrating an application (for coding agents)\n\n%s\n\n", d.Integration.Intro)
+	for i, step := range d.Integration.Steps {
+		w("%d. %s\n", i+1, step)
+	}
+	w("\n%s\n", d.Integration.Note)
+}
+
+// Handover renders only the integration instructions, as a self-contained
+// brief the owner can paste to a coding agent working in another repository.
+func Handover(d Document) string {
+	var b strings.Builder
+	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
+	w("# Integrate this application with aiport\n\n%s\n\n", d.Integration.Intro)
+	for i, step := range d.Integration.Steps {
+		w("%d. %s\n", i+1, step)
+	}
+	w("\n%s\n", d.Integration.Note)
 	return b.String()
 }

@@ -19,6 +19,9 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 	if h.targetCheckRoute(w, r, fail) {
 		return true
 	}
+	if h.pairingsRoute(w, r, fail) {
+		return true
+	}
 	if h.targetRoute(w, r, fail) {
 		return true
 	}

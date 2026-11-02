@@ -97,6 +97,15 @@ curl 'http://127.0.0.1:8787/_connect?format=markdown'  # guide for people/agents
 
 See [docs/connect.md](docs/connect.md).
 
+**Integrate one of your applications.** Open the dashboard's **Routing** page and
+use **Copy instructions** under *Hand over to a coding agent*: paste them to the
+coding agent working on that application (or into its `AGENTS.md`). The agent
+switches the application's SDK to aiport and **pairs** it: the application asks
+for its own token and shows a short code, you approve the code under
+*Applications* on the same page, and the application collects its token once.
+Its calls then appear under its own name in Activity. The same instructions are
+served at `/_connect?format=handover`.
+
 ## Check health
 
 ```sh

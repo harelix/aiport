@@ -1,6 +1,7 @@
 import React, {FormEvent, useState} from 'react';
 import {Activity, Check, ChevronRight, Cloud, Copy, HardDrive, Plus} from 'lucide-react';
 import {AuthenticationSettings} from './AuthGate';
+import {ApplicationsPanel, HandoverPanel} from './Applications';
 import KeyField, {KeySource, keyBadge} from './KeyField';
 
 export type Location = 'local' | 'remote';
@@ -9,7 +10,7 @@ type EndpointSpec = {id: string; name: string; urls: Record<string, string>; not
 export type ProviderSpec = {id: string; name: string; protocol: string; api_key_env?: string; location: Location; regional: boolean; endpoints: EndpointSpec[]; note?: string};
 export type SettingsConfig = {
   auth: {username?: string; disabled: boolean}; listen: string; targets: Target[];
-  origins: {id: string; name: string; target: string; token_env: string}[];
+  origins: {id: string; name: string; target: string; token_env: string; aliases?: {alias: string; target: string; model: string}[]}[];
   defaults: {openai_target?: string; anthropic_target?: string};
   evaluation?: {connection?: string; model?: string};
 };
@@ -343,9 +344,11 @@ export function RoutingPage({config, providers, onChange, queueDepth}: Props) {
         <dt>Telemetry queue</dt><dd>{queueDepth ?? 0} pending</dd>
       </dl>
     </section>
+    <ApplicationsPanel origins={config?.origins || []} targets={targets} onChange={onChange}/>
+    <HandoverPanel/>
     <section className="panel planned">
-      <div className="panel-heading"><h2>Per-application routing</h2><span className="badge">Planned</span></div>
-      <p className="muted">Model limits per application and routing by reasoning effort are not built yet. Today every request on a protocol goes to its default connection, or to the connection a coding agent is bound to.</p>
+      <div className="panel-heading"><h2>Per-application limits</h2><span className="badge">Planned</span></div>
+      <p className="muted">Model allowlists per application and routing by reasoning effort are not built yet. Today an application's calls go to its bound connection or the protocol default; per-application model aliases are set in the YAML file (<code>origins[].aliases</code>).</p>
     </section>
   </>;
 }

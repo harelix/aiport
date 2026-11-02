@@ -38,6 +38,7 @@ type Handler struct {
 	keySource        map[string]string
 	tasks            *tasks.Store
 	now              func() time.Time // nil = time.Now; tests set a fixed clock
+	pair             pairings
 	assets           http.Handler
 	auth             *localauth.Manager
 }
@@ -129,6 +130,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == connect.Path {
 		h.serveConnect(w, r, fail)
+		return
+	}
+	// Pairing is how an application without a token asks for one.
+	if r.URL.Path == PairPath || strings.HasPrefix(r.URL.Path, PairPath+"/") {
+		h.servePair(w, r, fail)
 		return
 	}
 	if (r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/assets/")) && (r.Method == "GET" || r.Method == "HEAD") {
@@ -280,8 +286,17 @@ func (h *Handler) serveConnect(w http.ResponseWriter, r *http.Request, fail func
 		}
 		return
 	}
+	if format == "handover" {
+		// Only the integration brief, for pasting to a coding agent.
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.WriteHeader(200)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(connect.Handover(doc)))
+		}
+		return
+	}
 	if format != "" && format != "json" {
-		fail(400, "invalid_format", "format must be json or markdown")
+		fail(400, "invalid_format", "format must be json, markdown or handover")
 		return
 	}
 	if r.Method == http.MethodHead {
