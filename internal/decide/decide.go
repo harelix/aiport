@@ -398,6 +398,14 @@ func (q *Queue) settle(id string, d Decision, at time.Time, judged *guarded) (It
 	if it.Status != Pending {
 		return Item{}, config.Change{}, nil, ErrDecided
 	}
+	if d.By == Automatic {
+		// An automatic fix never overrides the Application's "fixed on my
+		// side" (or anything else that moved its Issue on): only an open
+		// Issue's fix is applied automatically.
+		if j := q.issueIndex(it.Issue); it.Issue == "" || j < 0 || q.issues[j].State != IssueOpen {
+			return Item{}, config.Change{}, nil, ErrDecided
+		}
+	}
 	v := &Verdict{Action: d.Action, Note: d.Note, By: d.By, At: at.UnixMilli()}
 	if it.Evidence != nil {
 		v.EvidenceCount = it.Evidence.Count

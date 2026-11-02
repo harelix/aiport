@@ -242,10 +242,12 @@ a tile to see its steps and snippets, each with its own **Copy**.
 - **Coding agent brief** (`/_connect?format=handover&for=agent`): for coding
   agents working in that application's repository later. It covers the
   project MCP entry (which reads the token from `${AIPORT_APP_TOKEN}`, never
-  the value), the line for the repository's `AGENTS.md`, the tools
-  `aiport_capabilities`, `aiport_request_change` and `aiport_my_requests`
-  and their HTTP equivalents, how to write a good Change request, waiting
-  for your decision, the permission, and hints.
+  the value), the line for the repository's `AGENTS.md` (which tells later
+  sessions to check `aiport_my_issues` at the start), the tools
+  `aiport_capabilities`, `aiport_request_change`, `aiport_my_requests`,
+  `aiport_my_issues` and `aiport_issue_fixed` and their HTTP equivalents,
+  how to write a good Change request, waiting for your decision, the
+  permission, and hints.
 
 `/_connect?format=handover` returns both, one after the other.
 
@@ -381,7 +383,8 @@ hosted Connection that does not serve that model.
 
 An Issue resolves itself: when the Application's calls for that model
 succeed again, aiport marks it **resolved** and records how: `aiport_fix`
-(the Change you approved) or `stopped` (the calls succeeded, or stopped
+(the Change you approved), `application_fix` (the Application's coding
+agent fixed it, see below) or `stopped` (the calls succeeded, or stopped
 failing for a whole window, without a fix). If you revert the fix, the Issue
 opens again and offers the fix again. A resolved Issue reopens when the
 error sticks again; only errors after it resolved count. Issues are kept
@@ -449,6 +452,34 @@ fix automatically again for that Application and cause, also after a
 restart; the Issue opens again and its fix waits for your decision, which
 you can still approve. A fix you rejected is not applied automatically
 either.
+
+### What the Application's coding agent sees
+
+The Application's coding agent hears about its Issues over the connection
+it already has with aiport, with the Application's own token (your
+management token gets `403`):
+
+- The MCP tool `aiport_my_issues`, or `GET /v1/aiport/issues` (and
+  `GET /v1/aiport/issues/{id}` for one), lists that Application's open and
+  recent Issues: what is wrong, the evidence, the fix in the Application
+  (the same text as "Copy fix for the coding agent") and whether the aiport
+  fix is proposed, applied, rejected or reverted. An Application never sees
+  another Application's Issues (their ids answer `404`), and never your
+  notes.
+- The capabilities answer (`aiport_capabilities`) shows `open_issues`, the
+  number of its Issues that are open or resolving.
+- While an Issue is open, a failing call carries an `X-Aiport-Hint` header
+  naming it, so the Application's own logs point the agent to it.
+- The `AGENTS.md` line from the Coding agent brief tells later sessions to
+  check `aiport_my_issues` at the start.
+
+When the agent has fixed the Application's code (for docs-bot: it now sends
+a model this gateway serves), it says so with `aiport_issue_fixed` (or
+`POST /v1/aiport/issues/{id}/fixed`). The Issue becomes **resolving** by the
+Application fix, and the aiport fix stops waiting for you. aiport does not
+take the agent's word for it: the Issue is resolved, as `application_fix`,
+only once that Application's calls succeed again. If the error goes on, the
+Issue opens again and offers the aiport fix again.
 
 ### What waits for your decision
 
@@ -523,9 +554,10 @@ adapting:
 
 With adapting off, aiport detects no Suggestions and opens no Issues, Changes
 shows nothing new,
-Change requests answer `409 adapting_off`, no hints are sent, and
-`/_connect` and both briefs mark change requests, their MCP tools and
-`X-Aiport-Hint` as off with the reason. Forwarding is unchanged, and Revert
+Change requests and `/v1/aiport/issues` answer `409 adapting_off`, the
+Issue tools are not offered over MCP, capabilities carry no `open_issues`,
+no hints are sent, and `/_connect` and both briefs mark change requests,
+Issues, their MCP tools and `X-Aiport-Hint` as off with the reason. Forwarding is unchanged, and Revert
 still works on earlier Changes. See [configuration](configuration.md) for
 the detector thresholds and the check interval.
 

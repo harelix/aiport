@@ -271,6 +271,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveRequests(w, r, originID, fail)
 		return
 	}
+	if r.URL.Path == IssuesPath || strings.HasPrefix(r.URL.Path, IssuesPath+"/") {
+		h.serveIssues(w, r, originID, fail)
+		return
+	}
 	if r.URL.Path == "/v1/chat/completions" || r.URL.Path == "/v1/responses" || r.URL.Path == "/v1/messages" {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", "POST")
@@ -282,8 +286,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// The provider's 404 for a requested model passes through unchanged;
 		// an Application allowed to request changes learns how to ask for an
 		// Alias from a header.
+		// While an Issue is open for the Application, a failing call's hint
+		// names it instead.
 		writer.before = func(status int) {
-			if status == http.StatusNotFound && o.Event.RequestedModel != nil && h.mayRequestChanges(originID) {
+			if status < 400 {
+				return
+			}
+			if hint := h.issueHint(originID, o.Event.RequestedModel); hint != "" {
+				w.Header().Set(refusal.HintHeader, hint)
+			} else if status == http.StatusNotFound && o.Event.RequestedModel != nil && h.mayRequestChanges(originID) {
 				w.Header().Set(refusal.HintHeader, refusal.UnknownModelHint)
 			}
 		}
@@ -309,6 +320,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		localFail := func(ref refusal.Refusal) {
 			if len(ref.Changes) > 0 && h.mayRequestChanges(originID) {
 				ref = ref.ForRequester()
+			}
+			if hint := h.issueHint(originID, o.Event.RequestedModel); hint != "" {
+				w.Header().Set(refusal.HintHeader, hint)
 			}
 			writer.status = ref.Status
 			o.Event.Outcome = ref.Outcome

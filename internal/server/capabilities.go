@@ -16,7 +16,12 @@ const CapabilitiesPath = "/v1/aiport/capabilities"
 // no token while authentication is off). The MCP tool aiport_capabilities
 // answers through this too.
 func (h *Handler) capabilities(applicationID string) (capability.Capabilities, bool) {
-	return capability.For(h.snapshot(), applicationID, h.gateway)
+	caps, ok := capability.For(h.snapshot(), applicationID, h.gateway)
+	if ok && h.decisions != nil && h.decisions.On() {
+		n := h.decisions.OpenIssues(applicationID)
+		caps.OpenIssues = &n
+	}
+	return caps, ok
 }
 
 // isApplication reports whether id is a configured Application, as opposed

@@ -24,6 +24,9 @@ var mcpVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 // mcpInstructions explain the loop to a coding agent in two sentences.
 const mcpInstructions = "This Application's LLM calls go through aiport; call aiport_capabilities to see what it can use right now, and if aiport lacks something it needs, ask the Owner with aiport_request_change instead of working around it. The Owner decides in aiport's dashboard, and aiport_my_requests shows each request's answer and the Change that was made."
 
+// mcpIssuesInstructions are added while aiport adapts.
+const mcpIssuesInstructions = " At the start of a session, check aiport_my_issues for problems aiport keeps seeing with this Application's calls and their fix; after fixing one in the code, say so with aiport_issue_fixed."
+
 type rpcMessage struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
@@ -105,12 +108,12 @@ func (h *Handler) mcpCall(applicationID string, m rpcMessage) (any, *rpcError) {
 			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
 			"serverInfo":      map[string]any{"name": "aiport", "version": "1"},
-			"instructions":    mcpInstructions,
+			"instructions":    h.mcpInstructions(),
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		return map[string]any{"tools": mcpTools}, nil
+		return map[string]any{"tools": h.mcpToolList()}, nil
 	case "tools/call":
 		var p struct {
 			Name      string          `json:"name"`
@@ -132,7 +135,8 @@ func (h *Handler) mcpCall(applicationID string, m rpcMessage) (any, *rpcError) {
 }
 
 // mcpTool runs one tool by sending the equivalent request through the HTTP
-// handlers of /v1/aiport/capabilities and /v1/aiport/requests, so both doors
+// handlers of /v1/aiport/capabilities, /v1/aiport/requests and
+// /v1/aiport/issues, so both doors
 // share one implementation and the tool result is exactly the HTTP body.
 func (h *Handler) mcpTool(applicationID, name string, args []byte) (any, *rpcError) {
 	var r *http.Request
@@ -153,6 +157,24 @@ func (h *Handler) mcpTool(applicationID, name string, args []byte) (any, *rpcErr
 			path += "/" + p.ID
 		}
 		r = internalRequest(http.MethodGet, path, nil)
+	case "aiport_my_issues", "aiport_issue_fixed":
+		var p struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(args, &p) != nil {
+			return nil, &rpcError{rpcInvalidParams, "id must be a string"}
+		}
+		if name == "aiport_issue_fixed" && p.ID == "" {
+			return nil, &rpcError{rpcInvalidParams, "id is required"}
+		}
+		path, method := IssuesPath, http.MethodGet
+		if p.ID != "" {
+			path += "/" + url.PathEscape(p.ID)
+		}
+		if name == "aiport_issue_fixed" {
+			path, method = path+"/fixed", http.MethodPost
+		}
+		r = internalRequest(method, path, nil)
 	default:
 		return nil, &rpcError{rpcInvalidParams, "Unknown tool " + name}
 	}
@@ -161,9 +183,12 @@ func (h *Handler) mcpTool(applicationID, name string, args []byte) (any, *rpcErr
 	fail := func(status int, code, message string) {
 		writeJSON(tw, status, map[string]any{"error": map[string]string{"code": code, "message": message, "request_id": tw.header.Get("X-Aiport-Request-Id")}})
 	}
-	if name == "aiport_capabilities" {
+	switch {
+	case name == "aiport_capabilities":
 		h.serveCapabilities(tw, r, applicationID, fail)
-	} else {
+	case strings.HasPrefix(r.URL.Path, IssuesPath):
+		h.serveIssues(tw, r, applicationID, fail)
+	default:
 		h.serveRequests(tw, r, applicationID, fail)
 	}
 	body := bytes.TrimSpace(tw.body.Bytes())
@@ -235,6 +260,50 @@ var mcpTools = []map[string]any{
 		},
 		"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
 	},
+}
+
+// mcpIssueTools are offered only while aiport adapts (Issues exist only
+// then).
+var mcpIssueTools = []map[string]any{
+	{
+		"name":        "aiport_my_issues",
+		"title":       "This Application's Issues",
+		"description": "Problems aiport keeps seeing with this Application's calls (open, being resolved, and recently resolved), newest first: what is wrong, the evidence, application_fix (what to change in this Application) and whether an aiport fix is proposed, applied or reverted; give id for just one. Check it at the start of a session. Same as GET " + IssuesPath + " and GET " + IssuesPath + "/{id}.",
+		"inputSchema": map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{"id": map[string]any{"type": "string", "description": "optional: one Issue's id"}},
+			"additionalProperties": false,
+		},
+		"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
+	},
+	{
+		"name":        "aiport_issue_fixed",
+		"title":       "Say an Issue is fixed in this Application",
+		"description": "Tell aiport you fixed an open Issue in this Application's code (for example it now sends a model this gateway serves). The Issue becomes resolving; aiport marks it resolved by the Application fix only when real calls succeed again. Same as POST " + IssuesPath + "/{id}/fixed.",
+		"inputSchema": map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{"id": map[string]any{"type": "string", "description": "the Issue's id"}},
+			"required":             []string{"id"},
+			"additionalProperties": false,
+		},
+		"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+	},
+}
+
+// mcpInstructions is what initialize tells the agent now.
+func (h *Handler) mcpInstructions() string {
+	if h.decisions == nil || !h.decisions.On() {
+		return mcpInstructions
+	}
+	return mcpInstructions + mcpIssuesInstructions
+}
+
+// mcpToolList is what tools/list offers now.
+func (h *Handler) mcpToolList() []map[string]any {
+	if h.decisions == nil || !h.decisions.On() {
+		return mcpTools
+	}
+	return append(append([]map[string]any{}, mcpTools...), mcpIssueTools...)
 }
 
 func rpcReply(id json.RawMessage, result any, err *rpcError) map[string]any {

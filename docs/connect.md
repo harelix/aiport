@@ -56,14 +56,16 @@ configured) and `code`. The dashboard's Integrate page renders the same data.
   provider keys, model names and Aliases, errors and retries,
   `X-Aiport-Request-Id`, and verification.
 - The **coding-agent brief** covers the project MCP entry, the `AGENTS.md`
-  line, the tools `aiport_capabilities`, `aiport_request_change` and
-  `aiport_my_requests` and their HTTP equivalents, how to write a Change
+  line, the tools `aiport_capabilities`, `aiport_request_change`,
+  `aiport_my_requests`, `aiport_my_issues` and `aiport_issue_fixed` and their
+  HTTP equivalents, checking the Application's Issues at the start of a
+  session and saying when one is fixed on its side, how to write a Change
   request (`kind`, `need`, `details`, `why`, `scope`, `scope_case`), waiting
   for the Owner's decision, the permission (`403 change_requests_not_allowed`
   until the Owner allows it) and hints.
 
 When the Owner turns adapting off (`adapting.disabled: true`), the document
-marks `change_requests` and `X-Aiport-Hint` with status `off`, the `mcp`
+marks `change_requests`, `issues` and `X-Aiport-Hint` with status `off`, the `mcp`
 feature says the change tools are off, `adapting` is `false`, and the
 coding-agent brief opens with the same one-line reason.
 
@@ -75,7 +77,10 @@ they hit a wall a Change could remove: `target_unconfigured` and
 `/v1/aiport/requests` endpoint and the MCP tool `aiport_request_change`), and a
 provider `404` for the requested model gains an `X-Aiport-Hint` response
 header, with the provider's body passed through unchanged. Status codes and
-error codes never change, and other Applications see no hint.
+error codes never change, and other Applications see no hint. While an Issue
+is open for the Application, a failing call's `X-Aiport-Hint` names that Issue
+(`/v1/aiport/issues/{id}` and the MCP tool `aiport_my_issues`) instead, and
+`/v1/aiport/capabilities` shows `open_issues`.
 
 The coding-agent brief tells the coding agent to add a project-level MCP entry
 pointing at this gateway's `/mcp`, with the token taken from

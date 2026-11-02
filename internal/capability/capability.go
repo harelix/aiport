@@ -77,6 +77,10 @@ type Capabilities struct {
 	// unless the Owner allowed it to request changes.
 	ChangeKinds []Kind `json:"change_kinds"`
 	Note        string `json:"note"`
+	// OpenIssues counts this Application's Issues that are open or being
+	// resolved (read them with aiport_my_issues); absent while aiport does
+	// not adapt.
+	OpenIssues *int `json:"open_issues,omitempty"`
 }
 
 // NotPermitted explains an empty ChangeKinds list.
