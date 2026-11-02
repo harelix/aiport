@@ -296,6 +296,28 @@ func TestChangeRequestsAreRateLimitedPerApplication(t *testing.T) {
 	file(t, h, reqHelper, nil) // and the limit clears after an hour
 }
 
+// Only requests aiport accepts count against the limit: one refused as
+// invalid, or by a policy Extension, spends nothing.
+func TestRefusedChangeRequestsDoNotSpendTheRateLimit(t *testing.T) {
+	dir := t.TempDir()
+	policy := `body=$(cat); case "$body" in *'"kind":"spend_limit"'*) echo '{"decision":"deny","reason":"no spend limits"}' ;; *) echo '{"decision":"allow"}' ;; esac`
+	h, _ := extensionsServer(t, "extensions:\n"+listed("no-spend", "policy", script(t, dir, "policy", policy), ""))
+	for i := 0; i < 25; i++ {
+		if w, out := call(h, "POST", RequestsPath, requestBody(map[string]any{"why": nil}), reqHelper, false); w.Code != 400 || errorCode(out) != "invalid_change_request" {
+			t.Fatalf("invalid request %d: %d %s", i, w.Code, w.Body)
+		}
+		if w, out := call(h, "POST", RequestsPath, requestBody(map[string]any{"kind": "spend_limit"}), reqHelper, false); w.Code != 403 || errorCode(out) != "change_request_refused" {
+			t.Fatalf("refused request %d: %d %s", i, w.Code, w.Body)
+		}
+	}
+	for i := 0; i < 20; i++ {
+		file(t, h, reqHelper, map[string]any{"need": fmt.Sprintf("Request number %d", i)})
+	}
+	if w, out := call(h, "POST", RequestsPath, requestBody(nil), reqHelper, false); w.Code != 429 || errorCode(out) != "change_requests_rate_limited" {
+		t.Fatalf("the 21st accepted request in an hour was not refused: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestChangeRequestsAreRefusedFromBrowsersOnOtherOrigins(t *testing.T) {
 	h, _ := requestsServer(t)
 	for _, hdr := range [][2]string{{"Origin", "https://evil.example"}, {"Sec-Fetch-Site", "cross-site"}} {

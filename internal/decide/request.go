@@ -31,8 +31,8 @@ const (
 	// included); larger bodies are refused before they are read.
 	MaxBody = 64 << 10
 	// RequestsPerHour is how many Change requests one Application may file
-	// in an hour, counting refused ones, so a looping agent cannot flood the
-	// queue.
+	// in an hour, so a looping agent cannot flood the queue. Only requests
+	// that pass aiport's checks and the policy Extensions count.
 	RequestsPerHour = 20
 )
 
@@ -129,7 +129,7 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 		return Answer{}, ErrNotPermitted
 	}
 	q.mu.Lock()
-	err := q.admit(app, at)
+	err := q.admit(app, at, false)
 	q.mu.Unlock()
 	if err != nil {
 		return Answer{}, err
@@ -148,6 +148,9 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if err := q.admit(app, at, true); err != nil {
+		return Answer{}, err
+	}
 	it := Item{
 		Source: FromRequest, Kind: r.Kind, Application: app, Subject: r.subject(), Scope: r.Scope,
 		Need: r.Need, Details: r.Details, Why: r.Why, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,
@@ -182,8 +185,9 @@ func (q *Queue) RequestOf(app, id string) (Answer, error) {
 	return Answer{}, ErrNotFound
 }
 
-// admit counts one request from app at time at against the rate limit.
-func (q *Queue) admit(app string, at time.Time) error {
+// admit checks the rate limit for a request from app at time at and, when
+// spend is set, counts the request against it. The caller holds q.mu.
+func (q *Queue) admit(app string, at time.Time, spend bool) error {
 	if q.filed == nil {
 		q.filed = map[string][]int64{}
 	}
@@ -198,7 +202,9 @@ func (q *Queue) admit(app string, at time.Time) error {
 	if len(kept) >= RequestsPerHour {
 		return RateLimited{RetryAfter: time.Duration(kept[0]+hour-now) * time.Millisecond}
 	}
-	q.filed[app] = append(kept, now)
+	if spend {
+		q.filed[app] = append(kept, now)
+	}
 	return nil
 }
 
