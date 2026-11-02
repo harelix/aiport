@@ -1,5 +1,5 @@
-// Package decide is aiport's decision queue: it holds Suggestions (and, later,
-// Change requests) until the Owner decides, applies accepted ones through
+// Package decide is aiport's decision queue: it holds Suggestions and Change
+// requests until the Owner decides, applies accepted ones through
 // config.Live so they become revertable Changes, and runs the detectors that
 // turn patterns in request history into Suggestions.
 //
@@ -18,7 +18,9 @@ import (
 	"sync"
 	"time"
 
+	"aiport/internal/capability"
 	"aiport/internal/config"
+	"aiport/internal/extension"
 	"aiport/internal/telemetry"
 )
 
@@ -49,8 +51,11 @@ const (
 	ScopeEvery       = "every_application"
 )
 
-// KindApplicationAlias is an Alias only one Application sees.
-const KindApplicationAlias = "application_alias"
+// The built-in kinds of Change (see package capability).
+const (
+	KindApplicationAlias = capability.ApplicationAlias // an Alias only one Application sees; for every Application a shared Alias
+	KindBindApplication  = capability.BindApplication  // all of one Application's calls to one Connection; for every Application the protocol default
+)
 
 // KindPairApplication tells the Owner that something keeps trying to connect
 // without a valid token and should be paired. It is informational: there is
@@ -104,12 +109,19 @@ type Item struct {
 	Application string `json:"application"`
 	// Subject is what repeats of the same item share (for an unknown model,
 	// the model name).
-	Subject  string    `json:"subject"`
-	Status   string    `json:"status"`
-	Need     string    `json:"need"`
-	Scope    string    `json:"scope"`
-	Evidence *Evidence `json:"evidence,omitempty"`
-	Proposal Proposal  `json:"proposal"`
+	Subject string `json:"subject"`
+	Status  string `json:"status"`
+	Need    string `json:"need"`
+	Scope   string `json:"scope"`
+	// A Change request's own text (plain text, never sent to a model): the
+	// details, why, the argument for its Scope and who filed it (free text,
+	// never used for identity).
+	Details   string    `json:"details,omitempty"`
+	Why       string    `json:"why,omitempty"`
+	ScopeCase string    `json:"scope_case,omitempty"`
+	FiledBy   string    `json:"filed_by,omitempty"`
+	Evidence  *Evidence `json:"evidence,omitempty"`
+	Proposal  Proposal  `json:"proposal"`
 	// Repeats counts how often the same pending item was submitted again.
 	Repeats   int      `json:"repeats,omitempty"`
 	CreatedAt int64    `json:"created_at_ms"`
@@ -173,6 +185,7 @@ type Queue struct {
 	history History
 	store   Store
 	items   []Item
+	filed   map[string][]int64 // Application → when it filed Change requests, for the rate limit
 	failed  FailedAuth
 }
 
@@ -215,14 +228,18 @@ func (q *Queue) Submit(it Item, at time.Time) (Item, error) {
 }
 
 func (q *Queue) submit(it Item, at int64) Item {
-	if i := q.latest(it, Pending); i >= 0 {
+	status := Pending
+	if it.Status == NotSupported {
+		status = NotSupported // kept and counted as demand, never decided
+	}
+	if i := q.latest(it, status); i >= 0 {
 		cur := &q.items[i]
 		cur.Evidence, cur.Proposal, cur.Need, cur.UpdatedAt = it.Evidence, it.Proposal, it.Need, at
 		cur.Repeats++
 		q.save(*cur)
 		return *cur
 	}
-	it.ID, it.Status, it.CreatedAt, it.UpdatedAt, it.Decision, it.Repeats = newID(), Pending, at, at, nil, 0
+	it.ID, it.Status, it.CreatedAt, it.UpdatedAt, it.Decision, it.Repeats = newID(), status, at, at, nil, 0
 	if it.Scope == "" {
 		it.Scope = ScopeApplication
 	}
@@ -271,19 +288,16 @@ func (q *Queue) List(f Filter) []Item {
 
 // Decide records the Owner's decision on pending item id at time at. Accept
 // applies the Change through config.Live (so it can be reverted) and returns
-// it; reject and dismiss change nothing in the configuration.
+// it, unless a guardrail Extension blocks it (extension.Denied, with its
+// reason; the item stays pending); reject and dismiss change nothing in the
+// configuration and run no Extension.
 func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change, error) {
 	if !q.On() {
 		return Item{}, config.Change{}, ErrOff
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	i := -1
-	for j := range q.items {
-		if q.items[j].ID == id {
-			i = j
-		}
-	}
+	i := q.index(id)
 	if i < 0 {
 		return Item{}, config.Change{}, ErrNotFound
 	}
@@ -319,9 +333,31 @@ func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change
 		if d.Proposal.Model != "" {
 			p.Model = d.Proposal.Model
 		}
-		edit, what, err := change(it, p, scope)
+		c := q.live.Config()
+		edit, what, err := change(c, it, p, scope)
 		if err != nil {
 			return Item{}, config.Change{}, err
+		}
+		// Guardrail Extensions run before the Change is applied, outside the
+		// lock so a slow one never holds up the queue; a block leaves the
+		// item waiting.
+		if len(c.ExtensionsFor(config.HookGuardrail)) > 0 {
+			q.mu.Unlock()
+			err := extension.Check(c, config.HookGuardrail, extension.Input{Change: &extension.Change{
+				Item: it.ID, Source: it.Source, Application: it.Application, Kind: it.Kind, Scope: scope,
+				What: what, Alias: p.Alias, Target: p.Target, Model: p.Model, By: by,
+			}})
+			q.mu.Lock()
+			if err != nil {
+				return Item{}, config.Change{}, err
+			}
+			if i = q.index(id); i < 0 {
+				return Item{}, config.Change{}, ErrNotFound
+			}
+			if q.items[i].Status != Pending {
+				return Item{}, config.Change{}, ErrDecided
+			}
+			it = q.items[i]
 		}
 		if _, ch, err = q.live.ChangeAs(by, what, edit); err != nil {
 			if errors.Is(err, config.ErrReadOnly) {
@@ -343,21 +379,60 @@ func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change
 	return it, ch, nil
 }
 
+// index returns the position of item id, or -1.
+func (q *Queue) index(id string) int {
+	for j := range q.items {
+		if q.items[j].ID == id {
+			return j
+		}
+	}
+	return -1
+}
+
 // change is the configuration edit that applies an accepted item.
-func change(it Item, p Proposal, scope string) (config.Edit, string, error) {
+// The Scope decides the edit: for this Application an Alias or binding of
+// its own; for every Application a shared Alias or the protocol default.
+func change(c config.Config, it Item, p Proposal, scope string) (config.Edit, string, error) {
 	if it.Informational {
 		return nil, "", Invalid{"this Suggestion has nothing to apply: pair the Application in the Applications panel, then dismiss it"}
 	}
+	if scope != ScopeApplication && scope != ScopeEvery {
+		return nil, "", Invalid{"scope must be application or every_application"}
+	}
 	switch it.Kind {
 	case KindApplicationAlias:
-		if scope != ScopeApplication {
-			return nil, "", Invalid{"this kind of Change can only be granted for this Application"}
-		}
 		if p.Alias == "" || p.Target == "" || p.Model == "" {
-			return nil, "", Invalid{"choose the Connection and the model the alias should use"}
+			return nil, "", Invalid{"choose the alias, the Connection and the model the alias should use"}
+		}
+		if scope == ScopeEvery {
+			what := "shared alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for every Application"
+			return config.AddAlias(config.Alias{Alias: p.Alias, Target: p.Target, Model: p.Model}), what, nil
 		}
 		what := "alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for " + it.Application
 		return config.AddOriginAlias(it.Application, config.OriginAlias{Alias: p.Alias, Target: p.Target, Model: p.Model}), what, nil
+	case KindBindApplication:
+		if p.Target == "" {
+			return nil, "", Invalid{"choose the Connection to bind to"}
+		}
+		if scope == ScopeApplication {
+			return config.BindOrigin(it.Application, p.Target), "bind " + it.Application + " → " + p.Target, nil
+		}
+		var t *config.Target
+		for i := range c.Targets {
+			if c.Targets[i].ID == p.Target {
+				t = &c.Targets[i]
+			}
+		}
+		if t == nil {
+			return nil, "", Invalid{"no Connection " + p.Target + " in configuration"}
+		}
+		d := c.Defaults
+		if t.Protocol == "anthropic" {
+			d.AnthropicTarget = t.ID
+		} else {
+			d.OpenAITarget = t.ID
+		}
+		return config.SetDefaults(d), "default " + t.Protocol + " Connection → " + t.ID + " for every Application", nil
 	}
 	return nil, "", Invalid{"aiport cannot apply this kind of Change yet"}
 }

@@ -7,9 +7,10 @@ type Change = {
   revert_of?: string; reverted_by?: string; reverted_at_ms?: number; reverted: boolean;
 };
 
-/** A Suggestion (later also a Change request) waiting for the Owner, as GET /api/v1/decisions lists it. */
+/** A Suggestion or Change request waiting for the Owner, as GET /api/v1/decisions lists it. */
 export type Decision = {
   id: string; source: string; kind: string; application: string; need: string; scope: string;
+  details?: string; why?: string; scope_case?: string; filed_by?: string; repeats?: number;
   evidence?: {count: number; from_ms: number; to_ms: number; window_minutes: number};
   proposal: {alias?: string; target?: string; model?: string};
   /** Informational Suggestions have nothing to apply: only Dismiss. */
@@ -18,46 +19,77 @@ export type Decision = {
   opens?: string;
 };
 
+const scopeLabel = (s: string, app: string) => s === 'every_application' ? 'every Application' : 'only ' + app;
+
 async function send(method: string, path: string, body?: unknown) {
   const r = await fetch('/api/v1/' + path, {method, credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-Aiport-CSRF': '1'}, body: body === undefined ? undefined : JSON.stringify(body)});
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error?.message || 'Request failed (' + r.status + ').');
+  if (!r.ok) throw Object.assign(new Error(d.error?.message || 'Request failed (' + r.status + ').'), {code: d.error?.code, extension: d.error?.extension, reason: d.error?.reason});
   return d;
 }
 
+/** A guardrail Extension's block of Approve: which Extension and why. */
+type Blocked = {extension: string; reason: string};
+
 const when = (ms: number) => new Date(ms).toLocaleString();
 
-/** One pending Suggestion: the evidence, the Alias it proposes, and Approve / Dismiss. All text is shown as plain text. */
+/**
+ * One pending Suggestion or Change request: the evidence or the request's own text, the Change it would make,
+ * the Scope to grant, and Approve / Dismiss (Suggestions) or Approve / Reject (Change requests, whose note goes
+ * back to the requester). Request text comes from Applications: it is shown as plain text only, never as markup.
+ */
 function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision; targets: string[]; onDecided: (message: string) => void; onOpenApplications?: () => void}) {
+  const request = item.source === 'request', alias = item.kind === 'application_alias';
   const [target, setTarget] = useState(item.proposal.target || targets[0] || ''), [model, setModel] = useState(item.proposal.model || '');
+  const [name, setName] = useState(item.proposal.alias || ''), [scope, setScope] = useState(item.scope || 'application');
   const [note, setNote] = useState(''), [busy, setBusy] = useState(''), [error, setError] = useState('');
-  const decide = async (action: 'accept' | 'dismiss') => {
-    setBusy(action); setError('');
+  const [blocked, setBlocked] = useState<Blocked | null>(null);
+  const no = request ? 'reject' : 'dismiss';
+  const decide = async (action: 'accept' | 'reject' | 'dismiss') => {
+    setBusy(action); setError(''); setBlocked(null);
     try {
-      await send('POST', 'decisions/' + encodeURIComponent(item.id), action === 'accept' ? {action, target, model, note} : {action, note});
+      await send('POST', 'decisions/' + encodeURIComponent(item.id), action === 'accept' ? {action, scope, alias: alias ? name : undefined, target, model: alias ? model : undefined, note} : {action, note});
+      const who = scopeLabel(scope, item.application);
       onDecided(action === 'accept'
-        ? 'Approved: ' + item.application + ' now has the alias “' + item.proposal.alias + '” → ' + target + '/' + model + '. You can revert it below.'
+        ? (alias ? 'Approved for ' + who + ': the alias “' + name + '” → ' + target + '/' + model + '.' : scope === 'every_application' ? 'Approved: ' + target + ' is now the default Connection for its protocol.' : 'Approved: ' + item.application + ' now sends its calls to ' + target + '.') + ' You can revert it below.'
+        : action === 'reject' ? 'Rejected. ' + item.application + ' sees your note when it lists its requests.'
         : 'Dismissed. aiport stays quiet about this for 7 days unless the evidence doubles.');
     } catch (e) {
-      setError((e as Error).message);
+      const err = e as Error & {code?: string; extension?: string; reason?: string};
+      if (err.code === 'guardrail_blocked') setBlocked({extension: err.extension || 'a guardrail', reason: err.reason || ''});
+      else setError(err.message);
     } finally {
       setBusy('');
     }
   };
   const ev = item.evidence;
+  const ready = !!target && (!alias || (!!name.trim() && !!model.trim()));
   return <div className="decision">
-    <div className="need">{item.need}</div>
+    <div className="need">{request && <span className="badge">Change request from {item.application}</span>} {item.need}</div>
     {ev && item.kind === 'pair_application' && <div className="evidence">Evidence: {ev.count} refused requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only counts are kept, never the token.</div>}
     {ev && item.kind !== 'pair_application' && <div className="evidence">Evidence: {ev.count} requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only request metadata was used.</div>}
+    {request && <dl className="request-text">
+      <dt>Kind</dt><dd>{item.kind}{item.kind !== 'application_alias' && item.kind !== 'bind_application' ? ' (not supported)' : ''}</dd>
+      <dt>Details</dt><dd>{item.details}</dd>
+      <dt>Why</dt><dd>{item.why}</dd>
+      <dt>Asked for {scopeLabel(item.scope, item.application)}</dt><dd>{item.scope_case}</dd>
+      {item.filed_by && <><dt>Filed by (as stated)</dt><dd>{item.filed_by}</dd></>}
+      {!!item.repeats && <><dt>Asked again</dt><dd>{item.repeats} more {item.repeats === 1 ? 'time' : 'times'}</dd></>}
+    </dl>}
     {error && <div className="notice error" role="alert">{error}</div>}
-    {item.kind === 'application_alias' && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
-      <label>Alias for {item.application}<input value={item.proposal.alias || ''} readOnly/></label>
-      <label>Connection<select value={target} onChange={e => setTarget(e.target.value)}>{targets.map(t => <option key={t}>{t}</option>)}</select></label>
-      <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} placeholder="model name on that connection" spellCheck={false} autoComplete="off"/></label>
-      <label>Note (optional)<input value={note} onChange={e => setNote(e.target.value)} maxLength={2000}/></label>
+    {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this item still waits. Reject it, or change what the guardrail checks and approve again.</div>}
+    {(alias || item.kind === 'bind_application') && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
+      <label>Scope<select value={scope} onChange={e => setScope(e.target.value)}>
+        <option value="application">Only {item.application}</option>
+        <option value="every_application">Every Application</option>
+      </select></label>
+      {alias && <label>Alias<input value={name} onChange={e => setName(e.target.value)} readOnly={!request} required maxLength={256} spellCheck={false} autoComplete="off"/></label>}
+      <label>{alias ? 'Connection' : scope === 'every_application' ? 'Default Connection' : 'Bind to Connection'}<select value={target} onChange={e => setTarget(e.target.value)}>{targets.map(t => <option key={t}>{t}</option>)}</select></label>
+      {alias && <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} placeholder="model name on that connection" spellCheck={false} autoComplete="off"/></label>}
+      <label>Note {request ? 'for ' + item.application : '(optional)'}<input value={note} onChange={e => setNote(e.target.value)} maxLength={2000}/></label>
       <div className="actions">
-        <button className="primary" disabled={!!busy || !model.trim() || !target}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
-        <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
+        <button className="primary" disabled={!!busy || !ready}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
+        <button type="button" className="secondary" disabled={!!busy} onClick={() => decide(no)}>{busy === no ? (request ? 'Rejecting…' : 'Dismissing…') : (request ? 'Reject' : 'Dismiss')}</button>
       </div>
     </form>}
     {item.informational && <div className="actions">
@@ -92,7 +124,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   const byId = new Map((changes || []).map(c => [c.id, c]));
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
   return <>{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
-    <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history</span></div>
+    <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history and Change requests from Applications</span></div>
     {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided} onOpenApplications={onOpenApplications}/>)}
   </section>}<section className="panel">
     <div className="panel-heading"><h2>Applied changes</h2><span>Newest first · kept across restarts</span></div>

@@ -5,6 +5,8 @@
 // the client what would fix it.
 package refusal
 
+import "strings"
+
 // Outcomes recorded in request history for a refused request.
 const (
 	Rejected     = "rejected"
@@ -20,7 +22,41 @@ type Refusal struct {
 	Message string
 	Outcome string
 	Hint    string
+	// Changes names the kinds of Change request that could remove this
+	// refusal. Only Applications allowed to request changes are told (see
+	// ForRequester); the status and code never depend on it.
+	Changes []string
 }
+
+// ForRequester returns the refusal as an Application allowed to request
+// changes sees it: with a hint naming the request kinds and the endpoint,
+// when a Change could fix it.
+func (r Refusal) ForRequester() Refusal {
+	if len(r.Changes) > 0 {
+		r.Hint = ChangeHint(r.Changes...)
+	}
+	return r
+}
+
+// RequestsPath and RequestTool are where an Application asks for a Change.
+const (
+	RequestsPath = "/v1/aiport/requests"
+	RequestTool  = "aiport_request_change"
+)
+
+// ChangeHint tells an Application how to ask the Owner for a Change of one
+// of the given kinds.
+func ChangeHint(kinds ...string) string {
+	return "A Change could fix this: ask the owner with POST " + RequestsPath + " (kind " + strings.Join(kinds, " or ") + ") or the MCP tool " + RequestTool + "; see /_connect."
+}
+
+// HintHeader carries a hint on a provider error, whose body aiport passes
+// through unchanged.
+const HintHeader = "X-Aiport-Hint"
+
+// UnknownModelHint goes with an upstream 404 for a requested model: an Alias
+// for this Application could point the name at a model the provider has.
+var UnknownModelHint = ChangeHint("application_alias")
 
 // WithMessage returns the refusal with a more specific message.
 func (r Refusal) WithMessage(m string) Refusal {
@@ -41,10 +77,15 @@ func rejected(status int, code, message string) Refusal {
 	return Refusal{Status: status, Code: code, Message: message, Outcome: Rejected}
 }
 
+func fixable(r Refusal, kinds ...string) Refusal {
+	r.Changes = kinds
+	return r
+}
+
 var (
 	// Routing: no usable connection for this client and protocol.
-	TargetUnconfigured   = rejected(503, "target_unconfigured", "Configure a target for this protocol or origin")
-	TargetDisabled       = rejected(503, "target_disabled", "The selected target is disabled")
+	TargetUnconfigured   = fixable(rejected(503, "target_unconfigured", "Configure a target for this protocol or origin"), "bind_application", "application_alias")
+	TargetDisabled       = fixable(rejected(503, "target_disabled", "The selected target is disabled"), "bind_application", "application_alias")
 	TargetInvalid        = rejected(503, "target_invalid", "Selected target configuration is invalid")
 	IncompatibleProtocol = rejected(400, "incompatible_protocol", "The selected target does not accept this native protocol")
 	UpstreamKeyMissing   = rejected(503, "upstream_key_missing", "No API key is set for this connection; add it in the dashboard under Settings")

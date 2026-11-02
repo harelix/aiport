@@ -219,6 +219,39 @@ func AddOriginAlias(id string, a OriginAlias) Edit {
 	}
 }
 
+// AddAlias adds a shared Alias: every Application sending model a.Alias to
+// Connection a.Target gets a.Model. Validation refuses a duplicate or a
+// missing Connection.
+func AddAlias(a Alias) Edit {
+	return func(root *yaml.Node) error {
+		var item yaml.Node
+		if err := item.Encode(a); err != nil {
+			return errors.New("cannot encode alias")
+		}
+		seq := ensureNode(root, "aliases", yaml.SequenceNode)
+		seq.Content = append(seq.Content, &item)
+		return nil
+	}
+}
+
+// BindOrigin sends all of one Application's calls to Connection target
+// (empty = follow the protocol defaults again).
+func BindOrigin(id, target string) Edit {
+	return func(root *yaml.Node) error {
+		seq := mappingValue(root, "origins")
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return errors.New("application not found in configuration")
+		}
+		for _, item := range seq.Content {
+			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
+				setScalar(item, "target", target)
+				return nil
+			}
+		}
+		return errors.New("application not found in configuration")
+	}
+}
+
 // SetDefaults sets which connection serves each protocol by default
 // (empty = none).
 func SetDefaults(d Defaults) Edit {

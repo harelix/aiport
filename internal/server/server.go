@@ -64,6 +64,17 @@ func (h *Handler) clock() time.Time {
 // snapshot returns a copy of the live configuration safe to read without locks.
 func (h *Handler) snapshot() config.Config { return h.live.Config() }
 
+// mayRequestChanges reports whether the Owner allows this Application to
+// request changes.
+func (h *Handler) mayRequestChanges(originID string) bool {
+	for _, o := range h.snapshot().Origins {
+		if o.ID == originID {
+			return o.MayRequestChanges
+		}
+	}
+	return false
+}
+
 // applyLive makes a changed configuration live everywhere: routing, API keys
 // and the local tokens clients authenticate with. Listener, auth settings,
 // proxy limits and telemetry still need a restart.
@@ -213,6 +224,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveCapabilities(w, r, originID, fail)
 		return
 	}
+	if r.URL.Path == MCPPath {
+		h.serveMCP(w, r, originID, fail)
+		return
+	}
+	if r.URL.Path == RequestsPath || strings.HasPrefix(r.URL.Path, RequestsPath+"/") {
+		h.serveRequests(w, r, originID, fail)
+		return
+	}
 	if r.URL.Path == "/v1/chat/completions" || r.URL.Path == "/v1/responses" || r.URL.Path == "/v1/messages" {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", "POST")
@@ -221,6 +240,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		o := &proxy.Observation{Start: started, Event: telemetry.Event{ID: id, StartedAt: started.UnixMilli(), Origin: originID, Route: r.URL.Path, Method: r.Method, UsageStatus: "unknown", CostStatus: "unknown", Outcome: "success"}}
 		writer := &statusWriter{ResponseWriter: w, status: 200}
+		// The provider's 404 for a requested model passes through unchanged;
+		// an Application allowed to request changes learns how to ask for an
+		// Alias from a header.
+		writer.before = func(status int) {
+			if status == http.StatusNotFound && o.Event.RequestedModel != nil && h.mayRequestChanges(originID) {
+				w.Header().Set(refusal.HintHeader, refusal.UnknownModelHint)
+			}
+		}
 		defer func() {
 			recovered := recover()
 			o.Event.LatencyMS = time.Since(started).Milliseconds()
@@ -241,6 +268,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 		localFail := func(ref refusal.Refusal) {
+			if len(ref.Changes) > 0 && h.mayRequestChanges(originID) {
+				ref = ref.ForRequester()
+			}
 			writer.status = ref.Status
 			o.Event.Outcome = ref.Outcome
 			writeJSON(w, ref.Status, ref.Body(id))
@@ -269,10 +299,14 @@ func requestID() string {
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	before func(status int) // runs before the status is written
 }
 
 func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
+	if w.before != nil {
+		w.before(status)
+	}
 	w.ResponseWriter.WriteHeader(status)
 }
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
