@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ func (h *Handler) openDecisions() {
 	}
 	q, err := decide.New(h.live, history, kept)
 	if err != nil {
+		// The store's errors name what failed, never tokens or request text.
+		log.Printf("aiport: %v; decisions are kept for this session only", err)
 		q, _ = decide.New(h.live, history, nil)
 	}
 	h.failedAuth = telemetry.NewFailedAuth()
