@@ -62,6 +62,10 @@ type Handler struct {
 	fixLimit         time.Duration     // 0 = agent_runs.fix_minutes; tests set a short one
 	worktrees        string            // where Fix it makes its worktrees: next to the configuration; "" = the temporary directory
 	fixMu            sync.Mutex        // one Fix it start or end at a time
+	approvalMu       sync.Mutex
+	approvals        map[string]*approval // command requests waiting for the Owner, by id (guarded by approvalMu)
+	unanswered       map[string]bool      // runs stopped because a command request went unanswered (guarded by approvalMu)
+	approvalWait     time.Duration        // 0 = ApprovalWait; tests set a short one
 	// requesters are the Applications that may request changes right now
 	// (none while adapting is off), rebuilt on every config change so the
 	// forwarding path checks a set instead of copying the configuration.
