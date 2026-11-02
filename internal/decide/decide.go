@@ -14,8 +14,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +25,8 @@ import (
 	"aiport/internal/config"
 	"aiport/internal/extension"
 	"aiport/internal/telemetry"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Where an item came from.
@@ -440,8 +444,12 @@ func change(c config.Config, it Item, p Proposal, scope string) (config.Edit, st
 			what := "shared alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for every Application"
 			return config.AddAlias(config.Alias{Alias: p.Alias, Target: p.Target, Model: p.Model}), what, nil
 		}
-		what := "alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for " + it.Application
-		return config.AddOriginAlias(it.Application, config.OriginAlias{Alias: p.Alias, Target: p.Target, Model: p.Model}), what, nil
+		apps := requesters(it)
+		edits := make([]config.Edit, len(apps))
+		for i, app := range apps {
+			edits[i] = config.AddOriginAlias(app, config.OriginAlias{Alias: p.Alias, Target: p.Target, Model: p.Model})
+		}
+		return each(edits), "alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for " + strings.Join(apps, ", "), nil
 	case KindBindApplication:
 		if p.Target == "" {
 			return nil, "", Invalid{"choose the Connection to bind to"}
@@ -450,7 +458,12 @@ func change(c config.Config, it Item, p Proposal, scope string) (config.Edit, st
 			return nil, "", Invalid{"choose another Connection than the failing one"}
 		}
 		if scope == ScopeApplication {
-			return config.BindOrigin(it.Application, p.Target), "bind " + it.Application + " → " + p.Target, nil
+			apps := requesters(it)
+			edits := make([]config.Edit, len(apps))
+			for i, app := range apps {
+				edits[i] = config.BindOrigin(app, p.Target)
+			}
+			return each(edits), "bind " + strings.Join(apps, ", ") + " → " + p.Target, nil
 		}
 		var t *config.Target
 		for i := range c.Targets {
@@ -464,6 +477,31 @@ func change(c config.Config, it Item, p Proposal, scope string) (config.Edit, st
 		return config.SetDefaultTarget(t.Protocol, t.ID), "default " + t.Protocol + " Connection → " + t.ID + " for every Application", nil
 	}
 	return nil, "", Invalid{"aiport cannot apply this kind of Change yet"}
+}
+
+// requesters are the Applications a Change for Scope application is for:
+// the one that filed it and every one that joined it (a merged request
+// for every Application that the Owner narrowed).
+func requesters(it Item) []string {
+	apps := []string{it.Application}
+	for _, a := range it.AskedBy {
+		if !slices.Contains(apps, a.Application) {
+			apps = append(apps, a.Application)
+		}
+	}
+	return apps
+}
+
+// each applies edits in order as one edit, so they are one Change.
+func each(edits []config.Edit) config.Edit {
+	return func(root *yaml.Node) error {
+		for _, e := range edits {
+			if err := e(root); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 }
 
 func (q *Queue) save(it Item) {
