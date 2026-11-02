@@ -126,7 +126,7 @@ func Run(e config.Extension, in Input) Output {
 	cmd.Dir = filepath.Dir(e.Path)
 	cmd.Env = Environ()
 	cmd.Stdin = bytes.NewReader(body)
-	stdout := &capped{max: MaxOutput}
+	stdout := &Capped{Max: MaxOutput}
 	cmd.Stdout = stdout
 	cmd.WaitDelay = time.Second
 	isolate(cmd)
@@ -139,11 +139,11 @@ func Run(e config.Extension, in Input) Output {
 		return deny("the Extension failed (exit status " + strconv.Itoa(exit.ExitCode()) + ")")
 	case err != nil && !errors.Is(err, exec.ErrWaitDelay):
 		return deny("the Extension could not be started")
-	case stdout.over:
+	case stdout.Over():
 		return deny("the Extension wrote more than 64 KiB")
 	}
 	var out Output
-	if json.Unmarshal(bytes.TrimSpace(stdout.buf.Bytes()), &out) != nil {
+	if json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &out) != nil {
 		return deny("the Extension did not answer with a JSON decision")
 	}
 	switch out.Decision {
@@ -194,18 +194,28 @@ func Environ(extra ...string) []string {
 // for Extensions and Agent runs).
 func Isolate(cmd *exec.Cmd) { isolate(cmd) }
 
-// capped keeps at most max bytes and notes when more were written.
-type capped struct {
+// Capped is an io.Writer that keeps at most Max bytes and notes when more
+// were written (the output of an Extension, a diff); writing never fails.
+type Capped struct {
+	Max  int
 	buf  bytes.Buffer
-	max  int
 	over bool
 }
 
-func (c *capped) Write(p []byte) (int, error) {
-	if room := c.max - c.buf.Len(); len(p) > room {
+func (c *Capped) Write(p []byte) (int, error) {
+	if room := c.Max - c.buf.Len(); len(p) > room {
 		c.buf.Write(p[:max(room, 0)])
 		c.over = true
 		return len(p), nil
 	}
 	return c.buf.Write(p)
 }
+
+// Bytes is what was kept.
+func (c *Capped) Bytes() []byte { return c.buf.Bytes() }
+
+// String is what was kept, as text.
+func (c *Capped) String() string { return c.buf.String() }
+
+// Over reports whether more than Max bytes were written.
+func (c *Capped) Over() bool { return c.over }

@@ -2,12 +2,21 @@
 // Application's repository on a new branch named for an Issue, where the
 // Coding agent works, its diff, and what Keep and Discard do with it.
 //
+// Explain uses a Detached worktree (no branch), so even a read-only run never
+// works in the Owner's working copy.
+//
 // What it never does: commit to the Owner's branch, touch the Owner's
 // working copy, merge, push or fetch. The only commit it makes is Keep's,
-// on the new branch, authored as aiport. git is started by absolute path,
-// with a minimal environment, with hooks, fsmonitor, signing and external
-// diff programs turned off, so nothing in the repository's own
-// configuration runs.
+// on the new branch, authored as aiport. It only removes worktrees directly
+// under the worktrees directory it made them in (Tree.Root).
+//
+// git is resolved once to an absolute path (Git) and started with a minimal
+// environment, without the user's global or the system's configuration and
+// attributes (GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM, GIT_ATTR_NOSYSTEM,
+// core.attributesFile), with hooks, fsmonitor, signing and external diff
+// programs turned off. What the repository itself configures in its own
+// .git/config and .gitattributes (filters, for example) still applies: it is
+// the Owner's own repository.
 package worktree
 
 import (
@@ -19,6 +28,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"aiport/internal/extension"
@@ -39,12 +49,14 @@ const (
 const gitTimeout = time.Minute
 
 // Tree is one worktree: Dir on Branch of the repository Repo, starting at
-// commit Base.
+// commit Base (Branch is empty for a Detached one). Root is the worktrees
+// directory Dir was made in: Remove refuses any Dir not directly under it.
 type Tree struct {
 	Repo   string `json:"repo"`
 	Dir    string `json:"dir"`
 	Branch string `json:"branch"`
 	Base   string `json:"base"`
+	Root   string `json:"root"`
 }
 
 // Summary is what a worktree changed against its base.
@@ -84,21 +96,70 @@ func Create(repo, root, issue string) (Tree, error) {
 	if branch == "" {
 		return Tree{}, errors.New("too many aiport branches for this Issue: delete some first")
 	}
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return Tree{}, errors.New("aiport cannot create its worktrees directory " + root)
-	}
-	dir, err := os.MkdirTemp(root, issue+"-")
+	dir, err := newDir(root, issue)
 	if err != nil {
-		return Tree{}, errors.New("aiport cannot create a worktree directory in " + root)
-	}
-	if real, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = real
+		return Tree{}, err
 	}
 	if _, err := git(repo, nil, "worktree", "add", "--quiet", "-b", branch, dir, base); err != nil {
 		_ = os.RemoveAll(dir)
 		return Tree{}, errors.New("git could not make the worktree: " + err.Error())
 	}
-	return Tree{Repo: repo, Dir: dir, Branch: branch, Base: base}, nil
+	return Tree{Repo: repo, Dir: dir, Branch: branch, Base: base, Root: root}, nil
+}
+
+// Detached makes a throwaway worktree of repo in a new directory under
+// root, detached at the Owner's HEAD commit, on no branch: where an Explain
+// run reads the code. Remove it when the run ends.
+func Detached(repo, root, issue string) (Tree, error) {
+	if !filepath.IsAbs(repo) || !filepath.IsAbs(root) || issue == "" || strings.ContainsAny(issue, "/\\ .~^:?*[") {
+		return Tree{}, errors.New("aiport cannot make a worktree here")
+	}
+	base, err := git(repo, nil, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	if err != nil || base == "" {
+		return Tree{}, errors.New("the repository has no commit yet: commit once, then try again")
+	}
+	dir, err := newDir(root, "explain-"+issue)
+	if err != nil {
+		return Tree{}, err
+	}
+	if _, err := git(repo, nil, "worktree", "add", "--quiet", "--detach", dir, base); err != nil {
+		_ = os.RemoveAll(dir)
+		return Tree{}, errors.New("git could not make the worktree: " + err.Error())
+	}
+	return Tree{Repo: repo, Dir: dir, Base: base, Root: root}, nil
+}
+
+// newDir makes a new directory for a worktree directly under root.
+func newDir(root, prefix string) (string, error) {
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", errors.New("aiport cannot create its worktrees directory " + root)
+	}
+	dir, err := os.MkdirTemp(root, prefix+"-")
+	if err != nil {
+		return "", errors.New("aiport cannot create a worktree directory in " + root)
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	return dir, nil
+}
+
+// owned reports whether t.Dir is directly under t.Root, with symbolic
+// links resolved: the only kind of directory aiport removes.
+func (t Tree) owned() bool {
+	if !filepath.IsAbs(t.Root) || !filepath.IsAbs(t.Dir) {
+		return false
+	}
+	root, dir := filepath.Clean(t.Root), filepath.Clean(t.Dir)
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		root = real
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	} else if real, err := filepath.EvalSymlinks(filepath.Dir(dir)); err == nil {
+		dir = filepath.Join(real, filepath.Base(dir))
+	}
+	return dir != root && filepath.Dir(dir) == root
 }
 
 // Summary stages everything the agent changed in the worktree (respecting
@@ -159,8 +220,16 @@ func (t Tree) Keep(message string) (string, error) {
 	return commit, nil
 }
 
-// Remove removes the worktree; the branch stays.
+// ErrNotOwned: the worktree's directory is not directly under aiport's
+// worktrees directory, so aiport leaves it alone.
+var ErrNotOwned = errors.New("aiport removes only worktrees in its own worktrees directory")
+
+// Remove removes the worktree; the branch stays. It refuses (ErrNotOwned)
+// when Dir is not directly under Root, touching nothing.
 func (t Tree) Remove() error {
+	if !t.owned() {
+		return ErrNotOwned
+	}
 	_, err := git(t.Repo, nil, "worktree", "remove", "--force", t.Dir)
 	if err != nil {
 		if _, statErr := os.Stat(t.Dir); statErr == nil {
@@ -191,30 +260,51 @@ func (t Tree) Discard() error {
 	return nil
 }
 
-// Exists reports whether the worktree's directory is still there.
-func (t Tree) Exists() bool {
-	st, err := os.Stat(t.Dir)
-	return err == nil && st.IsDir()
-}
-
 // safety is the configuration every git command runs with, so nothing the
 // repository configures runs: no hooks, no fsmonitor, no signing prompts,
-// no pager.
-var safety = []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-c", "commit.gpgsign=false", "-c", "core.pager=cat", "-c", "core.quotePath=false"}
+// no pager, no attributes file of the user's.
+var safety = []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-c", "commit.gpgsign=false", "-c", "core.pager=cat", "-c", "core.quotePath=false", "-c", "core.attributesFile=" + os.DevNull}
+
+// isolation keeps the user's global and the system's git configuration and
+// attributes out of aiport's git.
+var isolation = []string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_SYSTEM=" + os.DevNull, "GIT_ATTR_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat"}
+
+var (
+	gitOnce sync.Once
+	gitPath string
+	gitErr  error
+)
+
+// Git is the absolute path of the git aiport runs, resolved once:
+// /usr/bin/git when it is there, otherwise the first git in PATH, made
+// absolute.
+func Git() (string, error) {
+	gitOnce.Do(func() {
+		if st, err := os.Stat("/usr/bin/git"); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+			gitPath = "/usr/bin/git"
+			return
+		}
+		path, err := exec.LookPath("git")
+		if err == nil && !filepath.IsAbs(path) {
+			path, err = filepath.Abs(path)
+		}
+		if err != nil {
+			gitErr = errors.New("git is not installed")
+			return
+		}
+		gitPath = path
+	})
+	return gitPath, gitErr
+}
 
 func command(ctx context.Context, dir string, env []string, args ...string) (*exec.Cmd, error) {
-	path, err := exec.LookPath("git")
+	path, err := Git()
 	if err != nil {
-		return nil, errors.New("git is not installed")
-	}
-	if !filepath.IsAbs(path) {
-		if path, err = filepath.Abs(path); err != nil {
-			return nil, errors.New("git is not installed")
-		}
+		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, path, append(append([]string{"-C", dir}, safety...), args...)...)
 	cmd.Path = path
-	cmd.Env = append(extension.Environ("USER", "LOGNAME"), append([]string{"GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat"}, env...)...)
+	cmd.Env = append(append(extension.Environ("USER", "LOGNAME"), isolation...), env...)
 	extension.Isolate(cmd)
 	return cmd, nil
 }
@@ -248,29 +338,14 @@ func gitCapped(dir string, args ...string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	out := &capped{max: MaxDiff}
+	out := &extension.Capped{Max: MaxDiff}
 	cmd.Stdout = out
-	if err := cmd.Run(); err != nil && !out.over {
+	if err := cmd.Run(); err != nil && !out.Over() {
 		return "", false, errors.New("git could not show the diff")
 	}
-	s := out.buf.String()
-	if out.over {
+	s := out.String()
+	if out.Over() {
 		s = strings.ToValidUTF8(s, "")
 	}
-	return s, out.over, nil
-}
-
-type capped struct {
-	buf  bytes.Buffer
-	max  int
-	over bool
-}
-
-func (c *capped) Write(p []byte) (int, error) {
-	if room := c.max - c.buf.Len(); len(p) > room {
-		c.buf.Write(p[:max(room, 0)])
-		c.over = true
-		return len(p), nil
-	}
-	return c.buf.Write(p)
+	return s, out.Over(), nil
 }

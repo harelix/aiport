@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -147,9 +148,19 @@ func fixPrompt(is decide.Issue, branch string) string {
 		"End with a short summary of what you changed and why, in plain text."
 }
 
+// discardTree removes worktree t and its branch. A worktree recorded
+// outside aiport's worktrees directory is left alone and logged.
+func (h *Handler) discardTree(t worktree.Tree) error {
+	err := t.Discard()
+	if errors.Is(err, worktree.ErrNotOwned) {
+		log.Printf("aiport: left %s alone: it is not in aiport's worktrees directory %s", t.Dir, t.Root)
+	}
+	return err
+}
+
 // treeOf is the worktree of branch fix b.
-func treeOf(b decide.BranchFix) worktree.Tree {
-	return worktree.Tree{Repo: b.Repository, Dir: b.Worktree, Branch: b.Branch, Base: b.Base}
+func (h *Handler) treeOf(b decide.BranchFix) worktree.Tree {
+	return worktree.Tree{Repo: b.Repository, Dir: b.Worktree, Branch: b.Branch, Base: b.Base, Root: h.worktreeRoot()}
 }
 
 // startFix starts Fix it for Issue is: the worktree, the branch fix
@@ -210,9 +221,9 @@ func (h *Handler) fixEnded(issue string, b decide.BranchFix, info agentrun.Info)
 	h.fixMu.Lock() // after startFix has recorded the run
 	defer h.fixMu.Unlock()
 	b.Run = info.ID
-	t := treeOf(b)
+	t := h.treeOf(b)
 	discard := func(state decide.BranchState, note string) {
-		if err := t.Discard(); err != nil {
+		if err := h.discardTree(t); err != nil {
 			note += " " + err.Error()
 		}
 		b.State, b.Note, b.Worktree = state, strings.TrimSpace(note), ""
@@ -272,7 +283,7 @@ func (h *Handler) stopLeftFixes() {
 			continue
 		}
 		note := "aiport stopped while the run was going; the worktree and the branch were removed."
-		if err := treeOf(*b).Discard(); err != nil {
+		if err := h.discardTree(h.treeOf(*b)); err != nil {
 			note += " " + err.Error()
 		}
 		fixed := *b
@@ -373,7 +384,7 @@ func (h *Handler) keepFix(w http.ResponseWriter, is decide.Issue, fail func(int,
 		return
 	}
 	message := "Fix aiport Issue " + is.ID + "\n\n" + strings.TrimSpace(is.Summary) + "\n\nChanged by the Coding agent " + b.Agent + " in an aiport Fix it run (" + b.Run + "), kept by the Owner after reviewing the diff."
-	commit, err := treeOf(b).Keep(message)
+	commit, err := h.treeOf(b).Keep(message)
 	if commit == "" {
 		fail(409, "keep_failed", err.Error())
 		return
@@ -398,7 +409,7 @@ func (h *Handler) discardFix(w http.ResponseWriter, is decide.Issue, fail func(i
 	if !ok {
 		return
 	}
-	if err := treeOf(b).Discard(); err != nil {
+	if err := h.discardTree(h.treeOf(b)); err != nil {
 		fail(409, "discard_failed", err.Error())
 		return
 	}
@@ -433,7 +444,7 @@ func (h *Handler) showFix(w http.ResponseWriter, id string, fail func(int, strin
 	switch {
 	case b.Reviewable():
 		h.fixMu.Lock()
-		diff, truncated, err = treeOf(*b).Diff()
+		diff, truncated, err = h.treeOf(*b).Diff()
 		h.fixMu.Unlock()
 	case b.State == decide.BranchKept && b.Commit != "":
 		diff, truncated, err = worktree.KeptDiff(b.Repository, b.Base, b.Commit)

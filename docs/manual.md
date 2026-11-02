@@ -677,9 +677,20 @@ docs-bot").
   the commit aiport made), also across restarts. The diff itself is read
   from the worktree or the branch when you look at it. The run's log is
   kept as for Explain.
-- **git, safely**: aiport runs git by absolute path with a minimal
-  environment and with hooks, fsmonitor, commit signing and external diff
-  programs turned off, so nothing configured in the repository runs.
+- **git, safely**: aiport finds git once, at startup, by absolute path
+  (`/usr/bin/git` when it is there, otherwise the first `git` in its
+  `PATH`; the startup output names it), and runs it with a minimal
+  environment, without your global or the system's git configuration and
+  attributes (`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`,
+  `GIT_ATTR_NOSYSTEM=1`, `core.attributesFile=/dev/null`), and with hooks,
+  fsmonitor, commit signing and external diff programs turned off. What
+  the repository itself configures in its own `.git/config` and
+  `.gitattributes` still applies (for example a clean or smudge filter it
+  defines): it is your own repository, so check those before using Fix it
+  on a repository you did not set up.
+- **Only its own worktrees**: aiport removes a worktree only when its
+  directory is directly inside `aiport.yaml.worktrees/`; any other path it
+  finds recorded is left alone and logged.
 
 ```yaml
 agent_runs:
