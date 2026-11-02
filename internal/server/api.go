@@ -17,7 +17,7 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 	if h.targetKeyRoute(w, r, fail) {
 		return true
 	}
-	if h.targetCheckRoute(w, r, fail) || h.targetModelsRoute(w, r, fail) || h.servingRoute(w, r, fail) {
+	if h.targetCheckRoute(w, r, fail) || h.targetModelsRoute(w, r, fail) || h.targetDependentsRoute(w, r, fail) || h.servingRoute(w, r, fail) {
 		return true
 	}
 	if h.pairingsRoute(w, r, fail) {

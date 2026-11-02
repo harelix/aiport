@@ -27,7 +27,7 @@ func (in *targetInput) trim() {
 //
 //	POST   /api/v1/targets        add a connection
 //	PATCH  /api/v1/targets/{id}   change region, endpoint, protocol
-//	DELETE /api/v1/targets/{id}   remove a connection
+//	DELETE /api/v1/targets/{id}   remove a connection (with a plan: re-point what uses it first, as one Change)
 //	PUT    /api/v1/defaults       choose the default connection per protocol
 //
 // Each edits the YAML file in place (other keys and comments kept), validates
@@ -105,8 +105,8 @@ func (h *Handler) targetRoute(w http.ResponseWriter, r *http.Request, fail func(
 		}
 		what, edit = "edit connection "+id, config.EditTarget(id, config.TargetSettings{Region: strings.TrimSpace(in.Region), Endpoint: strings.TrimSpace(in.Endpoint), Protocol: strings.TrimSpace(in.Protocol)})
 	default:
-		what = "remove connection " + id
-		edit, err = config.RemoveTarget(current, id)
+		h.removeTarget(w, r, current, id, fail)
+		return true
 	}
 	if err == nil {
 		_, _, err = h.live.Change(what, edit)

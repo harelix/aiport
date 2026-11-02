@@ -1,6 +1,6 @@
-import React, {FormEvent, useState} from 'react';
+import React, {FormEvent, useEffect, useRef, useState} from 'react';
 import {HelpLink} from './help';
-import {Activity, Check, ChevronRight, Cloud, Copy, HardDrive, Plus} from 'lucide-react';
+import {Activity, Check, ChevronRight, Cloud, Copy, HardDrive, Plus, Trash2, Users, X} from 'lucide-react';
 import {AuthenticationSettings} from './AuthGate';
 import {ProviderLogo} from './ProviderLogo';
 import type {Reason} from './Reason';
@@ -212,24 +212,124 @@ function AddCustom({location, taken, onDone}: {location: Location; taken: Set<st
   </form>;
 }
 
-function CardActions({t, defaults, onChange}: {t: Target; defaults: SettingsConfig['defaults']; onChange: () => void}) {
-  const [confirm, setConfirm] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
+/** One item that uses a Connection (GET /api/v1/targets/{id}/dependents), with the suggested replacement ("" = none). */
+type Dependent = {id: string; kind: string; protocol?: string; application?: string; alias?: string; model?: string; suggestion: string};
+/** An Application whose Catalog the removal changes. */
+type Affected = {application: string; name: string; removed: {name: string}[]; moved: {name: string; to: {connection: string}}[]; routing: {of: string; before: string; after: string}[]};
+type Dependents = {connection: string; dependents: Dependent[]; applications: Affected[]; problem?: string};
+
+const dependentLabel = (d: Dependent) => {
+  const model = d.model ? ' (' + d.model + ')' : '';
+  switch (d.kind) {
+    case 'default': return protoName(d.protocol || 'openai') + '-protocol default';
+    case 'binding': return d.application + ' is bound to it';
+    case 'alias': return 'Shared Alias ' + d.alias + model;
+    case 'application_alias': return d.application + "'s Alias " + d.alias + model;
+    case 'explain': return 'Explanations' + model;
+    case 'agent_runs': return "Agent runs' model calls" + model;
+    default: return 'Compression evaluator' + model;
+  }
+};
+/** What "None" does to each kind of item. */
+const noneLabel: Record<string, string> = {
+  default: 'None (no default)', binding: 'None (follow the defaults)', alias: 'None (remove the Alias)', application_alias: 'None (remove the Alias)',
+  explain: 'None (Explanations off)', agent_runs: 'None (agents use their own login)', evaluation: 'None (evaluator off)',
+};
+const affectedText = (a: Affected) => [
+  ...a.removed.map(r => r.name + ' removed'),
+  ...a.moved.map(m => m.name + ' moves to ' + m.to.connection),
+  ...a.routing.map(r => (r.of === 'binding' ? 'binding' : protoName(r.of) + ' default') + ': ' + (r.after || 'none')),
+].join(' · ');
+
+/**
+ * The removal dialog: everything that uses the Connection, each with a
+ * Connection picker pre-filled with the suggestion (or none), and the
+ * Applications the plan affects. Confirming re-points everything and removes
+ * the Connection as one Change, reverted in one click from Changes.
+ */
+function RemoveDialog({t, targets, onClose, onRemoved}: {t: Target; targets: Target[]; onClose: () => void; onRemoved: () => void}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [data, setData] = useState<Dependents | null>(null);
+  const [plan, setPlan] = useState<Record<string, string>>({});
+  const [affected, setAffected] = useState<Affected[]>([]);
+  const [problem, setProblem] = useState('');
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const base = 'targets/' + encodeURIComponent(t.id) + '/dependents';
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  useEffect(() => {
+    fetch('/api/v1/' + base, {credentials: 'same-origin'}).then(async r => {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error?.message || 'Could not list what uses this connection (' + r.status + ').');
+      const deps = d as Dependents;
+      setData(deps); setAffected(deps.applications); setProblem(deps.problem || '');
+      setPlan(Object.fromEntries(deps.dependents.map(x => [x.id, x.suggestion])));
+    }).catch(err => setError((err as Error).message));
+  }, [base]);
+  async function choose(id: string, to: string) {
+    const next = {...plan, [id]: to};
+    setPlan(next);
+    try { const d = await mutate('POST', base, {plan: next}) as Dependents; setAffected(d.applications); setProblem(d.problem || ''); }
+    catch (err) { setProblem((err as Error).message); }
+  }
+  async function remove() {
+    setBusy(true); setError('');
+    try { await mutate('DELETE', 'targets/' + encodeURIComponent(t.id), {plan}); onRemoved(); }
+    catch (err) { setError((err as Error).message); setBusy(false); }
+  }
+  const others = (d: Dependent) => targets.filter(o => o.id !== t.id && !o.disabled && (d.kind === 'default' || d.kind === 'agent_runs' ? o.protocol === t.protocol : true));
+  return <dialog ref={dialog} className="recovery-dialog removal-dialog" onClose={onClose} aria-labelledby={'remove-' + t.id}>
+    <div className="panel-heading">
+      <h2 id={'remove-' + t.id} className="with-icon"><Trash2 size={18} aria-hidden/>Remove {t.id}</h2>
+      <button type="button" className="text-button" onClick={() => dialog.current?.close()} aria-label="Close">Close <X size={14} aria-hidden/></button>
+    </div>
+    <div className="recovery-content">
+      {!data && !error && <p>Looking up what uses {t.id}…</p>}
+      {data && (data.dependents.length === 0
+        ? <p>Nothing uses {t.id}. Removing it changes no routing.</p>
+        : <>
+          <p>These use {t.id}. Choose where each goes instead, or none. Each starts with the best match: a Connection that serves the same model, else the protocol default.</p>
+          <ul className="removal-list">{data.dependents.map(d => <li key={d.id}>
+            <label htmlFor={'dep-' + d.id}>{dependentLabel(d)}</label>
+            <select id={'dep-' + d.id} value={plan[d.id] ?? ''} disabled={busy} onChange={e => void choose(d.id, e.target.value)}>
+              {others(d).map(o => <option key={o.id} value={o.id}>{o.id}</option>)}
+              <option value="">{noneLabel[d.kind] || 'None'}</option>
+            </select>
+          </li>)}</ul>
+        </>)}
+      {data && <div className="removal-affected">
+        <h3 className="with-icon"><Users size={14} aria-hidden/>Applications affected</h3>
+        {affected.length === 0
+          ? <p className="caption">No Application's Catalog changes.</p>
+          : <ul>{affected.map(a => <li key={a.application}><strong>{a.name || a.application}</strong> <small>{affectedText(a)}</small></li>)}</ul>}
+      </div>}
+      {problem && <p className="notice-inline" role="status">{problem}</p>}
+      {error && <p className="auth-error" role="alert">{error}</p>}
+      <p className="caption">The re-pointing and the removal are one Change: revert it from Changes to restore everything.</p>
+      <div className="removal-actions">
+        <button type="button" className="danger with-icon" disabled={busy || !data} onClick={() => void remove()}><Trash2 size={14} aria-hidden/>{busy ? 'Removing…' : 'Remove ' + t.id}</button>
+        <button type="button" className="text-button" onClick={() => dialog.current?.close()}>Cancel</button>
+      </div>
+    </div>
+  </dialog>;
+}
+
+function CardActions({t, targets, defaults, onChange}: {t: Target; targets: Target[]; defaults: SettingsConfig['defaults']; onChange: () => void}) {
+  const [removing, setRemoving] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const key = t.protocol === 'openai' ? 'openai_target' : 'anthropic_target';
   const isDefault = defaults[key] === t.id;
   async function run(fn: () => Promise<unknown>) {
     setBusy(true); setError('');
-    try { await fn(); onChange(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); setConfirm(false); }
+    try { await fn(); onChange(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   }
   return <div className="card-actions">
     {!isDefault && !t.disabled && <button type="button" className="text-button" disabled={busy} onClick={() => run(() => mutate('PUT', 'defaults', {...defaults, [key]: t.id}))}>Make {protoName(t.protocol)} default</button>}
-    {confirm
-      ? <span className="confirm">Remove {t.id}? <button type="button" className="danger" disabled={busy} onClick={() => run(() => mutate('DELETE', 'targets/' + encodeURIComponent(t.id)))}>Remove</button><button type="button" className="text-button" onClick={() => setConfirm(false)}>Cancel</button></span>
-      : <button type="button" className="text-button subtle" onClick={() => setConfirm(true)}>Remove</button>}
+    <button type="button" className="text-button subtle" onClick={() => setRemoving(true)}>Remove</button>
+    {removing && <RemoveDialog t={t} targets={targets} onClose={() => setRemoving(false)} onRemoved={() => { setRemoving(false); onChange(); }}/>}
     {error && <p className="auth-error" role="alert">{error}</p>}
   </div>;
 }
 
-function ProviderCard({t, spec, src, role, defaults, onKeys, onChange, check, onCheck}: {t: Target; spec?: ProviderSpec; src: KeySource; role: string; defaults: SettingsConfig['defaults']; onKeys: (r: KeyResult) => void; onChange: () => void; check?: CheckState; onCheck: () => void}) {
+function ProviderCard({t, all, spec, src, role, defaults, onKeys, onChange, check, onCheck}: {t: Target; all: Target[]; spec?: ProviderSpec; src: KeySource; role: string; defaults: SettingsConfig['defaults']; onKeys: (r: KeyResult) => void; onChange: () => void; check?: CheckState; onCheck: () => void}) {
   const [editing, setEditing] = useState(false);
   const name = spec?.name || t.provider;
   const [text, tone] = t.disabled ? ['Disabled', ''] : keyBadge[src];
@@ -258,12 +358,12 @@ function ProviderCard({t, spec, src, role, defaults, onKeys, onChange, check, on
       <CheckResult state={check}/>
       <ConnectionModels t={t} check={check}/>
     </div>
-    <CardActions t={t} defaults={defaults} onChange={onChange}/>
+    <CardActions t={t} targets={all} defaults={defaults} onChange={onChange}/>
   </article>;
 }
 
-function ProviderGroup({location, targets, presets, providers, taken, sources, secrets, defaults, onKeys, onChange}: {
-  location: Location; targets: Target[]; presets: ProviderSpec[]; providers: ProviderSpec[]; taken: Set<string>;
+function ProviderGroup({location, targets, all, presets, providers, taken, sources, secrets, defaults, onKeys, onChange}: {
+  location: Location; targets: Target[]; all: Target[]; presets: ProviderSpec[]; providers: ProviderSpec[]; taken: Set<string>;
   sources: Record<string, KeySource>; secrets: Record<string, boolean>;
   defaults: SettingsConfig['defaults']; onKeys: (r: KeyResult) => void; onChange: () => void;
 }) {
@@ -301,7 +401,7 @@ function ProviderGroup({location, targets, presets, providers, taken, sources, s
     </div>
     {open && <div id={body}>
     {targets.length
-      ? <div className="provider-grid">{targets.map(t => <div className="provider-frame" key={t.id}><ProviderCard t={t} spec={providers.find(p => p.id === t.provider)} src={source(t)} role={role(t)} defaults={defaults} onKeys={onKeys} onChange={onChange} check={checks[t.id]} onCheck={() => runCheck(t.id)}/></div>)}</div>
+      ? <div className="provider-grid">{targets.map(t => <div className="provider-frame" key={t.id}><ProviderCard t={t} all={all} spec={providers.find(p => p.id === t.provider)} src={source(t)} role={role(t)} defaults={defaults} onKeys={onKeys} onChange={onChange} check={checks[t.id]} onCheck={() => runCheck(t.id)}/></div>)}</div>
       : <p className="group-empty">No {location === 'local' ? 'local model servers' : 'remote providers'} yet. Add one below.</p>}
     <div className="available">
       <h3>Add a connection</h3>
@@ -359,7 +459,7 @@ function useLists(config: SettingsConfig | null, providers: ProviderSpec[]) {
 export function ProvidersPage({config, providers, secrets, sources, onKeys, onChange}: Props) {
   const {targets} = useLists(config, providers);
   const taken = new Set(targets.map(t => t.id));
-  const group = (l: Location) => <ProviderGroup location={l} targets={targets.filter(t => t.location === l)} presets={providers.filter(p => p.location === l)} providers={providers} taken={taken} sources={sources} secrets={secrets} defaults={config?.defaults || {}} onKeys={onKeys} onChange={onChange}/>;
+  const group = (l: Location) => <ProviderGroup location={l} targets={targets.filter(t => t.location === l)} all={targets} presets={providers.filter(p => p.location === l)} providers={providers} taken={taken} sources={sources} secrets={secrets} defaults={config?.defaults || {}} onKeys={onKeys} onChange={onChange}/>;
   return <>
     {group('remote')}
     {group('local')}

@@ -152,11 +152,34 @@ aiport adds the key upstream.
 
 ### Removing a Connection, and when one fails
 
-aiport will not remove a Connection that something still uses: a protocol
-default, an Application bound to it, an Alias (shared or an Application's
-own), the compression evaluator, Explanations or the model calls of Agent
-runs. The message names what uses it; move that first, then remove the
-Connection. Every step is a Change you can revert.
+You can always remove a Connection. **Remove** on its card opens a dialog
+that lists everything still using it: a protocol default, an Application
+bound to it, an Alias (shared or an Application's own), Explanations, the
+model calls of Agent runs and the compression evaluator. Each item has a
+Connection picker, already set to the best match:
+
+1. a Connection of the same protocol that lists the same model (for a
+   binding or a protocol default: the one that lists most of the removed
+   Connection's models);
+2. otherwise the protocol default (the new one, if you are removing the
+   default);
+3. otherwise none.
+
+Choose **None** to leave an item without a Connection on purpose: a protocol
+default is unset, a binding is removed (the Application follows the protocol
+defaults again), an Alias is removed (its task name is retired), and
+Explanations, Agent runs' model calls or the evaluator are turned off.
+
+Below the list the dialog names the Applications whose Catalog the removal
+changes (task names removed or moved, a binding or a protocol default they
+follow), and updates as you change a picker. Confirming applies all the
+re-pointing and the removal as **one Change**: one revert in **Changes**
+restores the Connection and everything that used it.
+
+Without the dialog (a `DELETE /api/v1/targets/{id}` with no plan), aiport
+still refuses to remove a Connection something uses, and the message names
+what uses it. The dialog reads `GET /api/v1/targets/{id}/dependents` and
+sends the plan as `{"plan": {"<item>": "<Connection id or empty>"}}`.
 
 There is no automatic fallback. When a Connection is down or keeps
 answering with errors, calls to it fail and the Application gets the
