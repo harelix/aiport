@@ -72,6 +72,10 @@ type Document struct {
 	// Adapting is false when the Owner turned the adapting loop off: no
 	// Change requests and no hints then.
 	Adapting bool `json:"adapting"`
+	// AgentPrompt is the one instruction the Owner pastes to a coding agent
+	// in an application's repository; it points at Docs, which holds
+	// everything both briefs need.
+	AgentPrompt string `json:"agent_prompt"`
 }
 type Auth struct {
 	Required    bool   `json:"required"`
@@ -97,6 +101,7 @@ func Describe(c config.Config) Document {
 		Gateway:     "aiport",
 		BaseURL:     base + "/v1",
 		Docs:        base + Path + "?format=markdown",
+		AgentPrompt: AgentPrompt(base + Path + "?format=markdown"),
 		Translation: false,
 		Protocols: []Wire{
 			{Name: "openai", Available: has(c.Defaults.OpenAITarget),
@@ -212,6 +217,7 @@ func Markdown(d Document) string {
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
 	w("# aiport Connect v%s\n\n", d.Version)
+	startHere(w, d)
 	w("How to talk to this aiport gateway. Machine-readable: `GET %s` (JSON).\n\n", Path)
 	w("Base URL: `%s`. aiport speaks the providers' **native** APIs; existing OpenAI/Anthropic SDKs work by changing the base URL and API key. There is no protocol translation.\n\n", d.BaseURL)
 	w("## Authentication\n\n")
@@ -262,4 +268,25 @@ func Markdown(d Document) string {
 		w("- %s\n", p)
 	}
 	return b.String()
+}
+
+// AgentPrompt is the instruction an Owner gives a coding agent working in an
+// application's repository. docs is this document's markdown URL, which holds
+// everything the agent needs for both parts.
+func AgentPrompt(docs string) string {
+	return "Read " + docs + " and follow it to connect this application to the aiport gateway on this machine. " +
+		"Do both parts in order: first the section \"Integrate this application with aiport\" (pair the application for its own token, store it as AIPORT_APP_TOKEN outside the repository, point its OpenAI or Anthropic SDK at aiport, remove provider keys, make one test call), " +
+		"then the section \"Ask aiport for changes from this repository\" (add the aiport MCP entry and the AGENTS.md line so later sessions can ask aiport for changes). " +
+		"When pairing shows a code, tell me the code and wait while I approve it in the aiport dashboard. Never write the token into a committed file."
+}
+
+// startHere opens the markdown document with what a coding agent should do,
+// so an agent handed only this URL knows where to begin.
+func startHere(w func(string, ...any), d Document) {
+	w("## Start here\n\n")
+	w("**If you are a coding agent** asked to connect an application to aiport: everything you need is in this document. Do these in order:\n\n")
+	w("1. **%s** below: give the application its own token by pairing, then point its SDK at aiport.\n", d.Integration.Title)
+	w("2. **%s** below: add the aiport MCP entry and the `AGENTS.md` line to the repository, so later sessions can ask aiport for changes.\n", d.AgentIntegration.Title)
+	w("3. Tell the user the pairing code when it appears and wait for them to approve it in the aiport dashboard; never commit the token.\n\n")
+	w("**If you are the Owner**, paste this to the coding agent working in the application's repository:\n\n> %s\n\n", d.AgentPrompt)
 }

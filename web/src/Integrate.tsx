@@ -10,7 +10,7 @@ import {Inline} from './markdown';
 type Snippet = {id: string; title: string; language: string; sdk?: string; protocol?: string; available: boolean; code: string};
 type Brief = {for: string; title: string; intro: string; steps: string[]; snippets: Snippet[]; note: string};
 type BriefLink = {for: string; title: string; audience: string; url: string};
-type ConnectDoc = {protocols: {name: string; available: boolean}[]; integration: Brief; agent_integration: Brief; briefs: BriefLink[]; adapting: boolean};
+type ConnectDoc = {docs: string; agent_prompt: string; protocols: {name: string; available: boolean}[]; integration: Brief; agent_integration: Brief; briefs: BriefLink[]; adapting: boolean};
 type Language = 'python' | 'typescript' | 'curl';
 type Tab = 'application' | 'agent';
 
@@ -64,23 +64,36 @@ function useFirstCall(app: string, tick: number): Seen {
   return seen;
 }
 
-function Step({done, title, children}: {done: boolean; title: string; children: React.ReactNode}) {
-  return <li className={'step' + (done ? ' done' : '')}>
-    {done ? <CircleCheck size={18} strokeWidth={1.75} aria-hidden className="step-icon"/> : <CircleDashed size={18} strokeWidth={1.75} aria-hidden className="step-icon"/>}
-    <div><strong>{title}</strong><span className="sr-only">{done ? ' (done)' : ' (not yet)'}</span><div className="muted-small">{children}</div></div>
+function Step({n, done, current, title, children}: {n: number; done: boolean; current: boolean; title: string; children: React.ReactNode}) {
+  return <li className={'step' + (done ? ' done' : '') + (current ? ' current' : '')} aria-current={current ? 'step' : undefined}>
+    <span className="step-number" aria-hidden>{done ? <CircleCheck size={20} strokeWidth={1.75}/> : current ? n : <CircleDashed size={20} strokeWidth={1.75}/>}</span>
+    <div><strong>{n}. {title}</strong><span className="sr-only">{done ? ' (done)' : current ? ' (do this now)' : ' (not yet)'}</span><div className="step-body">{children}</div></div>
   </li>;
 }
 
-function Checklist({origins, targets, app, setApp, adapting, mcpCopied, setMcpCopied, tick, onChange}: {
-  origins: Origin[]; targets: Target[]; app: string; setApp: (id: string) => void; adapting: boolean;
-  mcpCopied: boolean; setMcpCopied: (v: boolean) => void; tick: number; onChange: () => void;
+/* The onboarding wizard: what the Owner does, in order, to connect one
+   application. Each step ticks itself from live state; the first step not
+   done is the one to do now. */
+function Wizard({origins, targets, app, setApp, adapting, prompt, docs, mcpCopied, setMcpCopied, tick, onChange, onAgentTab}: {
+  origins: Origin[]; targets: Target[]; app: string; setApp: (id: string) => void; adapting: boolean; prompt: string; docs: string;
+  mcpCopied: boolean; setMcpCopied: (v: boolean) => void; tick: number; onChange: () => void; onAgentTab: () => void;
 }) {
   const [pairings, refresh] = usePairings();
+  const [handed, setHanded] = useState(false);
+  const known = React.useRef(new Set(origins.map(x => x.id)));
+  // An application approved while onboarding "a new application" becomes the one followed.
+  useEffect(() => {
+    const added = origins.find(x => !known.current.has(x.id));
+    origins.forEach(x => known.current.add(x.id));
+    if (added && app === NEW) setApp(added.id);
+  }, [origins]);
   const seen = useFirstCall(app, tick);
   const o = origins.find(x => x.id === app);
   const done = () => { refresh(); onChange(); };
-  return <section className="panel" aria-labelledby="checklist-heading">
-    <div className="panel-heading"><h2 id="checklist-heading">Checklist</h2>
+  const steps = [!!o || handed || pairings.length > 0, !!o, typeof seen === 'number', !!o?.may_request_changes && adapting, mcpCopied];
+  const current = steps.findIndex(x => !x);
+  return <section className="panel wizard" aria-labelledby="wizard-heading">
+    <div className="panel-heading"><h2 id="wizard-heading">Onboard an application</h2>
       <label className="inline-select">Application
         <select value={app} onChange={e => setApp(e.target.value)}>
           <option value={NEW}>A new application</option>
@@ -88,23 +101,34 @@ function Checklist({origins, targets, app, setApp, adapting, mcpCopied, setMcpCo
         </select>
       </label>
     </div>
-    {pairings.length > 0 && <><p className="muted handover-intro"><strong>Waiting for your approval.</strong> Check the application shows the same code.</p><PairingList pairings={pairings} targets={targets} onDone={done}/></>}
     <ol className="steps">
-      <Step done={!!o} title="Paired">{o
-        ? <>Connected as <code>{o.id}</code>{o.target ? <>, bound to <code>{o.target}</code></> : ', using the protocol defaults'}.</>
-        : <>Give the Application brief below to the coding agent working on the application. It asks aiport to pair; the request appears here for you to approve, and the application is listed above once approved.</>}</Step>
-      <Step done={typeof seen === 'number'} title="First call seen">{!o ? 'After pairing, the application makes one real call.'
-        : seen === 'loading' ? 'Checking…'
-        : seen === 'off' ? <>Activity recording is off (<code>telemetry.enabled: false</code>), so aiport cannot tell.</>
-        : typeof seen === 'number' ? <>Latest call {new Date(seen).toLocaleString()}.</>
-        : 'No call from this application in the last 7 days. If its calls show as unknown in Activity, it is not sending its own token.'}</Step>
-      <Step done={!!o?.may_request_changes && adapting} title="May request changes">{!o ? 'Optional. You can allow it while approving the pairing, or here afterwards.'
-        : !adapting ? <>Adapting is turned off in the configuration (<code>adapting.disabled</code>), so no Application can request changes now.</>
-        : <><MayRequestToggle o={o} onDone={done}/> Lets coding agents in its repository ask you for Changes; you decide each one in Changes.</>}</Step>
-      <Step done={mcpCopied} title="MCP entry copied">
-        <label className="check-label compact"><input type="checkbox" checked={mcpCopied} onChange={e => setMcpCopied(e.target.checked)}/>Copy the project MCP entry from the Coding agent tab into the application's repository (marked here when you copy it).</label>
+      <Step n={1} done={steps[0]} current={current === 0} title="Hand this to the coding agent">
+        <p>Open the coding agent (Claude Code, Codex, Cursor…) <strong>in the application's repository</strong> and paste this instruction. It tells the agent to read <a href={docs.replace(/^https?:\/\/[^/]+/, '')} target="_blank" rel="noreferrer"><code>{docs}</code></a>, which aiport writes from this gateway and which holds everything for both parts: wiring the application's LLM calls through aiport, and letting later sessions ask aiport for changes.</p>
+        <blockquote className="agent-prompt">{prompt}</blockquote>
+        <div className="button-row"><CopyButton text={prompt} label="Copy instruction" onCopied={() => setHanded(true)}/><CopyButton text={docs} label="Copy URL only"/></div>
+      </Step>
+      <Step n={2} done={steps[1]} current={current === 1} title="Approve the pairing">
+        {o ? <>Connected as <code>{o.id}</code>{o.target ? <>, bound to <code>{o.target}</code></> : ', using the protocol defaults'}.</>
+          : pairings.length > 0 ? <><p>The agent asked to pair. Check the code matches the one the agent shows you, then approve. You can bind a Connection and allow change requests here.</p><PairingList pairings={pairings} targets={targets} onDone={done}/></>
+          : <>Waiting for the agent to ask. Its request appears here within a few seconds, with a short code; requests expire after 10 minutes.</>}
+      </Step>
+      <Step n={3} done={steps[2]} current={current === 2} title="First call arrives">
+        {!o ? 'After pairing, the agent makes one real call through aiport.'
+          : seen === 'loading' ? 'Checking…'
+          : seen === 'off' ? <>Activity recording is off (<code>telemetry.enabled: false</code>), so aiport cannot tell. Ask the agent whether its test call succeeded.</>
+          : typeof seen === 'number' ? <>Latest call {new Date(seen).toLocaleString()}. The application now goes through aiport.</>
+          : 'No call from this application in the last 7 days yet. If its calls show as unknown in Activity, it is not sending its own token.'}
+      </Step>
+      <Step n={4} done={steps[3]} current={current === 3} title="Allow change requests (optional)">
+        {!o ? 'Once paired, decide whether coding agents in its repository may ask you for changes.'
+          : !adapting ? <>Adapting is turned off in the configuration (<code>adapting.disabled</code>), so no Application can request changes now.</>
+          : <><MayRequestToggle o={o} onDone={done}/> You still decide each request on the Changes page.</>}
+      </Step>
+      <Step n={5} done={steps[4]} current={current === 4} title="MCP entry in the repository (optional)">
+        <label className="check-label compact"><input type="checkbox" checked={mcpCopied} onChange={e => setMcpCopied(e.target.checked)}/>The agent adds it as part of step 1. To do it by hand, copy it from the <button type="button" className="text-button" onClick={onAgentTab}>Coding agent tab</button>.</label>
       </Step>
     </ol>
+    {current < 0 && <p className="notice" role="status"><CircleCheck size={16} aria-hidden/> This application is onboarded.</p>}
   </section>;
 }
 
@@ -149,10 +173,8 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
     {LANGUAGES.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={language === value} className={language === value ? 'on' : ''} onClick={() => pick(value)}>{label}</button>)}
   </div>;
   return <>
-    <div className="notice info-notice"><BookOpen size={16} aria-hidden/><div>
-      aiport writes these instructions itself, from this gateway's live address and protocols (<code>{doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}</code>). The <strong>Application brief</strong> is for the coding agent connecting an application; the <strong>Coding agent brief</strong> is for agents working in that application's repository later. <button type="button" className="text-button" onClick={onManual}>Read the manual</button>
-    </div></div>
-    <Checklist origins={origins} targets={targets} app={app} setApp={setApp} adapting={doc.adapting} mcpCopied={copied} setMcpCopied={markCopied} tick={tick} onChange={onChange}/>
+    <Wizard origins={origins} targets={targets} app={app} setApp={setApp} adapting={doc.adapting} prompt={doc.agent_prompt} docs={doc.docs} mcpCopied={copied} setMcpCopied={markCopied} tick={tick} onChange={onChange} onAgentTab={() => setTab('agent')}/>
+    <p className="muted integrate-intro"><BookOpen size={14} aria-hidden/> The two briefs below are what the agent reads, shown here so you can check them or copy parts by hand. aiport writes them from this gateway's live address and protocols (<code>{doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}</code>). <button type="button" className="text-button" onClick={onManual}>Read the manual</button></p>
     <div className="task-filters integrate-tabs" role="tablist" aria-label="Brief">
       <button role="tab" id="tab-application" aria-controls="panel-application" aria-selected={tab === 'application'} className={tab === 'application' ? 'active' : ''} onClick={() => setTab('application')}>Application</button>
       <button role="tab" id="tab-agent" aria-controls="panel-agent" aria-selected={tab === 'agent'} className={tab === 'agent' ? 'active' : ''} onClick={() => setTab('agent')}>Coding agent</button>

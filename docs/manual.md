@@ -171,25 +171,47 @@ serves them at `/_connect`:
 
 `/_connect?format=handover` returns both, one after the other.
 
-On the page:
+### Onboarding an application, step by step
 
-- **Checklist**: choose an Application, or "A new application". The steps
-  tick themselves as they happen: **Paired** (it is in the configuration),
-  **First call seen** (Activity has a call from it in the last 7 days),
-  **May request changes** (with the toggle right there), and **MCP entry
-  copied** (ticked when you copy the MCP entry, or by hand). Pairing
-  requests waiting for you appear at the top with Approve and Reject.
+The quickest way: give the coding agent **one instruction** that points at
+`/_connect?format=markdown`. That document opens with a **Start here**
+section and holds everything for both parts, so the agent needs nothing
+else. The **Onboard an application** wizard at the top of the Integrate page
+walks you through it; the step to do now is highlighted, and each step ticks
+itself from live state:
+
+1. **Hand this to the coding agent.** Open the coding agent (Claude Code,
+   Codex, Cursor…) in the application's repository and paste the instruction
+   shown (**Copy instruction**; **Copy URL only** copies just the address).
+   It reads, in substance: "Read `http://127.0.0.1:8787/_connect?format=markdown`
+   and follow it to connect this application to aiport: first wire its LLM
+   calls through aiport, then add the aiport MCP entry and the `AGENTS.md`
+   line; tell me the pairing code and wait while I approve it." The exact
+   text, with your gateway's address, is also at the top of the markdown
+   document and in the `/_connect` JSON as `agent_prompt`.
+2. **Approve the pairing.** The agent asks aiport to pair; the request shows
+   up in the wizard within seconds with a short code. Check it matches the
+   code the agent shows you, then **Approve** (optionally binding a
+   Connection and allowing change requests). Requests expire after 10
+   minutes. Once approved, the wizard follows that application.
+3. **First call arrives.** The agent makes one real call; the step ticks
+   when Activity has a call from the application (in the last 7 days).
+4. **Allow change requests** (optional), with the toggle in place. You still
+   decide each request in Changes.
+5. **MCP entry in the repository** (optional): the agent adds it in step 1;
+   tick it by hand, or copy it from the Coding agent tab.
+
+Pick an existing application in the wizard's **Application** menu to see how
+far it got.
+
+### The briefs on the page
+
 - **Application** and **Coding agent** tabs show each brief. **Copy whole
   brief** copies it as markdown to paste to the coding agent; you can also
   give the agent the brief's address. Each snippet has its own **Copy**.
 - The **Python / TypeScript / curl** picker switches the SDK snippets.
   Snippets for a protocol this gateway has not configured are marked "not
   configured".
-
-A typical integration: copy the Application brief to the coding agent
-working on the application; approve its pairing code when it appears; wait
-for "First call seen"; then, if you want agents in that repository to ask
-you for Changes, allow it and have the agent follow the Coding-agent brief.
 
 ## Aliases
 

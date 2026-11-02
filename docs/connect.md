@@ -4,7 +4,7 @@ aiport Connect is how applications learn to talk to an aiport gateway. A running
 gateway publishes it, without authentication, at:
 
 - `GET /_connect`: JSON for programs
-- `GET /_connect?format=markdown` (or `Accept: text/markdown`): a guide for people and coding agents
+- `GET /_connect?format=markdown` (or `Accept: text/markdown`): a guide for people and coding agents. It opens with **Start here**: what a coding agent does, in order, and the one instruction the Owner pastes to it (also `agent_prompt` in the JSON). An agent handed only this URL has everything for both briefs.
 - `GET /_connect?format=handover&for=application`: the **Application brief**, for the coding agent changing an application so its LLM calls go through aiport
 - `GET /_connect?format=handover&for=agent`: the **coding-agent brief**, for coding agents working in that application's repository later
 - `GET /_connect?format=handover`: both briefs, one after the other (any other `for` is `400 invalid_format`)
