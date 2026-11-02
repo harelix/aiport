@@ -53,18 +53,24 @@ const utilityPages: [string, LucideIcon][] = [['Tasks', ListTodo], ['Settings', 
 type Props = {
   logo: string; page: string; onPage: (p: string) => void; listen?: string;
   authDisabled: boolean; onSignOut: () => void;
+  /** How many items in Changes wait for the Owner's decision (badge shown only when > 0). */
+  pending?: number;
 };
 
-export default function Sidebar({logo, page, onPage, listen, authDisabled, onSignOut}: Props) {
+export default function Sidebar({logo, page, onPage, listen, authDisabled, onSignOut, pending = 0}: Props) {
   const [collapsed, setCollapsed] = useState(() => stored(COLLAPSED_KEY, ['1', '0'] as const, '0') === '1');
   useEffect(() => {
     save(COLLAPSED_KEY, collapsed ? '1' : '0');
     document.documentElement.dataset.sidebar = collapsed ? 'collapsed' : 'expanded';
   }, [collapsed]);
-  const navButton = ([name, Icon]: [string, LucideIcon]) =>
-    <button key={name} className={page === name ? 'active' : ''} aria-current={page === name ? 'page' : undefined} title={collapsed ? name : undefined} aria-label={collapsed ? name : undefined} onClick={() => onPage(name)}>
+  const navButton = ([name, Icon]: [string, LucideIcon]) => {
+    const count = name === 'Changes' ? pending : 0;
+    const label = count ? name + ', ' + count + ' waiting for a decision' : name;
+    return <button key={name} className={page === name ? 'active' : ''} aria-current={page === name ? 'page' : undefined} title={collapsed ? label : undefined} aria-label={collapsed || count ? label : undefined} onClick={() => onPage(name)}>
       <Icon size={18} strokeWidth={1.75} aria-hidden/><span className="label">{name}</span>
+      {!!count && <span className="nav-badge" aria-hidden>{count}</span>}
     </button>;
+  };
   return <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
     <div className="sidebar-top">
       <div className="brand"><img className="service-logo" src={logo} alt="" width="88" height="88"/><span className="label">aiport</span></div>

@@ -81,6 +81,10 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `telemetry.flush_interval_ms` | 250; range 1–60000 |
 | `telemetry.shutdown_drain_ms` | 2000; range 1–60000; reserved for M2 telemetry |
 | `telemetry.max_event_bytes` | 16384; range 1024–65536 |
+| `adapting.disabled` | false; `true` turns the whole adapting loop off: no Suggestions are detected and Changes shows nothing new |
+| `adapting.interval_seconds` | 60; range 5–86400; how often a background pass looks at request history (never during a request) |
+| `adapting.unknown_model.count` | 5; range 1–1000000; upstream 404s for one model from one Application that lead to a Suggestion to add an Alias |
+| `adapting.unknown_model.window_minutes` | 60; range 1–10080; how far back those 404s are counted |
 
 IDs and provider labels contain 1–64 ASCII alphanumerics, underscores or hyphens,
 starting with an alphanumeric. Protocol is `openai` or `anthropic`. Provider is a

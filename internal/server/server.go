@@ -19,6 +19,7 @@ import (
 
 	"aiport/internal/config"
 	"aiport/internal/connect"
+	"aiport/internal/decide"
 	"aiport/internal/proxy"
 	"aiport/internal/refusal"
 	"aiport/internal/tasks"
@@ -39,6 +40,7 @@ type Handler struct {
 	keySource        map[string]string
 	tasks            *tasks.Store
 	changesDB        *sql.DB          // where Changes are kept; nil = this session only
+	decisions        *decide.Queue    // Suggestions waiting for the Owner; nil in bare test handlers
 	now              func() time.Time // nil = time.Now; tests set a fixed clock
 	pair             pairings
 	assets           http.Handler

@@ -195,6 +195,30 @@ func SetMayRequestChanges(id string, allowed bool) Edit {
 	}
 }
 
+// AddOriginAlias gives one Application its own Alias: a model name only it
+// sends, served by a Connection and model. Validation refuses a duplicate
+// alias or a missing Connection.
+func AddOriginAlias(id string, a OriginAlias) Edit {
+	return func(root *yaml.Node) error {
+		seq := mappingValue(root, "origins")
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return errors.New("application not found in configuration")
+		}
+		for _, item := range seq.Content {
+			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
+				var alias yaml.Node
+				if err := alias.Encode(a); err != nil {
+					return errors.New("cannot encode alias")
+				}
+				list := ensureNode(item, "aliases", yaml.SequenceNode)
+				list.Content = append(list.Content, &alias)
+				return nil
+			}
+		}
+		return errors.New("application not found in configuration")
+	}
+}
+
 // SetDefaults sets which connection serves each protocol by default
 // (empty = none).
 func SetDefaults(d Defaults) Edit {

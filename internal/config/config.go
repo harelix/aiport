@@ -36,6 +36,8 @@ type Config struct {
 	// Evaluation selects the connection and model aiport uses to judge
 	// compression (NLI, claims, LLM judge). Off when Connection is empty.
 	Evaluation Evaluation `yaml:"evaluation,omitempty" json:"evaluation"`
+	// Adapting is the Suggestions loop; on unless disabled.
+	Adapting Adapting `yaml:"adapting,omitempty" json:"adapting"`
 }
 
 // Evaluation is the user-chosen evaluator: any configured connection.
@@ -115,7 +117,7 @@ type Telemetry struct {
 }
 
 func Parse(data []byte) (Config, error) {
-	c := Config{Proxy: DefaultProxyLimits(), Listen: "127.0.0.1:8787", Telemetry: Telemetry{Enabled: true, RetentionDays: 7, QueueCapacity: 4096, BatchSize: 100, FlushIntervalMS: 250, ShutdownDrainMS: 2000, MaxEventBytes: 16384}}
+	c := Config{Proxy: DefaultProxyLimits(), Adapting: DefaultAdapting(), Listen: "127.0.0.1:8787", Telemetry: Telemetry{Enabled: true, RetentionDays: 7, QueueCapacity: 4096, BatchSize: 100, FlushIntervalMS: 250, ShutdownDrainMS: 2000, MaxEventBytes: 16384}}
 	if len(data) > MaxConfigBytes {
 		return Config{}, errors.New("configuration exceeds 1 MiB")
 	}
@@ -285,6 +287,9 @@ func (c Config) Validate() error {
 		if !boundedModel(e.Model) {
 			return errors.New("evaluation.model must name the model to use (1–256 characters)")
 		}
+	}
+	if err := c.Adapting.validate(); err != nil {
+		return err
 	}
 	t := c.Telemetry
 	if t.RetentionDays < 1 || t.RetentionDays > 3650 || t.QueueCapacity < 1 || t.QueueCapacity > 65536 || t.BatchSize < 1 || t.BatchSize > t.QueueCapacity || t.FlushIntervalMS < 1 || t.FlushIntervalMS > 60000 || t.ShutdownDrainMS < 1 || t.ShutdownDrainMS > 60000 || t.MaxEventBytes < 1024 || t.MaxEventBytes > 65536 {

@@ -27,7 +27,7 @@ targets:
 origins:
  - {id: claude-code, name: Claude Code, token_env: CLAUDE_TOKEN, target: claude}
 defaults: {openai_target: main, anthropic_target: claude}
-`))
+` + adapting))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -117,6 +117,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
 	ctx, cancelServe := context.WithCancel(ctx)
 	defer cancelServe()
+	// Suggestions are detected on a background ticker, never during a request.
+	handler.StartAdapting(ctx.Done())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
