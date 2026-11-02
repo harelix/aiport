@@ -20,6 +20,9 @@ func NewConfigured(c config.Config, s config.Secrets, collector *telemetry.Colle
 	h.live = config.NewLive(path, c)
 	h.live.SetClock(h.clock)
 	h.keepChanges(path)
+	if path != "" {
+		h.worktrees = path + ".worktrees"
+	}
 	h.live.OnChange(h.applyLive)
 	h.keys = config.EnvKeys(path)
 	h.auth = localauth.New(c.Auth, func(updated config.Auth) error {

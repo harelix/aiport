@@ -1,0 +1,276 @@
+// Package worktree is the git side of Fix it: a git worktree of an
+// Application's repository on a new branch named for an Issue, where the
+// Coding agent works, its diff, and what Keep and Discard do with it.
+//
+// What it never does: commit to the Owner's branch, touch the Owner's
+// working copy, merge, push or fetch. The only commit it makes is Keep's,
+// on the new branch, authored as aiport. git is started by absolute path,
+// with a minimal environment, with hooks, fsmonitor, signing and external
+// diff programs turned off, so nothing in the repository's own
+// configuration runs.
+package worktree
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"aiport/internal/extension"
+)
+
+// BranchPrefix starts every branch aiport makes.
+const BranchPrefix = "aiport/fix-"
+
+// MaxDiff bounds the diff text Diff returns (bytes).
+const MaxDiff = 1 << 20
+
+// Author is who Keep's commit is by.
+const (
+	AuthorName  = "aiport"
+	AuthorEmail = "aiport@localhost"
+)
+
+const gitTimeout = time.Minute
+
+// Tree is one worktree: Dir on Branch of the repository Repo, starting at
+// commit Base.
+type Tree struct {
+	Repo   string `json:"repo"`
+	Dir    string `json:"dir"`
+	Branch string `json:"branch"`
+	Base   string `json:"base"`
+}
+
+// Summary is what a worktree changed against its base.
+type Summary struct {
+	// Text is git's short summary ("2 files changed, 3 insertions(+), 1
+	// deletion(-)"); empty when nothing changed.
+	Text  string
+	Files []string
+}
+
+// Empty reports whether nothing changed.
+func (s Summary) Empty() bool { return len(s.Files) == 0 }
+
+// Create makes a worktree of repo in a new directory under root, on a new
+// branch named for issue (BranchPrefix+issue, or with -2, -3… when that
+// branch exists), starting at the Owner's HEAD commit. The Owner's working
+// copy and branch are not touched; their uncommitted changes are not in
+// the worktree.
+func Create(repo, root, issue string) (Tree, error) {
+	if !filepath.IsAbs(repo) || !filepath.IsAbs(root) || issue == "" || strings.ContainsAny(issue, "/\\ .~^:?*[") {
+		return Tree{}, errors.New("aiport cannot make a worktree here")
+	}
+	base, err := git(repo, nil, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	if err != nil || base == "" {
+		return Tree{}, errors.New("the repository has no commit yet: commit once, then try again")
+	}
+	branch := ""
+	for n := 1; n < 100 && branch == ""; n++ {
+		name := BranchPrefix + issue
+		if n > 1 {
+			name += "-" + strconv.Itoa(n)
+		}
+		if _, err := git(repo, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+name); err != nil {
+			branch = name
+		}
+	}
+	if branch == "" {
+		return Tree{}, errors.New("too many aiport branches for this Issue: delete some first")
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return Tree{}, errors.New("aiport cannot create its worktrees directory " + root)
+	}
+	dir, err := os.MkdirTemp(root, issue+"-")
+	if err != nil {
+		return Tree{}, errors.New("aiport cannot create a worktree directory in " + root)
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	if _, err := git(repo, nil, "worktree", "add", "--quiet", "-b", branch, dir, base); err != nil {
+		_ = os.RemoveAll(dir)
+		return Tree{}, errors.New("git could not make the worktree: " + err.Error())
+	}
+	return Tree{Repo: repo, Dir: dir, Branch: branch, Base: base}, nil
+}
+
+// Summary stages everything the agent changed in the worktree (respecting
+// .gitignore) and summarizes it against the base.
+func (t Tree) Summary() (Summary, error) {
+	if _, err := git(t.Dir, nil, "add", "--all"); err != nil {
+		return Summary{}, errors.New("git could not read the worktree's changes")
+	}
+	text, err := git(t.Dir, nil, "diff", "--cached", "--shortstat", "--no-ext-diff", "--no-textconv", t.Base)
+	if err != nil {
+		return Summary{}, errors.New("git could not summarize the changes")
+	}
+	names, err := git(t.Dir, nil, "diff", "--cached", "--name-only", "-z", "--no-ext-diff", t.Base)
+	if err != nil {
+		return Summary{}, errors.New("git could not list the changed files")
+	}
+	var files []string
+	for _, f := range strings.Split(names, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return Summary{Text: text, Files: files}, nil
+}
+
+// Diff is the worktree's diff against its base, staged as Summary stages
+// it (at most MaxDiff bytes; truncated says it was cut).
+func (t Tree) Diff() (diff string, truncated bool, err error) {
+	if _, err := git(t.Dir, nil, "add", "--all"); err != nil {
+		return "", false, errors.New("git could not read the worktree's changes")
+	}
+	return gitCapped(t.Dir, "diff", "--cached", "--no-ext-diff", "--no-textconv", "--no-color", t.Base)
+}
+
+// KeptDiff is the diff of a kept branch fix: base to commit, in repo.
+func KeptDiff(repo, base, commit string) (diff string, truncated bool, err error) {
+	return gitCapped(repo, "diff", "--no-ext-diff", "--no-textconv", "--no-color", base, commit)
+}
+
+// Keep commits the worktree's changes on its branch, authored as aiport,
+// with message, and removes the worktree: the branch stays, holding that
+// one commit on top of the base. It returns the commit.
+func (t Tree) Keep(message string) (string, error) {
+	if _, err := git(t.Dir, nil, "add", "--all"); err != nil {
+		return "", errors.New("git could not read the worktree's changes")
+	}
+	env := []string{"GIT_AUTHOR_NAME=" + AuthorName, "GIT_AUTHOR_EMAIL=" + AuthorEmail, "GIT_COMMITTER_NAME=" + AuthorName, "GIT_COMMITTER_EMAIL=" + AuthorEmail}
+	if _, err := git(t.Dir, env, "commit", "--quiet", "--no-verify", "--allow-empty-message", "-m", message); err != nil {
+		return "", errors.New("git could not commit on " + t.Branch + ": " + err.Error())
+	}
+	commit, err := git(t.Dir, nil, "rev-parse", "HEAD")
+	if err != nil || commit == "" {
+		return "", errors.New("git could not read the new commit")
+	}
+	if err := t.Remove(); err != nil {
+		return commit, err
+	}
+	return commit, nil
+}
+
+// Remove removes the worktree; the branch stays.
+func (t Tree) Remove() error {
+	_, err := git(t.Repo, nil, "worktree", "remove", "--force", t.Dir)
+	if err != nil {
+		if _, statErr := os.Stat(t.Dir); statErr == nil {
+			if rmErr := os.RemoveAll(t.Dir); rmErr != nil {
+				return errors.New("aiport could not remove the worktree " + t.Dir)
+			}
+		}
+		_, _ = git(t.Repo, nil, "worktree", "prune")
+	}
+	return nil
+}
+
+// Discard removes the worktree and deletes its branch (only ever a branch
+// aiport made).
+func (t Tree) Discard() error {
+	if err := t.Remove(); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(t.Branch, BranchPrefix) {
+		return errors.New("aiport deletes only its own branches")
+	}
+	if _, err := git(t.Repo, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+t.Branch); err != nil {
+		return nil // already gone
+	}
+	if _, err := git(t.Repo, nil, "branch", "--quiet", "-D", t.Branch); err != nil {
+		return errors.New("git could not delete the branch " + t.Branch + ": " + err.Error())
+	}
+	return nil
+}
+
+// Exists reports whether the worktree's directory is still there.
+func (t Tree) Exists() bool {
+	st, err := os.Stat(t.Dir)
+	return err == nil && st.IsDir()
+}
+
+// safety is the configuration every git command runs with, so nothing the
+// repository configures runs: no hooks, no fsmonitor, no signing prompts,
+// no pager.
+var safety = []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-c", "commit.gpgsign=false", "-c", "core.pager=cat", "-c", "core.quotePath=false"}
+
+func command(ctx context.Context, dir string, env []string, args ...string) (*exec.Cmd, error) {
+	path, err := exec.LookPath("git")
+	if err != nil {
+		return nil, errors.New("git is not installed")
+	}
+	if !filepath.IsAbs(path) {
+		if path, err = filepath.Abs(path); err != nil {
+			return nil, errors.New("git is not installed")
+		}
+	}
+	cmd := exec.CommandContext(ctx, path, append(append([]string{"-C", dir}, safety...), args...)...)
+	cmd.Path = path
+	cmd.Env = append(extension.Environ("USER", "LOGNAME"), append([]string{"GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat"}, env...)...)
+	extension.Isolate(cmd)
+	return cmd, nil
+}
+
+// git runs git in dir and returns its trimmed output; an error carries
+// git's first line.
+func git(dir string, env []string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd, err := command(ctx, dir, env, args...)
+	if err != nil {
+		return "", err
+	}
+	var out, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &stderr
+	if err := cmd.Run(); err != nil {
+		msg, _, _ := strings.Cut(strings.TrimSpace(stderr.String()), "\n")
+		if msg == "" {
+			msg = "git failed"
+		}
+		return "", errors.New(msg)
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
+// gitCapped runs git in dir keeping at most MaxDiff bytes of its output.
+func gitCapped(dir string, args ...string) (string, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd, err := command(ctx, dir, nil, args...)
+	if err != nil {
+		return "", false, err
+	}
+	out := &capped{max: MaxDiff}
+	cmd.Stdout = out
+	if err := cmd.Run(); err != nil && !out.over {
+		return "", false, errors.New("git could not show the diff")
+	}
+	s := out.buf.String()
+	if out.over {
+		s = strings.ToValidUTF8(s, "")
+	}
+	return s, out.over, nil
+}
+
+type capped struct {
+	buf  bytes.Buffer
+	max  int
+	over bool
+}
+
+func (c *capped) Write(p []byte) (int, error) {
+	if room := c.max - c.buf.Len(); len(p) > room {
+		c.buf.Write(p[:max(room, 0)])
+		c.over = true
+		return len(p), nil
+	}
+	return c.buf.Write(p)
+}
