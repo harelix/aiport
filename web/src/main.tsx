@@ -32,7 +32,10 @@ function App(){
  // Items in Changes waiting for a decision: drives the badge and the one Overview line. Empty with the adapting loop off.
  const [waiting,setWaiting]=useState<string[]|null>(null);
  useEffect(()=>{if(!token)return;get('decisions').then(d=>setWaiting((d.items||[]).map((i:{id:string})=>i.id))).catch(()=>setWaiting([]))},[token,tick]);
- const pending=waiting?.length||0;
+ // Commands of Fix it runs waiting for the Owner's answer (GET /api/v1/runs, waiting): they add to the same badge.
+ const [asking,setAsking]=useState(0);
+ useEffect(()=>{if(!token)return;get('runs').then(d=>setAsking((d.runs||[]).reduce((n:number,r:{waiting?:number})=>n+(r.waiting||0),0))).catch(()=>setAsking(0))},[token,tick]);
+ const pending=(waiting?.length||0)+asking;
  // Silent unless the Owner turned the sound on in Changes.
  useDecisionSound(waiting);
  const inFlight=useRef<AbortController|null>(null);
