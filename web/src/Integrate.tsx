@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {AppWindow, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, Plus, Terminal} from 'lucide-react';
+import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, Plus, Terminal} from 'lucide-react';
 import {forgetRejected, MayRequestToggle, Origin, Pairing, PairingList, Rejected, Target, usePairings, useRejected} from './Applications';
+import {ApplicationFix, type Issue, issueAnchor} from './Changes';
 import {Inline} from './markdown';
 
 /* The Integrate page. Main column: the Applications (waiting pairings,
@@ -70,6 +71,38 @@ function useLastCalls(ids: string[], tick: number): Calls {
   return calls;
 }
 
+/** The open and resolving Issues of every Application (GET /api/v1/issues), grouped by Application. */
+function useIssues(tick: number): Record<string, Issue[]> {
+  const [issues, setIssues] = useState<Record<string, Issue[]>>({});
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/v1/issues', {credentials: 'same-origin', signal: controller.signal}).then(r => r.ok ? r.json() : {issues: []})
+      .then((d: {issues?: Issue[]}) => {
+        const by: Record<string, Issue[]> = {};
+        for (const i of d.issues || []) (by[i.application] ||= []).push(i);
+        setIssues(by);
+      }).catch(() => {});
+    return () => controller.abort();
+  }, [tick]);
+  return issues;
+}
+
+/** A short cause for an Issue, for the Applications list. */
+const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.summary;
+
+/* An Application's Issues, under its row: each with its short cause, a link
+   to the Issue on the Changes page and "Copy fix for the coding agent". */
+function AppIssues({issues, onOpen}: {issues: Issue[]; onOpen: (i: Issue) => void}) {
+  return <ul className="app-issues">{issues.map(i => <li key={i.id}>
+    <div className="app-issue-head">
+      <span className={'badge' + (i.state === 'resolving' ? ' good' : ' warn')}>{i.state === 'resolving' ? 'Resolving' : 'Issue'}</span>
+      <span>{i.summary}</span>
+      <button type="button" className="text-button" onClick={() => onOpen(i)} aria-label={'Open the Issue ' + shortCause(i) + ' in Changes'}>Open in Changes <ArrowUpRight size={14} aria-hidden/></button>
+    </div>
+    <ApplicationFix issue={i}/>
+  </li>)}</ul>;
+}
+
 /** Which of the five onboarding steps are done for an Application. */
 function progress(o: Origin | undefined, opts: {handed: boolean; waiting: boolean; seen: number | null | undefined; adapting: boolean; mcp: boolean}): boolean[] {
   return [!!o || opts.handed || opts.waiting, !!o, typeof opts.seen === 'number', !!o?.may_request_changes && opts.adapting, opts.mcp];
@@ -107,11 +140,12 @@ function RejectedRow({x, onDone}: {x: Rejected; onDone: () => void}) {
 /* The Applications list: waiting pairings first (always shown), then the
    approved Applications; rejected ones only behind the filter. Selecting an
    Application makes the wizard follow it. */
-function ApplicationsList({origins, targets, pairings, rejected, calls, app, onSelect, onNew, adapting, onDone, onForgot}: {
-  origins: Origin[]; targets: Target[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; app: string;
-  onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void;
+function ApplicationsList({origins, targets, pairings, rejected, calls, issues, app, onSelect, onNew, adapting, onDone, onForgot, onIssue}: {
+  origins: Origin[]; targets: Target[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; app: string;
+  onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void; onIssue: (i: Issue) => void;
 }) {
   const [filter, setFilter] = useState<Filter>('approved');
+  const [shown, setShown] = useState<Record<string, boolean>>({});
   const counts: Record<Filter, number> = {approved: origins.length, rejected: rejected.length, all: origins.length + rejected.length};
   const showApproved = filter !== 'rejected', showRejected = filter !== 'approved';
   const lastCall = (id: string) => calls.off ? 'Not recorded' : calls.at[id] === undefined ? '…' : calls.at[id] === null ? 'None in 7 days' : ago(calls.at[id] as number);
@@ -130,17 +164,21 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, app, onS
       <PairingList pairings={pairings} targets={targets} onDone={onDone}/>
     </div>}
     {showApproved && origins.length > 0 && <div className="apps-table"><table aria-label="Approved applications">
-      <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Onboarding</th></tr></thead>
+      <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Issues</th><th>Onboarding</th></tr></thead>
       <tbody>{origins.map(o => {
         const done = progress(o, {handed: true, waiting: false, seen: calls.at[o.id], adapting, mcp: mcpCopied(o.id)}).filter(Boolean).length;
-        const selected = app === o.id;
-        return <tr key={o.id} className={'app-row' + (selected ? ' selected' : '')} onClick={e => { if (!(e.target as HTMLElement).closest('input,button,a,label')) onSelect(o.id); }}>
+        const selected = app === o.id, own = issues[o.id] || [], open = !!shown[o.id] && own.length > 0;
+        return <React.Fragment key={o.id}><tr className={'app-row' + (selected ? ' selected' : '')} onClick={e => { if (!(e.target as HTMLElement).closest('input,button,a,label')) onSelect(o.id); }}>
           <td><button type="button" className="row-select" aria-pressed={selected} onClick={() => onSelect(o.id)} title="Follow this application in the onboarding wizard">{o.name}</button><small><code>{o.id}</code></small></td>
           <td>{o.target ? <code>{o.target}</code> : <span className="muted">Protocol default</span>}</td>
           <td><MayRequestToggle o={o} onDone={onDone}/></td>
           <td title={typeof calls.at[o.id] === 'number' ? new Date(calls.at[o.id] as number).toLocaleString() : undefined}>{lastCall(o.id)}</td>
+          <td>{own.length ? <button type="button" className="text-button issue-count" aria-expanded={open} aria-controls={'app-issues-' + o.id} onClick={() => setShown(x => ({...x, [o.id]: !x[o.id]}))}
+              title={own.map(shortCause).join('\n')}>
+              <ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/><span className="badge warn">{own.length}</span> {own.length === 1 ? shortCause(own[0]) : own.length + ' Issues'}</button>
+            : <span className="muted">None</span>}</td>
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
-        </tr>;
+        </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={6}><AppIssues issues={own} onOpen={onIssue}/></td></tr>}</React.Fragment>;
       })}</tbody>
     </table></div>}
     {showRejected && rejected.length > 0 && <div className="apps-table rejected-table"><table aria-label="Rejected applications">
@@ -243,7 +281,7 @@ function BriefTile({id, title, short, icon, brief, link, open, setOpen, snippets
   </section>;
 }
 
-export default function IntegratePage({origins, targets, tick, onChange, onManual}: {origins: Origin[]; targets: Target[]; tick: number; onChange: () => void; onManual: () => void}) {
+export default function IntegratePage({origins, targets, tick, onChange, onManual, onChanges}: {origins: Origin[]; targets: Target[]; tick: number; onChange: () => void; onManual: () => void; onChanges?: () => void}) {
   const [doc, setDoc] = useState<ConnectDoc | null>(null), [error, setError] = useState('');
   const [language, setLanguage] = useState<Language>(() => (['python', 'typescript', 'curl'].includes(remember(LANGUAGE_KEY)) ? remember(LANGUAGE_KEY) : 'python') as Language);
   const [app, setApp] = useState(NEW);
@@ -251,6 +289,7 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
   const [pairings, refreshPairings] = usePairings();
   const [rejected, refreshRejected] = useRejected(tick);
   const calls = useLastCalls(origins.map(o => o.id), tick);
+  const issues = useIssues(tick);
   // The wizard starts collapsed once an Application exists; null = not chosen yet.
   const [wizardOpen, setWizardOpen] = useState<boolean | null>(null);
   const [appTile, setAppTile] = useState(false), [agentTile, setAgentTile] = useState(false);
@@ -278,6 +317,7 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
   const open = wizardOpen ?? (origins.length === 0 || waiting);
   const follow = (id: string) => { setApp(id); setWizardOpen(true); requestAnimationFrame(() => wizardRef.current?.scrollIntoView({behavior: 'smooth', block: 'nearest'})); };
   const done = () => { refreshPairings(); refreshRejected(); onChange(); };
+  const openIssue = (i: Issue) => { history.replaceState(null, '', '#' + issueAnchor(i.id)); onChanges?.(); };
   const pick = (l: Language) => { setLanguage(l); remember(LANGUAGE_KEY, l); };
   const link = (f: string) => doc.briefs.find(b => b.for === f);
   const appBrief = doc.integration, agentBrief = doc.agent_integration;
@@ -290,8 +330,8 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
 
   return <div className="integrate-layout">
     <div className="integrate-main">
-      <ApplicationsList origins={origins} targets={targets} pairings={pairings} rejected={rejected} calls={calls} app={app} adapting={doc.adapting}
-        onSelect={follow} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected}/>
+      <ApplicationsList origins={origins} targets={targets} pairings={pairings} rejected={rejected} calls={calls} issues={issues} app={app} adapting={doc.adapting}
+        onSelect={follow} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue}/>
       <div ref={wizardRef}>
         <Wizard origins={origins} app={app} setApp={setApp} pairings={pairings} seen={app ? calls.at[app] : null} off={calls.off} adapting={doc.adapting}
           prompt={doc.agent_prompt} docs={doc.docs} mcp={mcp} setMcp={setMcp} open={open} setOpen={setWizardOpen} onDone={done} onAgentBrief={openAgentBrief}/>
