@@ -38,6 +38,9 @@ type Config struct {
 	Evaluation Evaluation `yaml:"evaluation,omitempty" json:"evaluation"`
 	// Adapting is the Suggestions loop; on unless disabled.
 	Adapting Adapting `yaml:"adapting,omitempty" json:"adapting"`
+	// Extensions are the programs the Owner listed to take part in deciding
+	// about Change requests (policies and guardrails).
+	Extensions []Extension `yaml:"extensions,omitempty" json:"extensions"`
 }
 
 // Evaluation is the user-chosen evaluator: any configured connection.
@@ -289,6 +292,9 @@ func (c Config) Validate() error {
 		}
 	}
 	if err := c.Adapting.validate(); err != nil {
+		return err
+	}
+	if err := validateExtensions(c.Extensions); err != nil {
 		return err
 	}
 	t := c.Telemetry

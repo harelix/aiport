@@ -248,3 +248,11 @@ https://www.nordtheme.com/docs/colors-and-palettes/. Exact checked pairs include
 Nord6/Nord1 8.73:1, Nord4/Nord1 7.45:1, Nord0/Nord8 6.24:1, Nord3/Nord6 6.40:1,
 and input-border Nord9/Nord1 3.74:1. These checks do not establish full UI
 accessibility or visual/browser verification.
+
+## Extensions
+
+`extensions:` lists the programs (policies and guardrails) that take part in
+deciding about Change requests: `name`, `hook` (`policy` or `guardrail`), an
+absolute `path`, optional `args` and `timeout_ms` (default 5000, at most 60000).
+Only listed programs run; failure, a crash or a timeout denies. See
+[extensions.md](extensions.md).

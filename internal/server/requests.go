@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"aiport/internal/decide"
+	"aiport/internal/extension"
 )
 
 // RequestsPath is where an Application files and reads its own Change
@@ -75,6 +76,7 @@ func (h *Handler) serveRequests(w http.ResponseWriter, r *http.Request, originID
 func (h *Handler) requestRefusal(w http.ResponseWriter, err error, fail func(int, string, string)) {
 	var incomplete decide.Incomplete
 	var limited decide.RateLimited
+	var denied extension.Denied
 	switch {
 	case errors.Is(err, decide.ErrOff):
 		fail(409, "adapting_off", err.Error())
@@ -85,6 +87,8 @@ func (h *Handler) requestRefusal(w http.ResponseWriter, err error, fail func(int
 	case errors.As(err, &limited):
 		w.Header().Set("Retry-After", strconv.Itoa(int(limited.RetryAfter.Seconds())+1))
 		fail(429, "change_requests_rate_limited", err.Error())
+	case errors.As(err, &denied):
+		writeJSON(w, 403, map[string]any{"error": map[string]any{"code": "change_request_refused", "message": err.Error(), "request_id": w.Header().Get("X-Aiport-Request-Id"), "extension": denied.Extension, "reason": denied.Reason}})
 	case errors.As(err, &incomplete):
 		writeJSON(w, 400, map[string]any{"error": map[string]any{"code": "invalid_change_request", "message": err.Error(), "request_id": w.Header().Get("X-Aiport-Request-Id"), "problems": incomplete.Problems}})
 	default:

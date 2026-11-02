@@ -27,3 +27,11 @@ poll path returns `pending`, `rejected`, or `approved` with the token, which is
 delivered exactly once. Unapproved requests expire after 10 minutes. The token
 lives in the private credential file as `AIPORT_APP_<ID>_TOKEN`. The source of truth is
 `internal/connect/connect.go`; bump `Version` on incompatible changes.
+
+## Extensions
+
+The Owner can list Extensions (programs that act as a policy when a Change
+request arrives, or as a guardrail before an approved Change is applied) under
+`extensions:` in `aiport.yaml`. A refusal or block carries the Extension's
+reason (`change_request_refused`, `guardrail_blocked`). The protocol is in
+[extensions.md](extensions.md).
