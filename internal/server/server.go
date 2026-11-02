@@ -207,6 +207,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveCapabilities(w, r, originID, fail)
 		return
 	}
+	if r.URL.Path == RequestsPath || strings.HasPrefix(r.URL.Path, RequestsPath+"/") {
+		h.serveRequests(w, r, originID, fail)
+		return
+	}
 	if r.URL.Path == "/v1/chat/completions" || r.URL.Path == "/v1/responses" || r.URL.Path == "/v1/messages" {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", "POST")
