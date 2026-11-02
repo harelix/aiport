@@ -141,7 +141,7 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 	// Policy Extensions run after aiport's own checks and outside the lock,
 	// so a slow one never holds up the queue.
 	if err := extension.Check(q.live.Config(), config.HookPolicy, extension.Input{Request: &extension.Request{
-		Application: app, Kind: r.Kind, Supported: builtIn(r.Kind), Need: r.Need, Details: r.Details,
+		Application: app, Kind: r.Kind, Supported: capability.BuiltIn(r.Kind), Need: r.Need, Details: r.Details,
 		Why: r.Why, Scope: r.Scope, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,
 	}}); err != nil {
 		return Answer{}, err
@@ -155,7 +155,7 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 		Source: FromRequest, Kind: r.Kind, Application: app, Subject: r.subject(), Scope: r.Scope,
 		Need: r.Need, Details: r.Details, Why: r.Why, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,
 	}
-	if !builtIn(r.Kind) {
+	if !capability.BuiltIn(r.Kind) {
 		it.Status = NotSupported
 	}
 	if it.Scope == ScopeEvery {
@@ -215,15 +215,6 @@ func application(c config.Config, id string) (config.Origin, bool) {
 		}
 	}
 	return config.Origin{}, false
-}
-
-func builtIn(kind string) bool {
-	for _, k := range capability.Kinds {
-		if k.Kind == kind {
-			return true
-		}
-	}
-	return false
 }
 
 // readRequest decodes body and lists every problem with it.

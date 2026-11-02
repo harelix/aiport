@@ -27,6 +27,16 @@ var Kinds = []Kind{
 	{BindApplication, "Send all of this Application's calls to one Connection. For every Application it becomes the protocol's default Connection."},
 }
 
+// BuiltIn reports whether kind is one of the built-in Change kinds.
+func BuiltIn(kind string) bool {
+	for _, k := range Kinds {
+		if k.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // Protocols are the wire protocols aiport speaks, in a stable order.
 var Protocols = []string{"openai", "anthropic"}
 

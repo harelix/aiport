@@ -124,7 +124,7 @@ func Run(e config.Extension, in Input) Output {
 	cmd := exec.CommandContext(ctx, e.Path, e.Args...)
 	cmd.Path = e.Path // never resolved through PATH
 	cmd.Dir = filepath.Dir(e.Path)
-	cmd.Env = environ()
+	cmd.Env = Environ()
 	cmd.Stdin = bytes.NewReader(body)
 	stdout := &capped{max: MaxOutput}
 	cmd.Stdout = stdout
@@ -176,10 +176,12 @@ func plain(s string) string {
 	return s
 }
 
-// environ is the Extension's environment: only the passedEnv variables.
-func environ() []string {
+// Environ is the minimal environment every program aiport runs gets (an
+// Extension, the gh CLI): only the passedEnv variables and extra, never
+// aiport's tokens or provider keys.
+func Environ(extra ...string) []string {
 	var env []string
-	for _, k := range passedEnv {
+	for _, k := range append(append([]string{}, passedEnv...), extra...) {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)
 		}

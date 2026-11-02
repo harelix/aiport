@@ -66,8 +66,14 @@ func TestSuggestToAiportDraftsAnIssueWithKindsAndCountsOnly(t *testing.T) {
 	}
 	d := draftFor(t, out, "model_allowlist")
 	title, body := d["title"].(string), d["body"].(string)
-	if !strings.Contains(title, "model_allowlist") || !strings.Contains(body, "model_allowlist") {
-		t.Fatalf("the draft should name the kind: %q %q", title, body)
+	// The kind of a request aiport cannot apply is written by an
+	// Application: the title never carries it, and the body marks it so the
+	// Owner checks it before anything is sent.
+	if strings.Contains(title, "model_allowlist") {
+		t.Fatalf("the title carries an Application-written kind: %q", title)
+	}
+	if !strings.Contains(body, "model_allowlist") || !strings.Contains(body, "named by an Application") {
+		t.Fatalf("the body should name the kind, marked as named by an Application: %q", body)
 	}
 	if !strings.Contains(body, "Requests: 3") || !strings.Contains(body, "Applications: 2") {
 		t.Fatalf("the draft should carry the anonymous counts: %q", body)
@@ -213,5 +219,37 @@ func TestShareUpstreamDraftsAContributionWithoutTheExtensionsConfiguration(t *te
 	}
 	if after, _ := os.ReadFile(path); string(after) != string(before) {
 		t.Fatal("sharing changed aiport.yaml")
+	}
+}
+
+// The Owner checks and edits a draft before filing it: gh files the text the
+// Owner sent, not the prefilled one.
+func TestTheOwnerFilesTheDraftAsEdited(t *testing.T) {
+	h, _ := extensionsServer(t, upstreamYAML)
+	demandFromBothApplications(t, h)
+	gh := fakeGH(t, h)
+	body := `{"suggest":"model_allowlist","confirm":true,"title":"Support model allow-lists","body":"Checked by the Owner."}`
+	if w, _ := call(h, "POST", "/api/v1/upstream/issues", body, reqManagement, true); w.Code != 200 {
+		t.Fatalf("file the edited draft: %d %s", w.Code, w.Body)
+	}
+	args, _ := os.ReadFile(filepath.Join(gh, "args"))
+	if !strings.Contains(string(args), "--title\nSupport model allow-lists\n") {
+		t.Fatalf("gh got another title: %s", args)
+	}
+	if stdin, _ := os.ReadFile(filepath.Join(gh, "stdin")); string(stdin) != "Checked by the Owner." {
+		t.Fatalf("gh got another body: %q", stdin)
+	}
+	if w, out := call(h, "POST", "/api/v1/upstream/issues", `{"suggest":"model_allowlist","confirm":true,"title":"   ","body":"x"}`, reqManagement, true); w.Code != 400 || errorCode(out) != "invalid_upstream_issue" {
+		t.Fatalf("an empty title: %d %v", w.Code, out)
+	}
+}
+
+func TestUpstreamRoutesSayWhichMethodToUse(t *testing.T) {
+	h, _ := extensionsServer(t, upstreamYAML)
+	for path, allow := range map[string]string{"/api/v1/upstream": "GET", "/api/v1/upstream/issues": "POST"} {
+		w, _ := call(h, "DELETE", path, "", reqManagement, true)
+		if w.Code != 405 || w.Header().Get("Allow") != allow {
+			t.Fatalf("%s: %d Allow=%q", path, w.Code, w.Header().Get("Allow"))
+		}
 	}
 }
