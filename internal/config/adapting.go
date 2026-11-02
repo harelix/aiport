@@ -23,7 +23,22 @@ type Adapting struct {
 	// Change made by "aiport (automatic)", when the diagnosis is certain and
 	// the fix is for that Application only. Off by default.
 	AutoFix bool `yaml:"auto_fix,omitempty" json:"auto_fix"`
+	// Explain is the Connection and model that write an Issue's explanation
+	// from its evidence when no coding agent explains it. Empty: Explain is
+	// unavailable until the Owner chooses one.
+	Explain Explainer `yaml:"explain,omitempty" json:"explain"`
 }
+
+// Explainer is a Connection and a model it serves.
+type Explainer struct {
+	Connection string `yaml:"connection,omitempty" json:"connection,omitempty"`
+	Model      string `yaml:"model,omitempty" json:"model,omitempty"`
+}
+
+// BuiltinApplication is the Application aiport's own model calls (such as
+// writing an Issue's explanation) are recorded under in Activity. No
+// configured Application may take its id.
+const BuiltinApplication = "aiport"
 
 // Threshold is how much evidence a detector needs: Count matching requests
 // within the last WindowMinutes.

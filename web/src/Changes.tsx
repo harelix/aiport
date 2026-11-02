@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {ArrowUpRight, CircleAlert, History, Lightbulb, Puzzle, Undo2} from 'lucide-react';
+import {ArrowUpRight, CircleAlert, History, Lightbulb, Puzzle, Sparkles, Undo2} from 'lucide-react';
 import {type Upstream, UpstreamAction} from './Upstream';
 import {DecisionSoundToggle} from './decisionSound';
 import {CopyButton} from './Integrate';
@@ -35,7 +35,281 @@ export type Issue = {
   diagnosis?: {protocol: string; answer: 'one' | 'none' | 'several' | 'unknown'; serving: string[]; unknown: string[]; available?: string[]; summary?: string};
   fix?: {suggestion: string; kind: string; scope: string; proposal: {alias?: string; target?: string; model?: string}; state: 'proposed' | 'applied' | 'rejected' | 'reverted'; change_id?: string; by?: string};
   resolving_by?: string; resolution?: {how: string; at_ms: number; change_id?: string}; reopened?: number;
+  /** The saved root cause (decide.Explanation); also at the start of application_fix. */
+  explanation?: Explanation;
+  /** The latest Fix it run's branch and diff summary (decide.BranchFix). */
+  branch_fix?: BranchFix;
 };
+
+/** What a Fix it run left: its branch, diff summary and, once kept, the commit aiport made on that branch. */
+export type BranchFix = {branch: string; base: string; worktree?: string; agent: string; run: string;
+  state: 'running' | 'ready' | 'stopped_waiting' | 'timed_out' | 'empty' | 'kept' | 'discarded' | 'stopped'; summary?: string; files?: string[]; commit?: string; note?: string; started_at_ms: number; at_ms: number};
+/** Whether Fix it is available for an Application (fix_by in GET /api/v1/issues): which agent and for which Issue causes, or a hint why not. */
+export type FixStatus = {available: boolean; hint?: string; agent?: string; agent_name?: string; model_calls?: ModelCalls; limit_ms?: number; causes?: string[]; cause_hint?: string};
+/** Branch fix states whose diff waits in its worktree for Keep or Discard. */
+const REVIEWABLE = ['ready', 'stopped_waiting', 'timed_out'];
+
+/** An Issue's explanation and who wrote it: a Connection and model the Owner chose, or a Coding agent. */
+export type Explanation = {text: string; source: 'connection' | 'coding_agent'; connection?: string; model?: string; agent?: string; at_ms?: number};
+
+/** Whether Explain is available (the "explain" field of GET /api/v1/issues): who writes, or a hint why not. */
+export type ExplainStatus = {available: boolean; hint?: string; source?: string; connection?: string; model?: string; agent?: string; agent_name?: string; model_calls?: ModelCalls; limit_ms?: number;
+  /** Per Application with a connected Coding agent: the agent explains its Issues instead (explain_by). */
+  by?: Record<string, ExplainStatus>;
+  /** Per Application: whether Fix it is available (fix_by). */
+  fix?: Record<string, FixStatus>};
+/** Where an Agent run's model calls go. */
+export type ModelCalls = {through_aiport: boolean; connection?: string; model?: string; note?: string};
+/** An Agent run, as the runner describes it ("run" event, GET /api/v1/runs). */
+export type AgentRun = {id: string; application: string; issue: string; mode: string; agent: string; agent_name: string; model_calls: ModelCalls; state: string; error?: string; started_at_ms: number; limit_ms: number;
+  /** The agent's session mode aiport chose, when the agent offers modes. */
+  session_mode?: string;
+  /** Agent settings in the run's directory that allow without asking (aiport cannot see what they allow). */
+  warnings?: string[]};
+/** A command a Fix it run asks to run, waiting for the Owner (GET /api/v1/approvals). The command is the agent's text: plain text only. */
+export type Approval = {id: string; run: string; application: string; issue: string; command: string; title: string; asked_at_ms: number; expires_at_ms: number};
+
+/** A waiting command with the Owner's three answers; the agent runs it itself, in its worktree, once allowed. */
+function ApprovalCard({approval, onAnswered}: {approval: Approval; onAnswered: () => void}) {
+  const [busy, setBusy] = useState(''), [error, setError] = useState('');
+  const answer = async (a: 'allow_once' | 'allow_run' | 'deny') => {
+    setBusy(a); setError('');
+    try { await send('POST', 'approvals/' + encodeURIComponent(approval.id), {answer: a}); onAnswered(); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(''); }
+  };
+  const minutes = Math.max(0, Math.round((approval.expires_at_ms - approval.asked_at_ms) / 60000));
+  return <div className="approval" role="group" aria-label="Command waiting for your answer">
+    <p><strong>The agent asks to run a command</strong> in its worktree (the whole command; invisible characters are shown as escapes such as {'\\u202e'}):</p>
+    <pre className="approval-command" tabIndex={0} aria-label="The whole command">{approval.command}</pre>
+    <div className="actions">
+      <button type="button" className="primary small" disabled={!!busy} onClick={() => answer('allow_once')}>Allow once</button>
+      <button type="button" className="secondary small" disabled={!!busy} onClick={() => answer('allow_run')} title="Allow this exact command again in this run, until the agent changes a file">Allow until the next edit</button>
+      <button type="button" className="secondary small" disabled={!!busy} onClick={() => answer('deny')}>Deny</button>
+      <span className="caption">Unanswered for {minutes} min, the run stops and keeps what it changed for your review.</span>
+    </div>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+  </div>;
+}
+
+/** One step of a run besides its words: a thought, a tool call, a plan, a permission aiport answered. */
+type RunStep = {kind: string; text: string; tool?: string; status?: string; verdict?: string; reason?: string};
+
+/** Explain status from GET /api/v1/issues: explain (the chosen Connection) with explain_by (Coding agents) as by, and fix_by as fix. */
+export const explainOf = (d: {explain?: ExplainStatus; explain_by?: Record<string, ExplainStatus>; fix_by?: Record<string, FixStatus>}): ExplainStatus | null =>
+  d.explain ? {...d.explain, by: d.explain_by, fix: d.fix_by} : null;
+
+const AGENTS: Record<string, string> = {claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI'};
+const writer = (e: {source?: string; connection?: string; model?: string; agent?: string; agent_name?: string}) =>
+  e.source === 'coding_agent' ? (e.agent_name || AGENTS[e.agent || ''] || e.agent) + ', after reading the code' : e.connection + ' (' + e.model + ')';
+
+const callsLine = (c?: ModelCalls) => !c ? '' : c.through_aiport
+  ? 'Model calls go through aiport to ' + (c.connection || 'the Anthropic protocol default') + (c.model ? ' (' + c.model + ')' : '') + ', under the Application aiport.'
+  : c.note || 'The agent uses its own login.';
+
+/** The run panel: which agent reads the code (read-only), where its calls go, its steps, and Stop. */
+function RunPanel({run, steps, busy, branch}: {run: AgentRun; steps: RunStep[]; busy: boolean; branch?: string}) {
+  const [stopping, setStopping] = useState(false), [error, setError] = useState('');
+  const stop = async () => {
+    setStopping(true); setError('');
+    const r = await fetch('/api/v1/runs/' + encodeURIComponent(run.id) + '/stop', {method: 'POST', credentials: 'same-origin', headers: {'X-Aiport-CSRF': '1'}}).catch(() => null);
+    if (!r || (!r.ok && r.status !== 404)) { setError('Could not stop the run.'); setStopping(false); }
+  };
+  const shown = steps.slice(-30);
+  return <div className="run-panel" aria-label={'Agent run of ' + run.agent_name}>
+    <div className="run-head">
+      <strong>{run.agent_name}</strong> <span className="caption">{run.mode === 'fix' ? 'changes the code in its own worktree' + (branch ? ' on ' + branch : '') + ' · commands wait for your approval' :'reads the code, read-only'} · stops after {Math.round(run.limit_ms / 60000)} min</span>
+      {busy && <button type="button" className="secondary small" disabled={stopping} onClick={stop}>{stopping ? 'Stopping…' : 'Stop'}</button>}
+    </div>
+    <p className={'caption' + (run.model_calls.through_aiport ? '' : ' run-own-login')}>{callsLine(run.model_calls)}</p>
+    {run.session_mode && <p className="caption run-mode">Session mode: {run.session_mode}</p>}
+    {!!run.warnings?.length && <div className="notice-inline" role="note">
+      <strong>The repository's agent settings allow some things without asking.</strong> aiport never sees those, so it cannot ask you about them:
+      <ul className="run-warnings">{run.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+    </div>}
+    {shown.length > 0 && <ol className="run-steps" aria-live="polite">
+      {shown.map((s, i) => <li key={i} className={'run-step run-' + s.kind + (s.verdict ? ' run-' + s.verdict : '')}>
+        {s.kind === 'permission' ? <>{s.verdict === 'allowed' ? 'Allowed' : 'Denied'}: {s.text}{s.reason ? <small> · {s.reason}</small> : null}</>
+          : s.kind === 'tool' ? <>{s.text}{s.status && s.status !== 'completed' ? <small> · {s.status}</small> : null}</>
+          : s.kind === 'thought' ? <em>{s.text}</em> : s.text}
+      </li>)}
+    </ol>}
+    {error && <p className="auth-error" role="alert">{error}</p>}
+  </div>;
+}
+
+/**
+ * Explain: the root cause of an Issue in words. POST /api/v1/issues/{id}/explain streams JSON lines (start, text…,
+ * then done or error); the text is shown as it arrives and, once saved, comes back with the Issue (and in its
+ * Application fix). Explain again replaces it. The text comes from a model: shown as plain text only.
+ */
+export function IssueExplanation({issue, explain: all, onExplained}: {issue: Issue; explain: ExplainStatus | null; onExplained: () => void}) {
+  const explain = all?.by?.[issue.application] || all;
+  const [text, setText] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [by, setBy] = useState('');
+  const [agentRun, setAgentRun] = useState<AgentRun | null>(null), [steps, setSteps] = useState<RunStep[]>([]);
+  // An Explain Agent run goes on without this page: follow it again from its log (GET /api/v1/issues/{id}/run)
+  // when the page opens while it runs, or when the stream broke off; it saves its explanation itself.
+  const follow = async (alive: () => boolean) => {
+    let following = false;
+    while (alive()) {
+      const d = await fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/run', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (!alive() || !d?.run || d.run.mode !== 'explain') break;
+      if (!following && d.run.state !== 'running') break;
+      following = true;
+      const log: (RunStep & {kind: string})[] = d.log || [];
+      setBusy(true); setAgentRun(d.run); setBy(writer({source: 'coding_agent', agent: d.run.agent, agent_name: d.run.agent_name}));
+      setText(log.filter(u => u.kind === 'text').map(u => u.text).join(''));
+      setSteps(log.filter(u => u.kind !== 'text' && u.kind !== 'status'));
+      if (d.run.state !== 'running') {
+        setBusy(false);
+        if (d.run.state === 'done') onExplained(); else setError('The Agent run ended (' + d.run.state + ')' + (d.run.error ? ': ' + d.run.error : '') + '; nothing was saved.');
+        return;
+      }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    if (following) setBusy(false);
+  };
+  useEffect(() => {
+    if (explain?.source !== 'coding_agent') return;
+    let alive = true;
+    follow(() => alive);
+    return () => { alive = false; };
+  }, [issue.id, explain?.source]);
+  const run = async () => {
+    setBusy(true); setError(''); setText(''); setBy(''); setAgentRun(null); setSteps([]);
+    try {
+      const r = await fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/explain', {method: 'POST', credentials: 'same-origin', headers: {'X-Aiport-CSRF': '1'}});
+      if (!r.ok || !r.body) { const d = await r.json().catch(() => ({})); throw new Error(d.error?.message || 'Explain failed (' + r.status + ').'); }
+      const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = '', done = false, failed = '';
+      while (!done) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += chunk.value;
+        let nl;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, nl).trim(); buffer = buffer.slice(nl + 1);
+          if (!line) continue;
+          const ev = JSON.parse(line);
+          if (ev.type === 'start') setBy(writer({...ev.by, agent_name: explain?.agent_name}));
+          else if (ev.type === 'run') setAgentRun(ev.run);
+          else if (ev.type === 'step') setSteps(s => [...s, ev.step]);
+          else if (ev.type === 'text') setText(t => t + ev.text);
+          else if (ev.type === 'done') done = true;
+          else if (ev.type === 'error') failed = ev.error?.message || 'Explain failed.';
+        }
+      }
+      if (failed) throw new Error(failed);
+      if (!done && explain?.source === 'coding_agent') { setBusy(false); await follow(() => true); return; }
+      if (!done) throw new Error('The explanation broke off; nothing was saved.');
+      onExplained();
+    } catch (e) {
+      setError((e as Error).message);
+      if (e instanceof TypeError && explain?.source === 'coding_agent') { setError(''); await follow(() => true); } // the connection broke: the run goes on
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saved = issue.explanation;
+  const shown = busy || (text && error) ? text : saved?.text || '';
+  return <div className="explanation">
+    {shown && <div className="explanation-text" aria-live="polite"><strong>Root cause</strong>{(busy ? by : saved && writer(saved)) && <small> · written by {busy ? by : writer(saved!)}{!busy && saved?.source === 'connection' ? ' from the evidence only' : ''}</small>}<p>{shown}</p></div>}
+    {agentRun && <RunPanel run={agentRun} steps={steps} busy={busy}/>}
+    {busy && !text && !agentRun && <p className="caption" role="status">Asking {by || 'the model'}…</p>}
+    {error && <div className="notice error" role="alert">{error}{saved ? ' The earlier explanation stays.' : ''}</div>}
+    <div className="actions">
+      <button type="button" className="secondary" disabled={busy || !explain?.available} onClick={run} title={explain?.available ? 'Explain the root cause with ' + writer(explain) : explain?.hint}>
+        <Sparkles size={14} aria-hidden/> {busy ? 'Explaining…' : saved ? 'Explain again' : 'Explain'}
+      </button>
+      {explain && !explain.available && explain.hint && <span className="caption">{explain.hint}</span>}
+    </div>
+  </div>;
+}
+
+/** A diff shown as plain text, one line each, added and removed lines marked. The text is the agent's code: never markup. */
+function DiffView({diff, truncated}: {diff: string; truncated: boolean}) {
+  const lines = diff.split('\n');
+  return <pre className="diff" aria-label="Diff">{lines.map((l, i) => <span key={i} className={l.startsWith('+++') || l.startsWith('---') ? 'diff-file' : l.startsWith('+') ? 'diff-add' : l.startsWith('-') ? 'diff-del' : l.startsWith('@@') ? 'diff-hunk' : undefined}>{l + '\n'}</span>)}
+    {truncated && <span className="diff-hunk">… the diff is longer than aiport shows; read the rest on the branch.</span>}</pre>;
+}
+
+/**
+ * Fix it: the Application's Coding agent changes the code in its own git worktree, on a new branch named for the
+ * Issue, and ends with a diff the Owner reviews. Keep commits it on that branch (as aiport) and leaves the branch;
+ * Discard removes the worktree and the branch. aiport never commits to the Owner's branch, merges or pushes.
+ * Without a Coding agent or repository path, only a one-line hint shows.
+ */
+export function IssueFix({issue, explain, onChanged}: {issue: Issue; explain: ExplainStatus | null; onChanged: () => void}) {
+  const status = explain?.fix?.[issue.application], b = issue.branch_fix;
+  const [busy, setBusy] = useState(''), [error, setError] = useState('');
+  const [run, setRun] = useState<AgentRun | null>(null), [steps, setSteps] = useState<RunStep[]>([]);
+  const [diff, setDiff] = useState<{diff: string; truncated: boolean} | null>(null);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const running = b?.state === 'running', ready = !!b && REVIEWABLE.includes(b.state);
+  // While the run goes, follow its log; once it has ended, reload the Issue for its diff.
+  useEffect(() => {
+    if (!running) return;
+    let stop = false;
+    const follow = async () => {
+      while (!stop) {
+        const d = await fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/run', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (stop) return;
+        if (d?.run) { setRun(d.run); setSteps((d.log || []).filter((u: RunStep) => u.kind !== 'status')); setApprovals(d.approvals || []); }
+        if (d?.run && d.run.state !== 'running') { onChanged(); }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    };
+    follow();
+    return () => { stop = true; setApprovals([]); };
+  }, [issue.id, running]);
+  useEffect(() => {
+    setDiff(null);
+    if (!b || (!ready && b.state !== 'kept')) return;
+    fetch('/api/v1/issues/' + encodeURIComponent(issue.id) + '/fix', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null)
+      .then(d => d && setDiff({diff: d.diff || '', truncated: !!d.truncated})).catch(() => {});
+  }, [issue.id, b?.state, b?.run]);
+  const act = async (what: 'fix' | 'fix/keep' | 'fix/discard') => {
+    setBusy(what); setError('');
+    try {
+      await send('POST', 'issues/' + encodeURIComponent(issue.id) + '/' + what);
+      setRun(null); setSteps([]);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+  // Fix it changes the Application's code: only for causes that can be there.
+  const forCause = !status?.causes || status.causes.includes(issue.cause);
+  const canStart = status?.available && forCause && issue.state === 'open' && !running && !ready;
+  if (!b && !status?.available) return status?.hint ? <p className="caption fix-hint">{status.hint}</p> : null;
+  if (!b && !forCause) return status?.cause_hint ? <p className="caption fix-hint">{status.cause_hint}</p> : null;
+  return <div className="branch-fix">
+    {running && run && <RunPanel run={run} steps={steps} busy branch={b?.branch}/>}
+    {running && approvals.map(a => <ApprovalCard key={a.id} approval={a} onAnswered={() => { setApprovals(l => l.filter(x => x.id !== a.id)); onChanged(); }}/>)}
+    {running && !run && <p className="caption" role="status">Starting {status?.agent_name || b?.agent} in a worktree on {b?.branch}…</p>}
+    {ready && <div className="fix-review">
+      {b!.state !== 'ready' && b!.note && <p className="caption">{b!.note}</p>}
+      <p><strong>Review the change</strong> on branch <code>{b!.branch}</code>: {b!.summary}. Nothing is committed yet; your branch and working copy are untouched.</p>
+      {diff && <DiffView diff={diff.diff} truncated={diff.truncated}/>}
+      <div className="actions">
+        <button type="button" className="primary" disabled={!!busy} onClick={() => act('fix/keep')}>{busy === 'fix/keep' ? 'Keeping…' : 'Keep the branch'}</button>
+        <button type="button" className="secondary" disabled={!!busy} onClick={() => act('fix/discard')}>{busy === 'fix/discard' ? 'Discarding…' : 'Discard'}</button>
+        <span className="caption">Keep commits it on {b!.branch} as aiport; merging is yours. Discard deletes the worktree and the branch.</span>
+      </div>
+    </div>}
+    {b?.state === 'kept' && <p className="caption">Kept on branch <code>{b.branch}</code>{b.commit ? ' (commit ' + b.commit.slice(0, 12) + ')' : ''}: {b.summary}. aiport never merges or pushes: merge it when you are ready; the Issue resolves when {issue.application}’s calls succeed.</p>}
+    {b && (b.state === 'discarded' || b.state === 'stopped' || b.state === 'empty') && <p className="caption">Last Fix it run: {b.state === 'discarded' ? 'discarded; the worktree and the branch were removed.' : b.note}</p>}
+    {error && <div className="notice error" role="alert">{error}</div>}
+    {canStart && <div className="actions">
+      <button type="button" className="secondary" disabled={!!busy} onClick={() => act('fix')} title={'Fix it with ' + (status?.agent_name || status?.agent) + ' in its own worktree; stops after ' + Math.round((status?.limit_ms || 0) / 60000) + ' min'}>
+        {busy === 'fix' ? 'Starting…' : b ? 'Fix it again' : 'Fix it'}
+      </button>
+      <span className="caption">{status?.agent_name} edits a new branch in its own worktree; you approve each command it runs; you review the diff.</span>
+    </div>}
+  </div>;
+}
 
 /** Who makes a Change aiport applies itself (adapting.auto_fix). */
 const AUTOMATIC = 'aiport (automatic)';
@@ -46,7 +320,7 @@ const AUTOMATIC = 'aiport (automatic)';
  * with Approve / Dismiss, and the fix in the Application for its Coding agent. Approve stays while the Application
  * says it fixed the Issue (resolving); Dismiss is there for any Issue still open or resolving.
  */
-function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]; onDecided: (message: string) => void}) {
+function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Issue; targets: string[]; explain: ExplainStatus | null; onDecided: (message: string) => void; onExplained: () => void}) {
   const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection';
   const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || issue.subject);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [blocked, setBlocked] = useState<Blocked | null>(null);
@@ -107,6 +381,8 @@ function IssueCard({issue, targets, onDecided}: {issue: Issue; targets: string[]
     {fix?.state !== 'proposed' && <div className="actions">
       <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
     </div>}
+    <IssueExplanation issue={issue} explain={explain} onExplained={onExplained}/>
+    <IssueFix issue={issue} explain={explain} onChanged={onExplained}/>
     <ApplicationFix issue={issue}/>
   </div>;
 }
@@ -235,12 +511,12 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [reload, setReload] = useState(0), [upstream, setUpstream] = useState<Upstream | null>(null);
-  const [autoFix, setAutoFix] = useState<boolean | null>(null), [adapting, setAdapting] = useState(true);
+  const [autoFix, setAutoFix] = useState<boolean | null>(null), [adapting, setAdapting] = useState(true), [explain, setExplain] = useState<ExplainStatus | null>(null);
   useEffect(() => {
     send('GET', 'upstream').then(setUpstream).catch(() => setUpstream(null));
     send('GET', 'changes').then(d => { setChanges(d.changes || []); setRevertable(!!d.revertable); }).catch(e => setError(e.message));
     send('GET', 'decisions').then(d => { setPending((d.items || []).filter((i: Decision) => !i.issue)); setDemand(d.demand || []); }).catch(() => { setPending([]); setDemand([]); });
-    send('GET', 'issues').then(d => { setIssues(d.issues || []); setAutoFix(!!d.auto_fix); setAdapting(d.adapting !== false); }).catch(() => { setIssues([]); setAutoFix(null); });
+    send('GET', 'issues').then(d => { setIssues(d.issues || []); setAutoFix(!!d.auto_fix); setAdapting(d.adapting !== false); setExplain(explainOf(d)); }).catch(() => { setIssues([]); setAutoFix(null); });
   }, [tick, reload]);
   const revert = async (c: Change) => {
     setBusy(c.id); setError(''); setMessage('');
@@ -279,7 +555,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
   return <>{!!issues.length && <section className="panel" aria-label="Issues">
     <div className="panel-heading"><h2><CircleAlert size={16} aria-hidden/> Issues</h2><span>Problems aiport keeps seeing for one Application · they close themselves when its calls succeed again</span></div>
-    {issues.map(i => <IssueCard key={i.id + i.state + (i.fix?.suggestion || '')} issue={i} targets={targets} onDecided={decided}/>)}
+    {issues.map(i => <IssueCard key={i.id + i.state + (i.fix?.suggestion || '')} issue={i} targets={targets} explain={explain} onDecided={decided} onExplained={() => setReload(x => x + 1)}/>)}
   </section>}{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
     <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history and Change requests from Applications</span></div>
     {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided} onOpenApplications={onOpenApplications}/>)}

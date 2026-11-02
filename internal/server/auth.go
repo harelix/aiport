@@ -19,6 +19,9 @@ func NewConfigured(c config.Config, s config.Secrets, collector *telemetry.Colle
 	h := NewWithTelemetry(c, s, collector).(*Handler)
 	h.live = config.NewLive(path, c)
 	h.live.SetClock(h.clock)
+	if path != "" {
+		h.worktrees = path + ".worktrees" // before keepChanges: its startup cleanup removes worktrees here
+	}
 	h.keepChanges(path)
 	h.live.OnChange(h.applyLive)
 	h.keys = config.EnvKeys(path)

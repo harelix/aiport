@@ -47,6 +47,8 @@ type Config struct {
 	Extensions []Extension `yaml:"extensions,omitempty" json:"extensions"`
 	// Upstream is where "Suggest to aiport" and "Share upstream" drafts go.
 	Upstream Upstream `yaml:"upstream,omitempty" json:"upstream"`
+	// AgentRuns configures the Coding agents aiport starts for Issues.
+	AgentRuns AgentRuns `yaml:"agent_runs,omitempty" json:"agent_runs"`
 }
 
 // Evaluation is the user-chosen evaluator: any configured connection.
@@ -99,6 +101,13 @@ type Origin struct {
 	// MayRequestChanges lets this Application file Change requests. Off by
 	// default: pairing alone never opens a channel into the Owner's queue.
 	MayRequestChanges bool `yaml:"may_request_changes,omitempty" json:"may_request_changes"`
+	// Agent is the Coding agent aiport starts for this Application's Agent
+	// runs: one of CodingAgents, or empty for agent_runs.default_agent.
+	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
+	// Repository is the absolute path of the Application's git repository,
+	// as the Owner confirmed it; empty when there is none. Agent runs never
+	// work outside it.
+	Repository string `yaml:"repository,omitempty" json:"repository,omitempty"`
 }
 
 type OriginAlias struct {
@@ -316,6 +325,9 @@ func (c Config) Validate() error {
 		if !identifier.MatchString(o.ID) || origins[o.ID] {
 			return fmt.Errorf("origin %d has an invalid or duplicate id", i+1)
 		}
+		if o.ID == BuiltinApplication {
+			return fmt.Errorf("origin %d cannot be called %q: that is aiport's own built-in Application", i+1, BuiltinApplication)
+		}
 		origins[o.ID] = true
 		if strings.TrimSpace(o.Name) == "" || len(o.Name) > 128 || strings.ContainsAny(o.Name, "\r\n\x00") {
 			return fmt.Errorf("origin %d name must contain 1–128 bytes of text", i+1)
@@ -369,6 +381,14 @@ func (c Config) Validate() error {
 			return errors.New("evaluation.model must name the model to use (1–256 characters)")
 		}
 	}
+	if e := c.Adapting.Explain; e.Connection != "" || e.Model != "" {
+		if _, ok := targets[e.Connection]; !ok {
+			return errors.New("adapting.explain.connection must name a configured connection")
+		}
+		if !boundedModel(e.Model) {
+			return errors.New("adapting.explain.model must name the model to use (1–256 characters)")
+		}
+	}
 	if err := c.Adapting.validate(); err != nil {
 		return err
 	}
@@ -376,6 +396,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := c.Upstream.validate(); err != nil {
+		return err
+	}
+	if err := c.AgentRuns.validate(c.Origins, targets); err != nil {
 		return err
 	}
 	t := c.Telemetry

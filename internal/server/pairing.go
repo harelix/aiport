@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"aiport/internal/agents"
 	"aiport/internal/config"
 	"aiport/internal/store"
 )
@@ -22,12 +23,12 @@ import (
 // as a client (live, no restart); the application then collects its token,
 // exactly once. Requests that nobody approves expire.
 //
-//	POST /v1/aiport/pair            {name, description?}         public on loopback
+//	POST /v1/aiport/pair            {name, description?, repository?}  public on loopback
 //	GET  /v1/aiport/pair/{secret}   status; the token once approved
 //	GET  /api/v1/pairings           pending requests             management
 //	GET  /api/v1/pairings?status=rejected  rejected applications  management
 //	DELETE /api/v1/pairings/rejected/{id}  forget one              management
-//	POST /api/v1/pairings/{code}/approve  {id?, target?, may_request_changes?}  management
+//	POST /api/v1/pairings/{code}/approve  {id?, target?, may_request_changes?, agent?, repository?}  management
 //	POST /api/v1/pairings/{code}/reject                          management
 const (
 	PairPath       = "/v1/aiport/pair"
@@ -57,10 +58,17 @@ type pairing struct {
 	RequestedAt int64  `json:"requested_at_ms"`
 	ExpiresAt   int64  `json:"expires_at_ms"`
 	Status      string `json:"status"` // pending, approved, rejected
-	OriginID    string `json:"origin_id,omitempty"`
-	secret      string
-	token       string // held between approval and collection only
-	doneAt      int64
+	// Repository is the repository path the Application reported, shown to
+	// the Owner; unconfirmed, so never stored or used unless the Owner sends
+	// it back when approving.
+	Repository string `json:"repository,omitempty"`
+	// RepositoryProblem says what is wrong with Repository, when it is not
+	// the top directory of a git repository on this machine.
+	RepositoryProblem string `json:"repository_problem,omitempty"`
+	OriginID          string `json:"origin_id,omitempty"`
+	secret            string
+	token             string // held between approval and collection only
+	doneAt            int64
 }
 
 type pairings struct {
@@ -251,14 +259,15 @@ func (h *Handler) servePair(w http.ResponseWriter, r *http.Request, fail func(in
 	var in struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		Repository  string `json:"repository"`
 	}
 	if decodeJSON(w, r, &in) != nil {
 		fail(400, "invalid_pairing", "Send a JSON body with the application's name")
 		return
 	}
-	in.Name, in.Description = strings.TrimSpace(in.Name), strings.TrimSpace(in.Description)
-	if in.Name == "" || len(in.Name) > 128 || strings.ContainsAny(in.Name, "\r\n\x00") || len(in.Description) > 500 || strings.ContainsAny(in.Description, "\x00") {
-		fail(400, "invalid_pairing", "name must be 1–128 characters on one line; description at most 500")
+	in.Name, in.Description, in.Repository = strings.TrimSpace(in.Name), strings.TrimSpace(in.Description), strings.TrimSpace(in.Repository)
+	if in.Name == "" || len(in.Name) > 128 || strings.ContainsAny(in.Name, "\r\n\x00") || len(in.Description) > 500 || strings.ContainsAny(in.Description, "\x00") || len(in.Repository) > config.MaxRepositoryPath || strings.ContainsAny(in.Repository, "\r\n\x00") {
+		fail(400, "invalid_pairing", "name must be 1–128 characters on one line; description at most 500; repository one line of at most 4096")
 		return
 	}
 	pending := 0
@@ -276,7 +285,12 @@ func (h *Handler) servePair(w http.ResponseWriter, r *http.Request, fail func(in
 	for h.pair.byCode[code] != nil {
 		code = pairCode()
 	}
-	x := &pairing{Code: code, Name: in.Name, Description: in.Description, RequestedAt: now, ExpiresAt: now + pairTTL.Milliseconds(), Status: "pending", secret: randomString(32)}
+	x := &pairing{Code: code, Name: in.Name, Description: in.Description, Repository: in.Repository, RequestedAt: now, ExpiresAt: now + pairTTL.Milliseconds(), Status: "pending", secret: randomString(32)}
+	if in.Repository != "" {
+		if _, err := agents.Repository(in.Repository); err != nil {
+			x.RepositoryProblem = err.Error()
+		}
+	}
 	h.pair.byCode[code] = x
 	h.pair.recent = append(h.pair.recent, now)
 	writeJSON(w, 202, map[string]any{
@@ -378,9 +392,13 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 		ID                string `json:"id"`
 		Target            string `json:"target"`
 		MayRequestChanges bool   `json:"may_request_changes"`
+		// Agent and Repository are the Owner's choice: the repository path
+		// as the Owner confirmed or edited it.
+		Agent      string `json:"agent"`
+		Repository string `json:"repository"`
 	}
 	if r.ContentLength != 0 && decodeJSON(w, r, &in) != nil {
-		fail(400, "invalid_request", "Send JSON with optional id, target and may_request_changes")
+		fail(400, "invalid_request", "Send JSON with optional id, target, may_request_changes, agent and repository")
 		return true
 	}
 	h.pair.mu.Lock()
@@ -400,6 +418,12 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 	}
 	if !h.live.Writable() || h.keys.File == "" {
 		fail(503, "config_readonly", "This server cannot add clients to its configuration")
+		return true
+	}
+	// Only what the Owner sent is used: a reported path nobody confirmed is not.
+	agent, repository, problem, why := h.codingAgentSettings(strings.TrimSpace(in.Agent), strings.TrimSpace(in.Repository))
+	if problem != "" {
+		fail(400, problem, why)
 		return true
 	}
 	current := h.snapshot()
@@ -422,7 +446,7 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 		fail(500, "token_save_failed", "Could not save the application's token")
 		return true
 	}
-	if _, _, err := h.live.Change("pair application "+id, config.AddOrigin(config.Origin{ID: id, Name: x.Name, TokenEnv: ref, Target: strings.TrimSpace(in.Target), MayRequestChanges: in.MayRequestChanges})); err != nil {
+	if _, _, err := h.live.Change("pair application "+id, config.AddOrigin(config.Origin{ID: id, Name: x.Name, TokenEnv: ref, Target: strings.TrimSpace(in.Target), MayRequestChanges: in.MayRequestChanges, Agent: agent, Repository: repository})); err != nil {
 		_ = config.SetCredential(h.keys.File, ref, "")
 		fail(400, "invalid_client", err.Error())
 		return true

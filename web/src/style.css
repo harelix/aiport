@@ -376,6 +376,11 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .app-issues-row td{background:var(--inset)}
 .app-issues{list-style:none;margin:0;padding:4px 0;display:grid;gap:12px}
 .app-issue-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;margin-bottom:6px}
+.explanation{display:grid;gap:6px;margin:8px 0}
+.explanation .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.explanation-text{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--inset);font-size:13px}
+.explanation-text small{color:var(--text-2)}
+.explanation-text p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .application-fix{display:grid;gap:6px;justify-items:start}
 .application-fix details{justify-self:stretch}
 .application-fix summary{cursor:pointer;font-size:12px;color:var(--text-2)}
@@ -684,3 +689,39 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .apps-table td small code{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
 .apps-table .progress-text{white-space:nowrap}
 @media(max-width:900px){.apps-table th:nth-child(4),.apps-table td:nth-child(4){display:none}}
+/* Coding agents: wizard step 6, the pairing's reported repository, Settings default */
+.agent-settings{display:grid;gap:8px;max-width:640px}
+.agent-fields{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 12px;align-items:center;font-size:13px;color:var(--text)}
+.agent-fields input{padding:8px 12px;font-size:13px;min-width:0}
+.panel .agent-fields{max-width:520px;margin-top:8px}
+.install-hint{display:grid;gap:6px;margin:4px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--field);font-size:13px;color:var(--text)}
+.install-command{display:block;font-size:12.5px;overflow-wrap:anywhere;user-select:all}
+.pairing-repository{display:grid;gap:4px;margin-top:8px;font-size:13px}
+.pairing-repository input{padding:6px 10px;font-size:13px;width:100%;max-width:520px}
+
+/* Agent runs: the run panel next to an Issue (spec #21). */
+.subheading{font-size:14px;margin:18px 0 8px}
+.run-panel{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--inset);font-size:13px}
+.run-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.run-head button{margin-left:auto}
+.run-own-login{color:var(--text-2)}
+.run-steps{margin:0;padding-left:18px;display:grid;gap:2px;max-height:220px;overflow:auto;overflow-wrap:anywhere}
+.run-step small{color:var(--text-2)}
+.run-thought{color:var(--text-2)}
+.run-denied{color:var(--bad)}
+/* Fix it: the branch, the diff to review, Keep and Discard (harelix/aiport#25). */
+.branch-fix{display:grid;gap:6px;margin:8px 0}
+.branch-fix .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fix-review{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:13px}
+.fix-review p{margin:0}
+.diff{margin:0;max-height:360px;overflow:auto;padding:8px 10px;border-radius:var(--radius-sm);background:var(--inset);font-size:12px;line-height:1.45;white-space:pre}
+.diff-add{color:var(--good)}
+.diff-del{color:var(--bad)}
+.diff-hunk,.diff-file{color:var(--text-2)}
+/* A command waiting for the Owner's answer during Fix it (harelix/aiport#26). */
+.approval{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:0 var(--radius-sm) var(--radius-sm) 0;background:var(--panel);font-size:13px}
+.approval p{margin:0}
+.approval-command{margin:0;padding:6px 10px;border-radius:var(--radius-sm);background:var(--inset);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
+.run-warnings{margin:0;padding:6px 10px 6px 26px;border-radius:var(--radius-sm);border:1px solid var(--warn, var(--line));display:grid;gap:2px}
+.run-mode{color:var(--text-2)}
+.approval .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}

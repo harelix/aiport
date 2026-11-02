@@ -13,8 +13,11 @@ the Application that sent it.
 _Avoid_: client, origin (origin is only the configuration key).
 
 **Coding agent**
-An Application that writes code, such as Codex or Claude Code, usually started
-with `aiport agent`.
+A program that writes code, such as Claude Code, Codex or Gemini CLI. It may
+work on an Application's repository: as the Application's Coding agent it
+hears about the Application's Issues, and aiport may start it for an Agent run.
+When its own model calls go through aiport (for example started with
+`aiport agent`), it is also an Application.
 
 **Pairing**
 How an Application gets its own token: it asks aiport, shows the Owner a short
@@ -52,8 +55,9 @@ Application's calls succeed again.
 
 **Agent run**
 One run of a Coding agent that aiport starts for an Issue, on the Owner's
-click: to Explain it (read-only) or to Fix it (in its own branch, ending in a
-diff the Owner keeps or discards), with its log, approvals and result.
+click: to Explain it (read-only, in a throwaway worktree) or to Fix it (in its
+own worktree on a new branch, ending in a diff the Owner keeps or discards),
+with its log, approvals and result.
 
 **Change**
 An approved Change request or Suggestion once it is applied to aiport's

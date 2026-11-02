@@ -2,6 +2,7 @@
 package server
 
 import (
+	"aiport/internal/agentrun"
 	localauth "aiport/internal/auth"
 	"aiport/internal/dashboard"
 	"aiport/internal/telemetry"
@@ -50,6 +51,21 @@ type Handler struct {
 	adaptEvery       time.Duration          // 0 = adapting.interval_seconds; tests set a short one
 	gh               func() (string, error) // finds the gh CLI; nil = look it up on PATH; tests set a fake
 	pair             pairings
+	explainMu        sync.Mutex
+	explaining       map[string]bool  // Applications whose Issue explanation is being written (guarded by explainMu)
+	agentDirs        []string         // where Coding agents are looked for; nil = agents.DefaultDirs; tests set a temporary one
+	runs             *agentrun.Runner // Agent runs; made on first use (runner)
+	runsOnce         sync.Once
+	runTokenMu       sync.Mutex
+	runTokens        map[[32]byte]bool // digests of the live run credentials (guarded by runTokenMu)
+	explainLimit     time.Duration     // 0 = agent_runs.explain_minutes; tests set a short one
+	fixLimit         time.Duration     // 0 = agent_runs.fix_minutes; tests set a short one
+	worktrees        string            // where Fix it makes its worktrees: next to the configuration; "" = the temporary directory
+	fixMu            sync.Mutex        // one Fix it start or end at a time
+	approvalMu       sync.Mutex
+	approvals        map[string]*approval // command requests waiting for the Owner, by id (guarded by approvalMu)
+	unanswered       map[string]bool      // runs stopped because a command request went unanswered (guarded by approvalMu)
+	approvalWait     time.Duration        // 0 = ApprovalWait; tests set a short one
 	// requesters are the Applications that may request changes right now
 	// (none while adapting is off), rebuilt on every config change so the
 	// forwarding path checks a set instead of copying the configuration.
@@ -221,6 +237,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if credential.Management {
 			management |= match
 		}
+	}
+	// A run credential authenticates only an Agent run's model calls, as the
+	// built-in Application; it is never an Application's or the Owner's.
+	if authenticated != 1 && h.isRunCredential(digest) {
+		if r.URL.Path != "/v1/messages" && r.URL.Path != "/v1/chat/completions" && r.URL.Path != "/v1/responses" {
+			fail(403, "run_credential", "An Agent run's credential is for its model calls only")
+			return
+		}
+		authenticated, originID = 1, config.BuiltinApplication
 	}
 	if h.authRoutes(w, r, management == 1, fail) {
 		return

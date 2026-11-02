@@ -36,6 +36,7 @@ func (h *Handler) openDecisions() {
 	q.WatchFailedAuth(h.failedAuth)
 	q.Diagnose(modelFinder{h})
 	h.decisions = q
+	h.stopLeftFixes()
 }
 
 // Detect runs one background pass at time at, as the ticker does: it
@@ -45,6 +46,7 @@ func (h *Handler) Detect(at time.Time) {
 	if h.decisions != nil {
 		h.decisions.Prune(at)
 		h.decisions.Detect(at)
+		h.forgetClosedRuns()
 	}
 }
 

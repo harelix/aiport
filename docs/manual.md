@@ -105,7 +105,9 @@ listens on and Sign out (or "Authentication off" when it is turned off).
 - **Changes**: open Issues, what waits for your decision and every
   configuration Change made through aiport, with Revert.
 - **Tasks**: a queue of work for coding agents; you own intent and priority.
-- **Settings**: sign-in, authentication and the configuration file.
+- **Settings**: sign-in, authentication, the default coding agent for Agent
+  runs and where their model calls go, the Connection and model that explain Issues, and the configuration
+  file.
 
 ## Connections and keys
 
@@ -174,12 +176,20 @@ what. Calls without an Application token show as `unknown`.
 An Application gets its token by **pairing**:
 
 1. It asks aiport (`POST /v1/aiport/pair` with its name; no token needed) and
-   shows you a short code.
+   shows you a short code. It may also report the path of its git
+   repository on this machine (the Application brief asks the integrating
+   coding agent to).
 2. The request appears at the top of the Applications list on the
    **Integrate** page (and in the Applications table on Routing) with that
    code. Check the application shows the same
    code. Optionally choose a Connection to bind it to and tick **May request
-   changes**, then **Approve**, or **Reject**.
+   changes**, then **Approve**, or **Reject**. A reported repository path
+   is shown in a field under the request, with what is wrong with it if it
+   is not a git repository here: confirm it, edit it or clear it before you
+   approve. aiport keeps only what the field holds when you approve; a
+   reported path you did not confirm is never used. A path that does not
+   exist or is not the top directory of a git repository is refused with
+   the reason, and the request keeps waiting.
 3. The application collects its token once. aiport adds it to the
    configuration without a restart; the token is stored in the private
    credential file.
@@ -208,8 +218,11 @@ narrow screen the strip moves below).
   and **Reject**.
 - The list shows each approved Application: name, client id, Connection (or
   the protocol default), the **May request changes** toggle, its last call
-  (in the last 7 days, when activity recording is on), its open **Issues**
-  and its onboarding progress, such as `3/5`.
+  (in the last 7 days, when activity recording is on), its open **Issues**,
+  its coding **Agent** and its onboarding progress, such as `3/6`.
+- **Agent** names the Application's coding agent once it has one and a
+  repository path (**Connect** otherwise). Select it to change them in step
+  6 of the wizard.
 - **Issues** shows how many open or resolving Issues the Application has
   and a short cause, such as "Unknown model llama3:8b" (None when there are
   none). Select it to list them under the row: each with its summary, **Open
@@ -285,8 +298,55 @@ itself from live state:
    decide each request in Changes.
 5. **MCP entry in the repository** (optional): the agent adds it in step 1;
    tick it by hand, or copy it from the **Coding agent brief** tile.
+6. **Connect a coding agent** (optional): see below. The step ticks when
+   the application has a coding agent (its own or the default) and a
+   repository path.
 
 Select an existing application in the list to see how far it got.
+
+### Connecting a coding agent
+
+aiport can start a Coding agent installed on this machine to work on an
+Application's Issues, only when you click (Agent runs). Each Application
+can have its own agent, **Claude Code**, **Codex** or **Gemini CLI**, and
+the path of its git repository; set them in step 6 of the wizard (or from
+the **Agent** column) and **Save**. Each save is one revertable Change on
+the Changes page. **Default coding agent** on the Settings page is the
+agent of every Application that has none of its own.
+
+- **What aiport looks for.** aiport talks to agents through the Agent
+  Client Protocol (ACP). Gemini CLI speaks it itself (`gemini --acp`);
+  Claude Code and Codex need an ACP adapter: `claude-agent-acp` (npm
+  package `@agentclientprotocol/claude-agent-acp`) and `codex-acp`
+  (`@agentclientprotocol/codex-acp`). aiport finds programs by absolute
+  path, in the absolute directories of its own `PATH` and the usual
+  install places (`~/.local/bin`, `~/.npm-global/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin` and a few more); it does not run them to look.
+- **Nothing is installed for you.** When an agent or its adapter is
+  missing, the step shows the exact command to install it, such as
+  `npm install -g @agentclientprotocol/codex-acp`; run it yourself, then
+  refresh. An agent that is not installed cannot be chosen.
+- **The repository path** must be absolute and the top directory of a git
+  repository (where `.git` is); otherwise it is refused with the reason.
+  aiport stores it with symbolic links resolved. Agent runs never work
+  outside it.
+
+In `aiport.yaml` this is `agent` and `repository` on the Application under
+`origins`, and `agent_runs.default_agent`:
+
+```yaml
+agent_runs:
+  default_agent: claude
+origins:
+  - id: docs-bot
+    name: Docs Bot
+    token_env: AIPORT_APP_DOCS_BOT_TOKEN
+    agent: gemini
+    repository: /home/you/src/docs-bot
+```
+
+`GET /api/v1/agents` lists what aiport found (`installed`, `ready`, the
+ACP entry point, and `install` when something is missing).
 
 ## Aliases
 
@@ -434,6 +494,325 @@ with the fix offered again.
 
 The badge on Changes counts an Issue only while its fix waits for you.
 
+#### Explain
+
+**Explain** on an Issue (on Changes, and under the Application's row on
+Integrate) writes its root cause in a few sentences. Without a Coding agent
+connected to the Application, aiport asks a Connection and model you choose
+once in **Settings → Explanations** (`adapting.explain` in `aiport.yaml`,
+for example a local Connection serving `llama3:8b`). Until you choose one,
+Explain is disabled with a hint saying so.
+
+- **What is sent**: only the Issue's evidence: the cause, the status and the
+  provider's error type, the counts and time window, example request ids,
+  the model name, the Connection ids and aiport's diagnosis (which
+  Connections list the model, and the models they list). Never keys,
+  tokens, the Application's id or name, prompts or provider messages. The
+  one thing in it an Application wrote is the model name it asked for,
+  and only when that name looks like a model id (at most 128 letters,
+  digits and `. _ : / @ + -`); any other name is replaced by "(a model
+  name that is withheld because it contains unusual characters)", and
+  Connection ids, model lists and the error type pass the same check. The
+  same holds for what a Coding agent is told.
+- **Streaming**: the words appear as the model writes them. When it
+  finishes, the explanation is saved with the Issue, kept across restarts,
+  and shown with who wrote it. **Explain again** replaces it; if writing
+  fails or takes longer than 2 minutes, nothing is saved and an earlier
+  explanation stays. One explanation per Application is written at a time.
+- **Carried to the Coding agent**: the saved explanation is the "Root
+  cause" paragraph at the start of "Copy fix for the Coding agent", and
+  `aiport_my_issues` (and `GET /v1/aiport/issues`) give it to the
+  Application's Coding agent, in that text and as `explanation`.
+- **Activity**: the call shows in Activity under the built-in Application
+  `aiport` (no configured Application may use that id), with its
+  Connection, model, status and latency, like any other call. A remote
+  Connection bills explanations to its key; a local one keeps them on this
+  machine.
+
+For scripts: `PUT /api/v1/adapting/explainer` with `{"connection": "local",
+"model": "llama3:8b"}` chooses who writes (a revertable Change; both empty
+turns Explain off), and `POST /api/v1/issues/{id}/explain` streams JSON
+lines: `start` (who writes), `text` (the next words), then `done` (the
+Issue with its saved explanation) or `error`.
+
+#### Explain by a Coding agent
+
+When the Application has a Coding agent and a repository path (see
+"Connecting a coding agent") and the agent's ACP entry point is installed,
+**Explain** starts an **Agent run** instead: the agent reads the
+Application's code and writes the root cause, usually with the file and
+the change to make. The button's tooltip names the agent; otherwise the
+Connection from Settings explains, as above.
+
+- **How it starts**: only on your click, never by itself (not even with
+  automatic fixes on), and never with adapting off. aiport starts the ACP
+  entry point it found, by absolute path, never through a shell, with a
+  minimal environment: `PATH` (the agent's own
+  directory first, then the absolute directories of aiport's `PATH`, so an
+  npm-installed adapter finds `node`), `HOME`, `TMPDIR`, `LANG`, `LC_ALL`,
+  `USER`, `LOGNAME`, and, for Claude Code, the variables below. Never
+  aiport's tokens or provider keys, and no MCP connection to aiport.
+- **A throwaway copy, never your working copy**: the agent reads a git
+  worktree of the repository that aiport makes for the run, detached at
+  your current commit (`HEAD`, no branch), in `aiport.yaml.worktrees/`,
+  and removes when the run ends. Your working copy is never where the
+  agent works, so even an edit the agent's own settings allow without
+  asking (see "What aiport cannot see" below) cannot touch your files.
+  Your uncommitted changes are not in that copy; the repository needs at
+  least one commit.
+- **What the agent is told**: the Issue's evidence (the same as above) and
+  that the run is read-only.
+- **Read-only**: aiport answers every permission request itself, without
+  asking you. Reading and searching inside the run's copy are allowed;
+  every edit, delete, command and anything outside that copy (also your
+  own working copy) is denied. aiport only ever answers "once", so nothing
+  is remembered in the agent's own settings. A permission request that
+  names a session aiport did not open is denied.
+- **Which paths count**: every path a request names counts, not only its
+  locations: the paths in its raw input (`path`, `file_path`, `cwd`, a
+  move's `destination`, the files of a patch, and the base of a search
+  pattern such as `/etc/**` or `../*.py`), at any depth. One path outside
+  (or in your home directory, `~`) denies the request, and a read or
+  search that names no path at all is denied too. This holds for Explain
+  and Fix it alike.
+- **Session modes**: when the agent offers modes (Claude Code's adapter
+  offers, for example, `default`, `acceptEdits`, `plan` and
+  `bypassPermissions`), aiport switches the session to the most
+  restrictive suitable one: plan or read-only for Explain, one that asks
+  before acting (such as `default`) for Fix it. It never picks a mode that
+  bypasses or auto-accepts. If the session starts in such a mode (from
+  your own settings) and the agent offers no other, aiport does not run
+  it. The run panel names the mode chosen.
+- **The run panel** under the Issue shows the agent's name, where its
+  model calls go, its steps (thoughts, files read, permissions allowed or
+  denied) and its words as they come. **Stop** ends the run at any time
+  (the agent is asked to cancel, then its whole process group is ended).
+  Nothing is saved from a stopped run. Closing the tab or leaving the page
+  does not stop it: the run goes on, saves its explanation when it ends,
+  and the run panel picks it up again when you come back.
+- **Limits**: one Agent run per Application at a time; an Explain run
+  stops after 10 minutes (`agent_runs.explain_minutes`), and nothing is
+  saved.
+- **What is kept**: the explanation is saved with the Issue (replacing an
+  earlier one, also one a Connection wrote) and carried to the
+  Application's Coding agent as above. The run's log (its steps and words)
+  is kept in memory only while the Issue is open or resolving, never on
+  disk: it is gone when the Issue closes or aiport restarts.
+
+**What aiport cannot see.** aiport only sees the permission requests an
+agent sends. An agent's own settings can let it read, edit or run commands
+without asking, and those actions never reach aiport: it cannot allow,
+deny or log them. aiport limits what such settings can do, in layers:
+
+- Every run works in a worktree made for it, never in your working copy
+  (Explain's is thrown away when the run ends; Fix it's is shown to you as
+  a diff), so an edit nobody was asked about lands only there.
+- It picks the most restrictive session mode the agent offers (see
+  Session modes above) and does not run a session that only acts without
+  asking.
+- Fix it never allows edits to agent or git configuration in the worktree,
+  and any edit the agent reports ends "Allow until the next edit".
+- Before a run, the run panel warns when the repository's own agent
+  settings allow without asking: `.claude/settings.json` or
+  `.claude/settings.local.json` with `permissions.allow` entries or a
+  `defaultMode` such as `bypassPermissions` or `acceptEdits`,
+  `.gemini/settings.json` with `autoAccept` or an approval mode such as
+  `yolo`, and `.codex/config.toml` with `approval_policy = "never"` or
+  `sandbox_mode = "danger-full-access"`. aiport only reads these files; it
+  never changes them.
+
+What it cannot check is your user-level agent settings (for example
+`~/.claude/settings.json`, `~/.gemini/settings.json` or
+`~/.codex/config.toml`) and any managed settings. A command that those
+allow runs without aiport asking you, with your own rights, in the run's
+worktree or, if the agent chooses, elsewhere. **Do not auto-allow commands
+or edits** in your user-level settings for repositories you use with
+aiport, and check the warnings in the run panel.
+
+**Where the run's model calls go.** In **Settings → Default coding agent →
+Model calls of Agent runs** you choose an Anthropic-protocol Connection
+(and, optionally, a model) for them. Until you choose one, every run uses
+the agent's own login and the run panel says so: aiport never sends a
+run's calls to the Anthropic protocol default you did not choose for Agent
+runs.
+
+- **Claude Code** is pointed at aiport by its environment only:
+  `ANTHROPIC_BASE_URL` (aiport's address on this machine: the listen
+  port on `127.0.0.1`, or the listen address when it names a loopback
+  address), `ANTHROPIC_AUTH_TOKEN`
+  (a credential made for this run) and `ANTHROPIC_MODEL` when you chose a
+  model. That credential authenticates only model calls, as the built-in
+  Application `aiport`; it cannot reach the dashboard, the MCP endpoint or
+  any Application's data, is never written down or logged, and stops
+  working when the run ends. The calls show in Activity under `aiport`
+  with their Connection. Without a Connection chosen for Agent runs (or
+  when the chosen one is not reachable), Claude Code uses its own login
+  and the run panel says so.
+- **Codex** uses its own login: pointing it at aiport would mean editing
+  its configuration file, which aiport never does. The run panel says so.
+- **Gemini CLI** uses its own login too: aiport does not speak the Gemini
+  API yet. The run panel says so.
+
+```yaml
+agent_runs:
+  default_agent: claude
+  connection: claude-hosted   # an Anthropic-protocol Connection
+  model: claude-model-id      # optional
+  explain_minutes: 10
+```
+
+For scripts: `PUT /api/v1/agents/calls` with `{"connection", "model"}`
+(a revertable Change), `GET /api/v1/runs` (the runs going),
+`POST /api/v1/runs/{id}/stop`, and `GET /api/v1/issues/{id}/run` (the
+Issue's last run and its log, while the Issue is open). The explain
+stream adds `run` (the run: its id, agent and model calls) and `step`
+events for an Agent run; `error` codes include `run_stopped` and
+`explanation_timed_out`.
+
+#### Fix it
+
+**Fix it** on an open Issue lets the Application's Coding agent change the
+Application's code, on a branch of its own, and ends with a diff you
+review. It shows when the Application has a Coding agent and a repository
+path, as for Explain by a Coding agent; otherwise a one-line hint under
+the Issue says what is missing (for example "Add the repository path of
+docs-bot").
+
+Fix it is offered only when the cause can be in the Application's code:
+a model name the Application asks for that no Connection serves. For a
+failing Connection the Issue says instead that the cause is not in the
+Application's code and points to the aiport fix (binding the Application
+to a working Connection).
+
+- **Its own worktree and branch**: aiport makes a git worktree of the
+  repository on a new branch named for the Issue, `aiport/fix-<issue id>`
+  (`-2`, `-3`… if that branch exists), starting at your current commit
+  (`HEAD`). The worktree lives next to the configuration
+  (`aiport.yaml.worktrees/`), not inside your repository. Your working
+  copy, its uncommitted changes and your branch are never touched; your
+  uncommitted changes are not in the worktree either. The repository needs
+  at least one commit.
+- **What the agent may do**: aiport answers every permission request
+  itself. Reading, searching and editing, creating, deleting or moving
+  files inside the worktree are allowed (symbolic links are followed, so a
+  link pointing out of the worktree is outside). Never allowed, at any
+  level of the worktree and whatever their case: the agents' own
+  configuration (`.claude/`, `.codex/`, `.gemini/`, `.mcp.json`,
+  `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `GEMINI.md`) and git's
+  (`.git/`, git hooks in `.husky/` or `.githooks/`, `.gitattributes`,
+  `.gitmodules`), so a kept branch cannot change how your agents or git
+  behave. A command inside the worktree waits for
+  your answer (see Approving commands below). Anything outside the
+  worktree, including your own copy of the repository and a command that
+  says it runs elsewhere, is denied without asking. aiport only ever
+  answers "once" to the agent, so nothing is remembered in the agent's own
+  settings. The agent starts as for Explain: by absolute path, with the
+  minimal environment, only on your click.
+- **Approving commands**: when the agent asks to run a command (tests, a
+  build), the Issue shows the whole command exactly as the agent sent it
+  (as plain text: it is the agent's, not aiport's), never cut: a long one
+  scrolls. Characters that would not show as themselves (control
+  characters, invisible and direction-changing characters such as
+  `‮`, unusual spaces) are written as such escapes, so what you read
+  is what runs; a list of arguments is shown shell-quoted (`echo 'a b'`).
+  A command longer than 16 KiB is denied without asking, never shown in
+  part. There are three answers:
+  - **Allow once**: this one time.
+  - **Allow until the next edit**: this time and every time the run asks
+    for the exact same command again (the same list of arguments, or the
+    same string, in the same directory: `echo 'a b'` is not `echo a b`),
+    until the agent changes a file, whether it asked to or not: an edit
+    can change what the command does, so it asks again after one. Another
+    command, or the same one in a later run, asks again. aiport only sees
+    the edits the agent asks about or reports: a command you allowed that
+    changes files itself (a code generator, a formatter) does not end the
+    allowance, so choose Allow once for commands that write files.
+  - **Deny**: the agent is told no and goes on without it.
+
+  The agent runs an allowed command itself, in its own process, in the
+  worktree's directory; aiport only answers the permission, and what the
+  command changes in the worktree shows in the diff. While a command
+  waits, the Changes badge in the Gateway menu counts it. A command left
+  unanswered for 5 minutes stops the run: what it changed so far stays in
+  its worktree, and the Issue shows it for review with Keep the branch and
+  Discard, as after a finished run (state `stopped_waiting`).
+- **What the agent is told**: the Issue's evidence, the saved explanation
+  if there is one, the branch it works on, and that it must not commit,
+  merge or push.
+- **The run panel** shows its steps and the permissions allowed or denied,
+  with **Stop**. The run goes on if you leave the page.
+- **The diff**: when the agent ends its turn, the Issue shows **Review the
+  change** with the branch, the summary ("2 files changed, 3
+  insertions(+), 1 deletion(-)") and the whole diff. Nothing is committed
+  yet.
+  - **Keep the branch**: aiport commits the diff on the new branch, as one
+    commit authored by `aiport <aiport@localhost>`, and removes the
+    worktree. This is the only commit aiport ever makes, and only when
+    you click Keep: on the new branch, never on yours, with hooks off. The
+    branch stays in your repository for you to look at, merge or delete;
+    aiport never commits to your branch, merges or pushes. The Issue becomes resolving as an Application fix and resolves
+    when the Application's calls succeed again, that is after you merged
+    and deployed the change. "Copy fix for the Coding agent" names the
+    branch.
+  - **Discard**: aiport removes the worktree and deletes the branch; the
+    Issue stays open, and you can Fix it again.
+- **Time limit**: a run stops after 30 minutes (`agent_runs.fix_minutes`).
+  What it changed by then stays in its worktree and waits for your review
+  with Keep the branch and Discard, as after a finished run (state
+  `timed_out`).
+- **Nothing left behind**: Stop, a run that fails and a run that changed
+  nothing (also one that timed out or went unanswered before changing
+  anything) remove the worktree and the branch; the Issue stays open and
+  shows why the run ended.
+- **Cleanup at startup**: a Fix it run that was going when aiport stopped
+  (or crashed) is marked stopped the next time aiport starts, and its
+  worktree and branch are removed; so are the throwaway worktrees of
+  Explain runs that were going. Only directories inside
+  `aiport.yaml.worktrees/` and branches named `aiport/fix-…` are ever
+  removed.
+- **What is kept**: the branch name, the commit it started from, the diff
+  summary and the changed files are saved with the Issue (and, once kept,
+  the commit aiport made), also across restarts. The diff itself is read
+  from the worktree or the branch when you look at it. The run's log is
+  kept as for Explain.
+- **git, safely**: aiport finds git once, at startup, by absolute path
+  (`/usr/bin/git` when it is there, otherwise the first `git` in its
+  `PATH`; the startup output names it), and runs it with a minimal
+  environment, without your global or the system's git configuration and
+  attributes (`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`,
+  `GIT_ATTR_NOSYSTEM=1`, `core.attributesFile=/dev/null`), and with hooks,
+  fsmonitor, commit signing and external diff programs turned off. What
+  the repository itself configures in its own `.git/config` and
+  `.gitattributes` still applies (for example a clean or smudge filter it
+  defines): it is your own repository, so check those before using Fix it
+  on a repository you did not set up.
+- **Only its own worktrees**: aiport removes a worktree only when its
+  directory is directly inside `aiport.yaml.worktrees/`; any other path it
+  finds recorded is left alone and logged.
+
+```yaml
+agent_runs:
+  fix_minutes: 30
+```
+
+For scripts: `POST /api/v1/issues/{id}/fix` starts it (`202` with the run;
+`409` with `fix_unavailable` and the hint, `fix_not_for_cause` for a
+failing Connection, `fix_waiting` while an earlier
+diff waits for you, `agent_run_running`, `issue_not_open` or
+`worktree_failed`); `GET /api/v1/issues/{id}/fix` gives `branch_fix` and
+the `diff`; `POST /api/v1/issues/{id}/fix/keep` and `…/fix/discard`.
+`GET /api/v1/issues` says per Application in `fix_by` whether Fix it is
+available, with which agent and time limit and for which `causes` (with
+`cause_hint` for the others), or the hint; each Issue carries its
+`branch_fix`. Commands waiting for you: `GET /api/v1/approvals`
+(each with `id`, `run`, `application`, `issue`, `command`, `expires_at_ms`);
+answer with `POST /api/v1/approvals/{id}` and `{"answer": "allow_once"}`,
+`"allow_run"` (allow until the next edit) or `"deny"` (`404 approval_not_found` once answered or its run
+ended). `GET /api/v1/runs` gives each run's `waiting` count, and
+`GET /api/v1/issues/{id}/run` the Issue's waiting `approvals`. These are
+management routes, never open to an Application token; answering needs
+the dashboard's CSRF header.
+
 ### Automatic fixes
 
 Automatic fixes are off by default. Turn them on with the **Automatic
@@ -477,7 +856,8 @@ management token gets `403`):
 - The MCP tool `aiport_my_issues`, or `GET /v1/aiport/issues` (and
   `GET /v1/aiport/issues/{id}` for one), lists that Application's open and
   recent Issues: what is wrong, the evidence, the fix in the Application
-  (the same text as "Copy fix for the Coding agent") and whether the aiport
+  (the same text as "Copy fix for the Coding agent"), the root cause when
+  you had the Issue explained (`explanation`) and whether the aiport
   fix is proposed, applied, rejected or reverted. An Application never sees
   another Application's Issues (their ids answer `404`), and never your
   notes.
@@ -581,7 +961,7 @@ With adapting off, aiport detects no Suggestions and opens no Issues, Changes
 shows nothing new,
 Change requests and `/v1/aiport/issues` answer `409 adapting_off`, the
 Issue tools are not offered over MCP, capabilities carry no `open_issues`,
-no hints are sent, and `/_connect` and both briefs mark change requests,
+no hints are sent, Explain is unavailable, and `/_connect` and both briefs mark change requests,
 Issues, their MCP tools and `X-Aiport-Hint` as off with the reason. Forwarding is unchanged, and Revert
 still works on earlier Changes. See [configuration](configuration.md) for
 the detector thresholds and the check interval.

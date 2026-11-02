@@ -24,6 +24,7 @@ import (
 	"aiport/internal/store"
 	"aiport/internal/telemetry"
 	"aiport/internal/terminal"
+	"aiport/internal/worktree"
 )
 
 var version = "0.0.0-dev"
@@ -135,6 +136,12 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}
 	terminal.Frost(out, "aiport listening on http://"+c.Listen+also+" (experimental native forwarding)\n")
 	printStartupToken(out, c)
+	// Agent runs use git by this one absolute path, resolved once.
+	if git, err := worktree.Git(); err == nil {
+		fmt.Fprintf(out, "Agent runs use git at %s\n", git)
+	} else {
+		fmt.Fprintln(errOut, "aiport: git is not installed; Explain by a Coding agent and Fix it are unavailable")
+	}
 	err = srv.Serve(listener)
 	if errors.Is(err, http.ErrServerClosed) {
 		<-done
