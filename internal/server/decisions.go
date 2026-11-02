@@ -10,6 +10,7 @@ import (
 
 	"aiport/internal/config"
 	"aiport/internal/decide"
+	"aiport/internal/telemetry"
 )
 
 // openDecisions sets up the decision queue, keeping its items in the same
@@ -27,6 +28,8 @@ func (h *Handler) openDecisions() {
 	if err != nil {
 		q, _ = decide.New(h.live, history, nil)
 	}
+	h.failedAuth = telemetry.NewFailedAuth()
+	q.WatchFailedAuth(h.failedAuth)
 	h.decisions = q
 }
 

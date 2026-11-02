@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {History, Lightbulb, Undo2} from 'lucide-react';
+import {ArrowUpRight, History, Lightbulb, Undo2} from 'lucide-react';
 
 /** One applied Change to aiport's configuration, as GET /api/v1/changes lists it. */
 type Change = {
@@ -12,6 +12,10 @@ export type Decision = {
   id: string; source: string; kind: string; application: string; need: string; scope: string;
   evidence?: {count: number; from_ms: number; to_ms: number; window_minutes: number};
   proposal: {alias?: string; target?: string; model?: string};
+  /** Informational Suggestions have nothing to apply: only Dismiss. */
+  informational?: boolean;
+  /** The panel where the Owner acts on it ('applications': the Applications panel, where Pairing is). */
+  opens?: string;
 };
 
 async function send(method: string, path: string, body?: unknown) {
@@ -24,7 +28,7 @@ async function send(method: string, path: string, body?: unknown) {
 const when = (ms: number) => new Date(ms).toLocaleString();
 
 /** One pending Suggestion: the evidence, the Alias it proposes, and Approve / Dismiss. All text is shown as plain text. */
-function Pending({item, targets, onDecided}: {item: Decision; targets: string[]; onDecided: (message: string) => void}) {
+function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision; targets: string[]; onDecided: (message: string) => void; onOpenApplications?: () => void}) {
   const [target, setTarget] = useState(item.proposal.target || targets[0] || ''), [model, setModel] = useState(item.proposal.model || '');
   const [note, setNote] = useState(''), [busy, setBusy] = useState(''), [error, setError] = useState('');
   const decide = async (action: 'accept' | 'dismiss') => {
@@ -43,7 +47,8 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
   const ev = item.evidence;
   return <div className="decision">
     <div className="need">{item.need}</div>
-    {ev && <div className="evidence">Evidence: {ev.count} requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only request metadata was used.</div>}
+    {ev && item.kind === 'pair_application' && <div className="evidence">Evidence: {ev.count} refused requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only counts are kept, never the token.</div>}
+    {ev && item.kind !== 'pair_application' && <div className="evidence">Evidence: {ev.count} requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only request metadata was used.</div>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {item.kind === 'application_alias' && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
       <label>Alias for {item.application}<input value={item.proposal.alias || ''} readOnly/></label>
@@ -55,11 +60,15 @@ function Pending({item, targets, onDecided}: {item: Decision; targets: string[];
         <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
       </div>
     </form>}
+    {item.informational && <div className="actions">
+      {item.opens === 'applications' && onOpenApplications && <button type="button" className="primary" onClick={onOpenApplications}>Open Applications to pair it <ArrowUpRight size={14} aria-hidden/></button>}
+      <button type="button" className="secondary" disabled={!!busy} onClick={() => decide('dismiss')}>{busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}</button>
+    </div>}
   </div>;
 }
 
 /** Changes: Suggestions waiting for a decision (only when there are any), then every configuration edit made through aiport, newest first, with Revert. */
-export default function Changes({tick, onChange, targets = []}: {tick: number; onChange: () => void; targets?: string[]}) {
+export default function Changes({tick, onChange, targets = [], onOpenApplications}: {tick: number; onChange: () => void; targets?: string[]; onOpenApplications?: () => void}) {
   const [pending, setPending] = useState<Decision[]>([]);
   const [changes, setChanges] = useState<Change[] | null>(null), [revertable, setRevertable] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
@@ -84,7 +93,7 @@ export default function Changes({tick, onChange, targets = []}: {tick: number; o
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
   return <>{!!pending.length && <section className="panel" aria-label="Waiting for your decision">
     <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Waiting for your decision</h2><span>Suggestions from request history</span></div>
-    {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided}/>)}
+    {pending.map(item => <Pending key={item.id} item={item} targets={targets} onDecided={decided} onOpenApplications={onOpenApplications}/>)}
   </section>}<section className="panel">
     <div className="panel-heading"><h2>Applied changes</h2><span>Newest first · kept across restarts</span></div>
     {error && <div className="notice error" role="alert">{error}</div>}
