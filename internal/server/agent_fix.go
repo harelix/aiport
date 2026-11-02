@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"aiport/internal/agentrun"
+	"aiport/internal/agents"
 	"aiport/internal/decide"
 	"aiport/internal/explain"
 	"aiport/internal/worktree"
@@ -148,7 +149,7 @@ func (h *Handler) startFix(is decide.Issue) (*agentrun.Run, int, string, string)
 	run, err := h.runner().Start(context.Background(), agentrun.Spec{
 		Application: is.Application, Issue: is.ID, Mode: agentrun.Fix, Agent: a.ID, AgentName: a.Name,
 		Program: agentrun.Program{Path: a.ACP.Path, Args: a.ACP.Args}, Dir: t.Dir,
-		Prompt: fixPrompt(is, t.Branch), Env: env, Secret: token, ModelCalls: calls, Limit: h.fixTimeLimit(),
+		Prompt: fixPrompt(is, t.Branch), Env: env, Secret: token, ModelCalls: calls, Limit: h.fixTimeLimit(), Warnings: agents.SettingsWarnings(t.Dir),
 		Policy: fixRules(t.Dir, h.commandRule(is.Application, is.ID, allowed)), OnEdit: allowed.clear,
 		OnEnd: func(run *agentrun.Run) {
 			revoke()

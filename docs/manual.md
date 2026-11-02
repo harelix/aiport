@@ -594,6 +594,36 @@ Connection from Settings explains, as above.
   is kept in memory only while the Issue is open or resolving, never on
   disk: it is gone when the Issue closes or aiport restarts.
 
+**What aiport cannot see.** aiport only sees the permission requests an
+agent sends. An agent's own settings can let it read, edit or run commands
+without asking, and those actions never reach aiport: it cannot allow,
+deny or log them. aiport limits what such settings can do, in layers:
+
+- Every run works in a worktree made for it, never in your working copy
+  (Explain's is thrown away when the run ends; Fix it's is shown to you as
+  a diff), so an edit nobody was asked about lands only there.
+- It picks the most restrictive session mode the agent offers (see
+  Session modes above) and does not run a session that only acts without
+  asking.
+- Fix it never allows edits to agent or git configuration in the worktree,
+  and any edit the agent reports ends "Allow until the next edit".
+- Before a run, the run panel warns when the repository's own agent
+  settings allow without asking: `.claude/settings.json` or
+  `.claude/settings.local.json` with `permissions.allow` entries or a
+  `defaultMode` such as `bypassPermissions` or `acceptEdits`,
+  `.gemini/settings.json` with `autoAccept` or an approval mode such as
+  `yolo`, and `.codex/config.toml` with `approval_policy = "never"` or
+  `sandbox_mode = "danger-full-access"`. aiport only reads these files; it
+  never changes them.
+
+What it cannot check is your user-level agent settings (for example
+`~/.claude/settings.json`, `~/.gemini/settings.json` or
+`~/.codex/config.toml`) and any managed settings. A command that those
+allow runs without aiport asking you, with your own rights, in the run's
+worktree or, if the agent chooses, elsewhere. **Do not auto-allow commands
+or edits** in your user-level settings for repositories you use with
+aiport, and check the warnings in the run panel.
+
 **Where the run's model calls go.** In **Settings → Default coding agent →
 Model calls of Agent runs** you choose an Anthropic-protocol Connection
 (and, optionally, a model) for them; empty means the Anthropic protocol

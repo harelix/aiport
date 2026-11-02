@@ -223,3 +223,45 @@ func TestClosingTheTabDoesNotStopExplain(t *testing.T) {
 		t.Fatalf("the run log: %v", logged)
 	}
 }
+
+// aiport only sees the permission requests an agent sends. Agent settings
+// in the repository that allow tools without asking are named in the run
+// panel before the run starts.
+func TestARunWarnsOfAgentSettingsThatAllowWithoutAsking(t *testing.T) {
+	f := newAgentRunFixture(t, "claude", acpScript{Steps: []acpStep{{Say: "ok"}}}, "")
+	for path, text := range map[string]string{
+		".claude/settings.json": `{"permissions": {"allow": ["Bash(npm test:*)"], "defaultMode": "bypassPermissions"}}`,
+		".gemini/settings.json": `{"autoAccept": true}`,
+		".codex/config.toml":    "approval_policy = \"never\"\nsandbox_mode = \"danger-full-access\"\n",
+	} {
+		if err := os.MkdirAll(filepath.Join(f.repo, filepath.Dir(path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(f.repo, path), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitIn(t, f.repo, "add", "-A")
+	gitIn(t, f.repo, "commit", "-q", "-m", "agent settings")
+	_, evs := f.explainEvents(t, f.id)
+	var warnings []string
+	for _, e := range evs {
+		if e["type"] == "run" {
+			warnings = strs(m(e["run"])["warnings"])
+		}
+	}
+	all := strings.Join(warnings, "\n")
+	for _, s := range []string{".claude/settings.json", "bypassPermissions", "Bash(npm test:*)", ".gemini/settings.json", ".codex/config.toml", "never"} {
+		if !strings.Contains(all, s) {
+			t.Fatalf("the warnings do not name %q:\n%s", s, all)
+		}
+	}
+
+	quiet := newAgentRunFixture(t, "claude", acpScript{Steps: []acpStep{{Say: "ok"}}}, "")
+	_, evs = quiet.explainEvents(t, quiet.id)
+	for _, e := range evs {
+		if e["type"] == "run" && m(e["run"])["warnings"] != nil {
+			t.Fatalf("warnings without settings: %v", e["run"])
+		}
+	}
+}
