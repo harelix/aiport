@@ -129,14 +129,13 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, app, onS
       <h3 className="waiting-heading"><span className="dot amber" aria-hidden/> {pairings.length === 1 ? '1 pairing waiting for approval' : pairings.length + ' pairings waiting for approval'}</h3>
       <PairingList pairings={pairings} targets={targets} onDone={onDone}/>
     </div>}
-    {showApproved && origins.length > 0 && <div className="table-scroll"><table aria-label="Approved applications">
-      <thead><tr><th>Application</th><th>Client id</th><th>Connection</th><th>May request changes</th><th>Last call</th><th>Onboarding</th></tr></thead>
+    {showApproved && origins.length > 0 && <div className="apps-table"><table aria-label="Approved applications">
+      <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Onboarding</th></tr></thead>
       <tbody>{origins.map(o => {
         const done = progress(o, {handed: true, waiting: false, seen: calls.at[o.id], adapting, mcp: mcpCopied(o.id)}).filter(Boolean).length;
         const selected = app === o.id;
         return <tr key={o.id} className={'app-row' + (selected ? ' selected' : '')} onClick={e => { if (!(e.target as HTMLElement).closest('input,button,a,label')) onSelect(o.id); }}>
-          <td><button type="button" className="row-select" aria-pressed={selected} onClick={() => onSelect(o.id)} title="Follow this application in the onboarding wizard">{o.name}</button></td>
-          <td><code>{o.id}</code></td>
+          <td><button type="button" className="row-select" aria-pressed={selected} onClick={() => onSelect(o.id)} title="Follow this application in the onboarding wizard">{o.name}</button><small><code>{o.id}</code></small></td>
           <td>{o.target ? <code>{o.target}</code> : <span className="muted">Protocol default</span>}</td>
           <td><MayRequestToggle o={o} onDone={onDone}/></td>
           <td title={typeof calls.at[o.id] === 'number' ? new Date(calls.at[o.id] as number).toLocaleString() : undefined}>{lastCall(o.id)}</td>
@@ -144,7 +143,7 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, app, onS
         </tr>;
       })}</tbody>
     </table></div>}
-    {showRejected && rejected.length > 0 && <div className="table-scroll rejected-table"><table aria-label="Rejected applications">
+    {showRejected && rejected.length > 0 && <div className="apps-table rejected-table"><table aria-label="Rejected applications">
       <thead><tr><th>Rejected application</th><th>Code</th><th>Status</th><th>Rejected</th><th><span className="sr-only">Actions</span></th></tr></thead>
       <tbody>{rejected.map(x => <RejectedRow key={x.id} x={x} onDone={onForgot}/>)}</tbody>
     </table></div>}
