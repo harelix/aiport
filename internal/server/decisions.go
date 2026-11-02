@@ -51,7 +51,7 @@ func (h *Handler) StartAdapting(stop <-chan struct{}) {
 
 // decisionsRoute serves the items waiting for the Owner in Changes:
 //
-//	GET  /api/v1/decisions       pending Suggestions, newest first
+//	GET  /api/v1/decisions       pending Suggestions and Change requests, newest first, and demand for unsupported kinds
 //	POST /api/v1/decisions/{id}  {action: accept|reject|dismiss, note, scope, target, model}
 //
 // The caller has already verified management access.
@@ -61,11 +61,11 @@ func (h *Handler) decisionsRoute(w http.ResponseWriter, r *http.Request, fail fu
 			fail(405, "method_not_allowed", "Use GET")
 			return true
 		}
-		items := []decide.Item{}
+		items, demand := []decide.Item{}, []decide.Demand{}
 		if h.decisions != nil {
-			items = h.decisions.List(decide.Filter{Status: decide.Pending})
+			items, demand = h.decisions.List(decide.Filter{Status: decide.Pending}), h.decisions.Demand()
 		}
-		writeJSON(w, 200, map[string]any{"adapting": h.decisions != nil && h.decisions.On(), "items": items})
+		writeJSON(w, 200, map[string]any{"adapting": h.decisions != nil && h.decisions.On(), "items": items, "demand": demand})
 		return true
 	}
 	id, ok := strings.CutPrefix(r.URL.Path, "/api/v1/decisions/")
