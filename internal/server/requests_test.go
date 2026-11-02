@@ -231,8 +231,8 @@ func TestTheOwnerCanGrantAWiderScope(t *testing.T) {
 	if len(c.Aliases) != 1 || c.Aliases[0] != (config.Alias{Target: "local", Alias: "fast", Model: "llama3"}) {
 		t.Fatalf("no shared Alias in the configuration: %+v", c.Aliases)
 	}
-	if len(appAliases(h, "helper")) != 0 {
-		t.Fatalf("a shared grant also added an Alias for the Application: %v", appAliases(h, "helper"))
+	if len(appAliases(t, h, "helper")) != 0 {
+		t.Fatalf("a shared grant also added an Alias for the Application: %v", appAliases(t, h, "helper"))
 	}
 	a := answerOf(t, h, reqHelper, id)
 	if a["status"] != "accepted" || a["scope"] != "application" || a["granted_scope"] != "every_application" || a["note"] != "Useful for everyone, so it is shared." || a["change_id"] != out["change_id"] {

@@ -113,8 +113,8 @@ func TestToggleMayRequestChangesPerApplication(t *testing.T) {
 	if changeID == "" {
 		t.Fatalf("toggle did not report its Change: %v", out)
 	}
-	if _, _, err := h.live.Revert(changeID); err != nil {
-		t.Fatalf("revert: %v", err)
+	if w, _ := call(h, "POST", "/api/v1/changes/"+changeID+"/revert", "", management, true); w.Code != 200 {
+		t.Fatalf("revert: %d %s", w.Code, w.Body)
 	}
 	if v := applications(t, h, management)["existing"]["may_request_changes"]; v != false {
 		t.Fatalf("after revert: %v", v)

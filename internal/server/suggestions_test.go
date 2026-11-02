@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -132,13 +133,25 @@ func decideOn(t *testing.T, h *Handler, management, id, body string) (int, map[s
 	return w.Code, out
 }
 
-func appAliases(h *Handler, app string) []config.OriginAlias {
-	for _, o := range h.snapshot().Origins {
-		if o.ID == app {
-			return o.Aliases
-		}
+// liveConfig is the running configuration as the dashboard reads it.
+func liveConfig(t *testing.T, h *Handler, management string) config.Config {
+	t.Helper()
+	w, _ := call(h, "GET", "/api/v1/config", "", management, false)
+	var out struct {
+		Config config.Config `json:"config"`
 	}
-	return nil
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+		t.Fatalf("read the running configuration: %d %s", w.Code, w.Body)
+	}
+	return out.Config
+}
+
+// appAliases are Application app's own Aliases in the running configuration.
+// Every test server here uses the same management token.
+func appAliases(t *testing.T, h *Handler, app string) []config.OriginAlias {
+	t.Helper()
+	o, _ := liveConfig(t, h, strings.Repeat("m", 40)).Application(app)
+	return o.Aliases
 }
 
 // Approving a Suggestion creates the Alias for that Application only, live at
@@ -162,10 +175,10 @@ func TestApproveSuggestionCreatesRevertableAlias(t *testing.T) {
 	if code != 200 || out["change_id"] == "" {
 		t.Fatalf("accept: %d %v", code, out)
 	}
-	if got := appAliases(h, "nightly-report"); len(got) != 1 || got[0] != (config.OriginAlias{Alias: "fast", Target: "local", Model: "llama3"}) {
+	if got := appAliases(t, h, "nightly-report"); len(got) != 1 || got[0] != (config.OriginAlias{Alias: "fast", Target: "local", Model: "llama3"}) {
 		t.Fatalf("alias not live for nightly-report: %v", got)
 	}
-	if got := appAliases(h, "other"); len(got) != 0 || len(h.snapshot().Aliases) != 0 {
+	if got := appAliases(t, h, "other"); len(got) != 0 || len(liveConfig(t, h, management).Aliases) != 0 {
 		t.Fatal("the alias reached another Application or every Application")
 	}
 	if _, list := pendingDecisions(t, h, management); len(list) != 0 {
@@ -186,7 +199,7 @@ func TestApproveSuggestionCreatesRevertableAlias(t *testing.T) {
 	if w, _ := call(h, "POST", "/api/v1/changes/"+changes[0]["id"].(string)+"/revert", "", management, true); w.Code != 200 {
 		t.Fatalf("revert: %d %s", w.Code, w.Body)
 	}
-	if got, _ := os.ReadFile(path); string(got) != string(before) || len(appAliases(h, "nightly-report")) != 0 {
+	if got, _ := os.ReadFile(path); string(got) != string(before) || len(appAliases(t, h, "nightly-report")) != 0 {
 		t.Fatalf("revert did not remove the alias:\n%s", got)
 	}
 }
