@@ -29,6 +29,19 @@ type Agent struct {
 	// Install is the command the Owner runs to install what is missing
 	// (the adapter, or the agent itself); empty when Ready.
 	Install string `json:"install,omitempty"`
+	// Calls says how the agent's model calls can be pointed at aiport by
+	// environment variables alone; nil when they cannot, and OwnLogin says
+	// why in a sentence.
+	Calls    *Calls `json:"-"`
+	OwnLogin string `json:"-"`
+}
+
+// Calls is how an agent's model calls go through aiport: the protocol it
+// speaks and the environment variables that point it at aiport's base URL
+// with the run's credential (and model, when one is chosen).
+type Calls struct {
+	Protocol string
+	Env      func(base, token, model string) []string
 }
 
 // Entry is a program to start: an absolute path and fixed arguments.
@@ -37,15 +50,27 @@ type Entry struct {
 	Args []string `json:"args,omitempty"`
 }
 
-// known describes how each agent is found and spoken to.
+// known describes how each agent is found and spoken to, and where its
+// model calls can go.
 var known = []struct {
 	id, name, program, acp string
 	args                   []string
 	adapter, install       string
+	calls                  *Calls
+	ownLogin               string
 }{
-	{id: "claude", name: "Claude Code", program: "claude", acp: "claude-agent-acp", adapter: "@agentclientprotocol/claude-agent-acp", install: "npm install -g @agentclientprotocol/claude-agent-acp"},
-	{id: "codex", name: "Codex", program: "codex", acp: "codex-acp", adapter: "@agentclientprotocol/codex-acp", install: "npm install -g @agentclientprotocol/codex-acp"},
-	{id: "gemini", name: "Gemini CLI", program: "gemini", acp: "gemini", args: []string{"--acp"}, install: "npm install -g @google/gemini-cli"},
+	{id: "claude", name: "Claude Code", program: "claude", acp: "claude-agent-acp", adapter: "@agentclientprotocol/claude-agent-acp", install: "npm install -g @agentclientprotocol/claude-agent-acp",
+		calls: &Calls{Protocol: "anthropic", Env: func(base, token, model string) []string {
+			env := []string{"ANTHROPIC_BASE_URL=" + base, "ANTHROPIC_AUTH_TOKEN=" + token}
+			if model != "" {
+				env = append(env, "ANTHROPIC_MODEL="+model)
+			}
+			return env
+		}}},
+	{id: "codex", name: "Codex", program: "codex", acp: "codex-acp", adapter: "@agentclientprotocol/codex-acp", install: "npm install -g @agentclientprotocol/codex-acp",
+		ownLogin: "Codex uses its own login, not aiport: pointing it at aiport would mean editing its configuration file, which aiport never does."},
+	{id: "gemini", name: "Gemini CLI", program: "gemini", acp: "gemini", args: []string{"--acp"}, install: "npm install -g @google/gemini-cli",
+		ownLogin: "Gemini CLI uses its own login, not aiport: aiport does not speak the Gemini API yet."},
 }
 
 // Name is the display name of a Coding agent id ("" for an unknown id).
@@ -99,7 +124,7 @@ func DefaultDirs() []string {
 func Detect(dirs []string) []Agent {
 	out := make([]Agent, 0, len(known))
 	for _, k := range known {
-		a := Agent{ID: k.id, Name: k.name, Adapter: k.adapter, Program: find(dirs, k.program)}
+		a := Agent{ID: k.id, Name: k.name, Adapter: k.adapter, Program: find(dirs, k.program), Calls: k.calls, OwnLogin: k.ownLogin}
 		if p := find(dirs, k.acp); p != "" {
 			a.ACP = &Entry{Path: p, Args: append([]string(nil), k.args...)}
 		}

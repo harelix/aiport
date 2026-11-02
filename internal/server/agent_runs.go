@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -56,23 +57,28 @@ func (h *Handler) codingAgentOf(app string) (a agents.Agent, repo string, ok boo
 	return a, real, true
 }
 
-// modelCalls says where the model calls of a run of agent go. Claude Code is
-// pointed at aiport by environment variables, when a Connection of its
-// protocol is there for the built-in Application; Codex and Gemini CLI use
-// their own login.
-func (h *Handler) modelCalls(agent string) agentrun.ModelCalls {
-	switch agent {
-	case "claude":
-		if conn, ok := h.gateway.Reachable(config.BuiltinApplication, "anthropic"); ok {
-			return agentrun.ModelCalls{Through: true, Connection: conn, Model: h.snapshot().AgentRuns.Model}
+// modelCalls says where the model calls of a run of agent a go: through
+// aiport, under the built-in Application, to the Connection the Owner chose
+// for Agent runs (agent_runs.connection), when a can be pointed at aiport
+// (agents.Calls) and that Connection is chosen and reachable; otherwise the
+// agent's own login, with the reason. Never a protocol default the Owner
+// did not choose for Agent runs.
+func (h *Handler) modelCalls(a agents.Agent) agentrun.ModelCalls {
+	if a.Calls == nil {
+		note := a.OwnLogin
+		if note == "" {
+			note = a.Name + " uses its own login."
 		}
-		return agentrun.ModelCalls{Note: "Claude Code uses its own login: no Anthropic-protocol Connection is chosen for Agent runs (Settings, Coding agents)."}
-	case "codex":
-		return agentrun.ModelCalls{Note: "Codex uses its own login, not aiport: pointing it at aiport would mean editing its configuration file, which aiport never does."}
-	case "gemini":
-		return agentrun.ModelCalls{Note: "Gemini CLI uses its own login, not aiport: aiport does not speak the Gemini API yet."}
+		return agentrun.ModelCalls{Note: note}
 	}
-	return agentrun.ModelCalls{Note: "The agent uses its own login."}
+	ar := h.snapshot().AgentRuns
+	if ar.Connection == "" {
+		return agentrun.ModelCalls{Note: a.Name + " uses its own login: no Connection is chosen for the model calls of Agent runs (Settings, Default coding agent, Model calls of Agent runs)."}
+	}
+	if conn, ok := h.gateway.Reachable(config.BuiltinApplication, a.Calls.Protocol); !ok || conn != ar.Connection {
+		return agentrun.ModelCalls{Note: a.Name + " uses its own login: the Connection " + ar.Connection + " chosen for Agent runs is not reachable."}
+	}
+	return agentrun.ModelCalls{Through: true, Connection: ar.Connection, Model: ar.Model}
 }
 
 // runCredential issues the run's own aiport credential: a random token that
@@ -106,19 +112,29 @@ func (h *Handler) isRunCredential(digest [32]byte) bool {
 	return h.runTokens[digest]
 }
 
-// runEnv is the environment a run of agent adds to the minimal one, so its
-// model calls go through aiport (Claude Code), and the run's credential
-// ("" when none).
-func (h *Handler) runEnv(agent string, calls agentrun.ModelCalls) (env []string, token string, revoke func()) {
-	if !calls.Through || agent != "claude" {
+// runEnv is the environment a run of agent a adds to the minimal one, so
+// its model calls go through aiport (agents.Calls), and the run's
+// credential ("" when none).
+func (h *Handler) runEnv(a agents.Agent, calls agentrun.ModelCalls) (env []string, token string, revoke func()) {
+	if !calls.Through || a.Calls == nil {
 		return nil, "", func() {}
 	}
 	token, revoke = h.runCredential()
-	env = []string{"ANTHROPIC_BASE_URL=http://" + h.snapshot().Listen, "ANTHROPIC_AUTH_TOKEN=" + token}
-	if calls.Model != "" {
-		env = append(env, "ANTHROPIC_MODEL="+calls.Model)
+	return a.Calls.Env(baseURL(h.snapshot().Listen), token, calls.Model), token, revoke
+}
+
+// baseURL is the URL an agent on this machine reaches aiport at, for the
+// listen address listen: its host, or 127.0.0.1 when listen names no host
+// or every address (":8787", "0.0.0.0:8787", "[::]:8787"), with its port.
+func baseURL(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return "http://" + listen
 	}
-	return env, token, revoke
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 // explainPrompt is what an agent explaining is is told: aiport's evidence
@@ -153,7 +169,7 @@ func (h *Handler) agentExplainer(app string) *agentWriter {
 	if h.explainLimit > 0 {
 		limit = h.explainLimit
 	}
-	return &agentWriter{h: h, app: app, agent: a, repo: repo, calls: h.modelCalls(a.ID), limit: limit}
+	return &agentWriter{h: h, app: app, agent: a, repo: repo, calls: h.modelCalls(a), limit: limit}
 }
 
 func (a *agentWriter) By() decide.Explanation {
@@ -182,7 +198,7 @@ func (a *agentWriter) start(is decide.Issue) (*explainRun, error) {
 	if err != nil {
 		return nil, err
 	}
-	env, token, revoke := h.runEnv(a.agent.ID, a.calls)
+	env, token, revoke := h.runEnv(a.agent, a.calls)
 	er := &explainRun{}
 	run, err := h.runner().Start(context.Background(), agentrun.Spec{
 		Application: a.app, Issue: is.ID, Mode: agentrun.Explain, Agent: a.agent.ID, AgentName: a.agent.Name,

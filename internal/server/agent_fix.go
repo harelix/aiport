@@ -70,7 +70,7 @@ func (h *Handler) fixBy() map[string]any {
 			continue
 		}
 		a, _, _ := h.codingAgentOf(o.ID)
-		out[o.ID] = map[string]any{"available": true, "agent": a.ID, "agent_name": a.Name, "model_calls": h.modelCalls(a.ID), "limit_ms": h.fixTimeLimit().Milliseconds()}
+		out[o.ID] = map[string]any{"available": true, "agent": a.ID, "agent_name": a.Name, "model_calls": h.modelCalls(a), "limit_ms": h.fixTimeLimit().Milliseconds()}
 	}
 	return out
 }
@@ -142,8 +142,8 @@ func (h *Handler) startFix(is decide.Issue) (*agentrun.Run, int, string, string)
 	if err != nil {
 		return nil, 409, "worktree_failed", err.Error()
 	}
-	calls := h.modelCalls(a.ID)
-	env, token, revoke := h.runEnv(a.ID, calls)
+	calls := h.modelCalls(a)
+	env, token, revoke := h.runEnv(a, calls)
 	b := decide.BranchFix{Branch: t.Branch, Base: t.Base, Worktree: t.Dir, Repository: t.Repo, Agent: a.ID, State: decide.BranchRunning, StartedAt: h.clock().UnixMilli()}
 	allowed := &allowances{}
 	run, err := h.runner().Start(context.Background(), agentrun.Spec{

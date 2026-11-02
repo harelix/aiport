@@ -83,10 +83,14 @@ func TestClaudeCodeRunsCallModelsThroughAiport(t *testing.T) {
 	}
 }
 
-// Without an Anthropic-protocol Connection for Agent runs, Claude Code uses
-// its own login and the run says so.
+// Without a Connection chosen for Agent runs (agent_runs.connection),
+// Claude Code uses its own login and the run says so, even when there is an
+// Anthropic protocol default: aiport never falls back to it silently.
 func TestClaudeCodeWithoutAConnectionUsesItsOwnLogin(t *testing.T) {
 	f := newAgentRunFixture(t, "claude", acpScript{Steps: []acpStep{{Say: "ok"}}}, "")
+	if w, _ := call(f.h, "PUT", "/api/v1/defaults", `{"openai_target":"hosted","anthropic_target":"claude-writer"}`, issuesManagement, true); w.Code != 200 {
+		t.Fatalf("defaults: %d %s", w.Code, w.Body)
+	}
 	code, evs := f.explainEvents(t, f.id)
 	if code != 200 || evs[len(evs)-1]["type"] != "done" {
 		t.Fatalf("explain: %d %v", code, evs)

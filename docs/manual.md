@@ -626,18 +626,23 @@ aiport, and check the warnings in the run panel.
 
 **Where the run's model calls go.** In **Settings → Default coding agent →
 Model calls of Agent runs** you choose an Anthropic-protocol Connection
-(and, optionally, a model) for them; empty means the Anthropic protocol
-default.
+(and, optionally, a model) for them. Until you choose one, every run uses
+the agent's own login and the run panel says so: aiport never sends a
+run's calls to the Anthropic protocol default you did not choose for Agent
+runs.
 
 - **Claude Code** is pointed at aiport by its environment only:
-  `ANTHROPIC_BASE_URL` (aiport's listen address), `ANTHROPIC_AUTH_TOKEN`
+  `ANTHROPIC_BASE_URL` (aiport's address on this machine: the listen
+  port on `127.0.0.1`, or the listen address when it names a loopback
+  address), `ANTHROPIC_AUTH_TOKEN`
   (a credential made for this run) and `ANTHROPIC_MODEL` when you chose a
   model. That credential authenticates only model calls, as the built-in
   Application `aiport`; it cannot reach the dashboard, the MCP endpoint or
   any Application's data, is never written down or logged, and stops
   working when the run ends. The calls show in Activity under `aiport`
-  with their Connection. Without an Anthropic-protocol Connection, Claude
-  Code uses its own login and the run panel says so.
+  with their Connection. Without a Connection chosen for Agent runs (or
+  when the chosen one is not reachable), Claude Code uses its own login
+  and the run panel says so.
 - **Codex** uses its own login: pointing it at aiport would mean editing
   its configuration file, which aiport never does. The run panel says so.
 - **Gemini CLI** uses its own login too: aiport does not speak the Gemini
