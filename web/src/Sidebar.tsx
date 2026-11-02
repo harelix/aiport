@@ -45,9 +45,10 @@ export function ThemeSwitch({appearance, onAppearance}: {appearance: Appearance;
   </div>;
 }
 
-const trafficPages: [string, LucideIcon][] = [['Overview', LayoutDashboard], ['Activity', Activity]];
-// Changes stays last and quiet: a badge appears only when something needs a decision.
-const gatewayPages: [string, LucideIcon][] = [['Providers', Boxes], ['Routing', Route], ['Integrate', Plug], ['Compression', Shrink], ['Agents', Bot], ['Changes', History]];
+// Ordered by how often the Owner needs them: watch and decide first, then set up.
+// Changes sits with the daily pages; it stays quiet, with a badge only when something needs a decision.
+const trafficPages: [string, LucideIcon][] = [['Overview', LayoutDashboard], ['Activity', Activity], ['Changes', History]];
+const gatewayPages: [string, LucideIcon][] = [['Integrate', Plug], ['Providers', Boxes], ['Routing', Route], ['Agents', Bot], ['Compression', Shrink]];
 const utilityPages: [string, LucideIcon][] = [['Tasks', ListTodo], ['Settings', Settings]];
 
 type Props = {
@@ -79,8 +80,8 @@ export default function Sidebar({logo, page, onPage, listen, authDisabled, onSig
       </button>
     </div>
     <nav aria-label="Main navigation">
-      <span className="nav-group label">Traffic</span>{trafficPages.map(navButton)}
-      <span className="nav-group label">Gateway</span>{gatewayPages.map(navButton)}
+      <span className="nav-group label">Monitor</span>{trafficPages.map(navButton)}
+      <span className="nav-group label">Configure</span>{gatewayPages.map(navButton)}
     </nav>
     <div className="sidebar-bottom">
       <nav aria-label="Workspace">{utilityPages.map(navButton)}</nav>

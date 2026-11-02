@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import {HelpLink} from './help';
 import {AppWindow} from 'lucide-react';
 
 /* Applications on this machine that use aiport for LLM calls: approve the
@@ -106,7 +107,7 @@ export function ApplicationsPanel({origins, targets, onChange}: {origins: Origin
   const [pairings, refresh] = usePairings();
   const done = () => { refresh(); onChange(); };
   return <section className="panel grad-bottom" aria-labelledby="apps-heading">
-    <div className="panel-heading"><h2 id="apps-heading"><AppWindow size={16} aria-hidden/> Applications</h2><span>{pairings.length ? pairings.length + ' waiting for approval' : origins.length + ' connected'}</span></div>
+    <div className="panel-heading"><h2 id="apps-heading"><AppWindow size={16} aria-hidden/> Applications<HelpLink section="Applications and pairing"/></h2><span>{pairings.length ? pairings.length + ' waiting for approval' : origins.length + ' connected'}</span></div>
     <PairingList pairings={pairings} targets={targets} onDone={done}/>
     {origins.length > 0
       ? <div className="table-scroll"><table>
