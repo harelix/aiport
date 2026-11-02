@@ -91,8 +91,8 @@ func TestADatabaseFromBeforeTheMigrationsWereFoldedStillOpens(t *testing.T) {
 }
 
 func TestANewDatabaseHasEveryTable(t *testing.T) {
-	if SchemaVersion() != 6 {
-		t.Fatalf("want 6 migrations, have %d", SchemaVersion())
+	if SchemaVersion() != 7 {
+		t.Fatalf("want 7 migrations, have %d", SchemaVersion())
 	}
 	db, err := Open(filepath.Join(t.TempDir(), "aiport.yaml.db"))
 	if err != nil {
@@ -102,6 +102,27 @@ func TestANewDatabaseHasEveryTable(t *testing.T) {
 	count(t, db, "changes")
 	count(t, db, "decisions")
 	count(t, db, "rejected_pairings")
+	count(t, db, "issues")
+}
+
+// A database a released build left at version 6 keeps its rows and gains
+// migration 7, the Issues table.
+func TestAVersion6DatabaseGainsIssues(t *testing.T) {
+	path := atVersion(t, 6,
+		`INSERT INTO decisions VALUES ('d', 'suggestion', 'application_alias', 'docs-bot', 'llama3:8b', 'pending', 1, 1, '{}')`,
+		`INSERT INTO rejected_pairings (id, code, name, description, rejected_at_ms) VALUES ('r', 'ABC-DEF', 'n', '', 1)`)
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if count(t, db, "decisions") != 1 || count(t, db, "rejected_pairings") != 1 || count(t, db, "issues") != 0 {
+		t.Fatal("rows lost or the issues table missing")
+	}
+	var v int
+	if err := db.QueryRow(`SELECT version FROM schema_version`).Scan(&v); err != nil || v != 7 {
+		t.Fatalf("schema version %d (%v)", v, err)
+	}
 }
 
 // atVersion writes a database the way this or an earlier release left it:

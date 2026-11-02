@@ -16,7 +16,7 @@ import (
 	"aiport/internal/telemetry"
 )
 
-const suggestionsYAML = "version: 1\nauth: {token_env: SUGG_MGMT_TOKEN}\ntargets:\n  - id: local\n    provider: ollama\ndefaults: {openai_target: local}\norigins:\n  - id: nightly-report\n    name: Nightly Report\n    token_env: SUGG_NIGHTLY_TOKEN\n  - id: other\n    name: Other App\n    token_env: SUGG_OTHER_TOKEN\n"
+const suggestionsYAML = "version: 1\nauth: {token_env: SUGG_MGMT_TOKEN}\ntargets:\n  - id: local\n    provider: ollama\n    base_url: http://127.0.0.1:9/v1\ndefaults: {openai_target: local}\norigins:\n  - id: nightly-report\n    name: Nightly Report\n    token_env: SUGG_NIGHTLY_TOKEN\n  - id: other\n    name: Other App\n    token_env: SUGG_OTHER_TOKEN\n"
 
 var suggestionsNow = time.UnixMilli(1_800_000_000_000)
 
@@ -89,7 +89,7 @@ func seededHistory() []telemetry.Event {
 	seed = append(seed, upstream404s("other", "fast", 1, 20*time.Minute)...)          // another Application, too few
 	seed = append(seed, upstream404s("nightly-report", "old", 9, 5*time.Hour)...)     // outside the window
 	ok := "fast"
-	seed = append(seed, telemetry.Event{ID: "00000000-0000-4000-9000-000000000001", StartedAt: suggestionsNow.Add(-time.Minute).UnixMilli(), Origin: "nightly-report", Target: "local", Route: "/v1/chat/completions", Status: 200, Outcome: "success", RequestedModel: &ok})
+	seed = append(seed, telemetry.Event{ID: "00000000-0000-4000-9000-000000000001", StartedAt: suggestionsNow.Add(-55 * time.Minute).UnixMilli(), Origin: "nightly-report", Target: "local", Route: "/v1/chat/completions", Status: 200, Outcome: "success", RequestedModel: &ok})
 	return seed
 }
 
@@ -116,7 +116,9 @@ func TestUnknownModelSuggestion(t *testing.T) {
 	if evidence["count"] != float64(6) || evidence["from_ms"] != float64(suggestionsNow.Add(-50*time.Minute).UnixMilli()) || evidence["to_ms"] != float64(suggestionsNow.Add(-45*time.Minute).UnixMilli()) || evidence["window_minutes"] != float64(60) {
 		t.Fatalf("evidence: %v", evidence)
 	}
-	if proposal["alias"] != "fast" || proposal["target"] != "local" {
+	// local's model list cannot be read, so which Connection serves "fast"
+	// is unknown: the Owner chooses.
+	if proposal["alias"] != "fast" || proposal["target"] != nil || proposal["model"] != "fast" {
 		t.Fatalf("proposal: %v", proposal)
 	}
 	if !strings.Contains(s["need"].(string), "fast") || !strings.Contains(s["need"].(string), "6") {
@@ -168,10 +170,10 @@ func TestApproveSuggestionCreatesRevertableAlias(t *testing.T) {
 	if w, _ := call(h, "POST", "/api/v1/decisions/"+id, `{"action":"accept","model":"llama3"}`, management, false); w.Code != 403 {
 		t.Fatal("decision without CSRF header")
 	}
-	if code, out := decideOn(t, h, management, id, `{"action":"accept"}`); code != 400 || !strings.Contains(fmt.Sprint(out["error"]), "model") {
-		t.Fatalf("accept without a model: %d %v", code, out)
+	if code, out := decideOn(t, h, management, id, `{"action":"accept"}`); code != 400 || !strings.Contains(fmt.Sprint(out["error"]), "Connection") {
+		t.Fatalf("accept without a Connection: %d %v", code, out)
 	}
-	code, out := decideOn(t, h, management, id, `{"action":"accept","model":"llama3","note":"fast is llama3 here"}`)
+	code, out := decideOn(t, h, management, id, `{"action":"accept","target":"local","model":"llama3","note":"fast is llama3 here"}`)
 	if code != 200 || out["change_id"] == "" {
 		t.Fatalf("accept: %d %v", code, out)
 	}
@@ -332,7 +334,7 @@ func TestForwardingUnchangedByAdapting(t *testing.T) {
 	defer upstream.Close()
 	forward := func(extra string) (*Handler, string, []string) {
 		path := filepath.Join(t.TempDir(), "aiport.yaml")
-		yaml := strings.Replace(suggestionsYAML+extra, "provider: ollama\n", "provider: ollama\n    protocol: openai\n    base_url: "+upstream.URL+"/v1\n", 1)
+		yaml := strings.Replace(suggestionsYAML+extra, "base_url: http://127.0.0.1:9/v1\n", "protocol: openai\n    base_url: "+upstream.URL+"/v1\n", 1)
 		if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
 			t.Fatal(err)
 		}

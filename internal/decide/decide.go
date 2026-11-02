@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +46,9 @@ const (
 	Accepted  Status = "accepted"
 	Rejected  Status = "rejected"
 	Dismissed Status = "dismissed"
+	// Withdrawn: aiport took a Suggestion back before the Owner decided,
+	// because the Issue it was the fix for resolved itself.
+	Withdrawn Status = "withdrawn"
 )
 
 // Action is what the Owner does with a pending item.
@@ -95,6 +97,13 @@ type Evidence struct {
 	FromMS        int64 `json:"from_ms"`
 	ToMS          int64 `json:"to_ms"`
 	WindowMinutes int   `json:"window_minutes"`
+	// For an Issue: the HTTP status and the provider's short error type
+	// (a fixed identifier, never its message), up to five example request
+	// ids (newest first) and the Connections the calls went to.
+	Status      int      `json:"status,omitempty"`
+	Error       string   `json:"error,omitempty"`
+	Examples    []string `json:"examples,omitempty"`
+	Connections []string `json:"connections,omitempty"`
 }
 
 // Proposal is the Change an item would make. For an Alias: requests for
@@ -152,6 +161,8 @@ type Item struct {
 	Informational bool `json:"informational,omitempty"`
 	// Opens names the dashboard panel the Owner acts in (OpensApplications).
 	Opens string `json:"opens,omitempty"`
+	// Issue is the Issue this Suggestion is the aiport fix for.
+	Issue string `json:"issue,omitempty"`
 }
 
 // Decision is what the Owner sends: an action, a note for the requester, the
@@ -217,6 +228,8 @@ type Queue struct {
 	items   []Item
 	filed   map[string][]int64 // Application → when it filed Change requests, for the rate limit
 	failed  FailedAuth
+	issues  []Issue
+	finder  ModelFinder
 }
 
 // WatchFailedAuth lets detection read failed-authentication counts from f, so
@@ -238,6 +251,13 @@ func New(live *config.Live, history History, store Store) (*Queue, error) {
 			return nil, err
 		}
 		q.items = kept
+		if s, ok := store.(IssueStore); ok {
+			issues, err := s.LoadIssues()
+			if err != nil {
+				return nil, err
+			}
+			q.issues = issues
+		}
 	}
 	return q, nil
 }
@@ -264,7 +284,7 @@ func (q *Queue) submit(it Item, at int64) Item {
 	}
 	if i := q.latest(it, status); i >= 0 {
 		cur := &q.items[i]
-		cur.Evidence, cur.Proposal, cur.Need, cur.UpdatedAt = it.Evidence, it.Proposal, it.Need, at
+		cur.Evidence, cur.Proposal, cur.Need, cur.UpdatedAt, cur.Issue = it.Evidence, it.Proposal, it.Need, at, it.Issue
 		cur.Repeats++
 		q.save(*cur)
 		return *cur
@@ -430,6 +450,7 @@ func (q *Queue) settle(id string, d Decision, at time.Time, judged *guarded) (It
 	it.Decision, it.UpdatedAt = v, at.UnixMilli()
 	q.items[i] = it
 	q.save(it)
+	q.settledFix(it)
 	return it, ch, nil, nil
 }
 
@@ -598,7 +619,7 @@ func (q *Queue) Prune(at time.Time) {
 		if it.Status == Dismissed {
 			keep = max(retention, QuietFor)
 		}
-		decided := it.Status == Accepted || it.Status == Rejected || it.Status == Dismissed
+		decided := it.Status == Accepted || it.Status == Rejected || it.Status == Dismissed || it.Status == Withdrawn
 		if decided && at.UnixMilli()-it.UpdatedAt > keep.Milliseconds() {
 			gone = append(gone, it.ID)
 			continue
@@ -609,24 +630,31 @@ func (q *Queue) Prune(at time.Time) {
 	if len(gone) > 0 && q.store != nil {
 		_ = q.store.Delete(gone) // forgotten for this session even if the database fails
 	}
+	q.pruneIssues(at, retention)
 }
 
-// Detect runs every detector once over request history up to time at and
-// returns the Suggestions it created or updated. With the loop off it does
-// nothing.
+// Detect runs every detector once over request history up to time at,
+// keeps Issues in step (opens, updates, reopens and resolves them) and
+// returns the Suggestions it created or updated. Diagnosis (which
+// Connections serve a model) runs before the lock is taken. With the loop
+// off it does nothing.
 func (q *Queue) Detect(at time.Time) []Item {
 	if q.history == nil || !q.On() {
 		return nil
 	}
 	c := q.live.Config()
-	found := unknownModels(c, q.history, at)
-	found = append(found, failingConnections(c, q.history, at)...)
+	symptoms := unknownModelSymptoms(c, q.history, at)
+	q.mu.Lock()
+	finder := q.finder
+	q.mu.Unlock()
+	diagnose(finder, symptoms, c.Adapting.UnknownModel.Count, at)
+	found := failingConnections(c, q.history, at)
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.failed != nil {
 		found = append(found, unknownTokens(c, q.failed, at)...)
 	}
-	var out []Item
+	out := q.trackUnknownModels(c, symptoms, at)
 	for _, s := range found {
 		if q.quiet(s, at) {
 			continue
@@ -652,54 +680,6 @@ func (q *Queue) quiet(s Item, at time.Time) bool {
 	}
 	recent := at.UnixMilli()-last.Decision.At < QuietFor.Milliseconds()
 	return recent && s.Evidence.Count < 2*last.Decision.EvidenceCount
-}
-
-// unknownModels finds Applications that repeatedly got upstream 404s for the
-// same model within the configured window, for models they have no Alias for.
-func unknownModels(c config.Config, history History, at time.Time) []Item {
-	th := c.Adapting.UnknownModel
-	from := at.Add(-time.Duration(th.WindowMinutes) * time.Minute)
-	apps := map[string]config.Origin{}
-	for _, o := range c.Origins {
-		apps[o.ID] = o
-	}
-	type group struct {
-		app, model string
-		ev         Evidence
-		targets    map[string]int
-	}
-	groups := map[[2]string]*group{}
-	for _, e := range history.Find(telemetry.Query{From: from.UnixMilli(), To: at.UnixMilli(), Outcome: "upstream_error", InferenceOnly: true}) {
-		o, known := apps[e.Origin]
-		if e.Status != 404 || e.RequestedModel == nil || *e.RequestedModel == "" || !known || hasAlias(o, *e.RequestedModel) {
-			continue
-		}
-		key := [2]string{e.Origin, *e.RequestedModel}
-		g := groups[key]
-		if g == nil {
-			g = &group{app: e.Origin, model: *e.RequestedModel, ev: Evidence{FromMS: e.StartedAt, ToMS: e.StartedAt, WindowMinutes: th.WindowMinutes}, targets: map[string]int{}}
-			groups[key] = g
-		}
-		g.ev.Count++
-		g.ev.FromMS, g.ev.ToMS = min(g.ev.FromMS, e.StartedAt), max(g.ev.ToMS, e.StartedAt)
-		g.targets[e.Target]++
-	}
-	var out []Item
-	for _, g := range groups {
-		if g.ev.Count < th.Count {
-			continue
-		}
-		ev := g.ev
-		out = append(out, Item{
-			Source: FromSuggestion, Kind: KindApplicationAlias, Application: g.app, Subject: g.model, Scope: ScopeApplication,
-			Need:     g.app + " asked for model \"" + g.model + "\" " + strconv.Itoa(ev.Count) + " times in the last " + strconv.Itoa(ev.WindowMinutes) + " minutes and got 404 each time: add an Alias",
-			Evidence: &ev, Proposal: Proposal{Alias: g.model, Target: mostUsed(g.targets)},
-		})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Application+"\x00"+out[i].Subject < out[j].Application+"\x00"+out[j].Subject
-	})
-	return out
 }
 
 func hasAlias(o config.Origin, model string) bool {

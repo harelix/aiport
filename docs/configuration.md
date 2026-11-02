@@ -76,15 +76,15 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `defaults` | Optional `openai_target` and `anthropic_target`; matching target protocols required |
 | `aliases` | List of `target`, `alias`, `model`; unique alias per target; model strings 1–256 bytes |
 | `telemetry.enabled` | true; request metadata is saved to `<config>.db` (SQLite) |
-| `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests are kept (dismissed ones at least 7 days, the quiet period); Changes themselves are never pruned |
+| `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests, and resolved or dismissed Issues, are kept (dismissed ones at least 7 days, the quiet period); Changes themselves are never pruned |
 | `telemetry.queue_capacity` | 4096; range 1–65536 |
 | `telemetry.batch_size` | 100; range 1–queue capacity |
 | `telemetry.flush_interval_ms` | 250; range 1–60000 |
 | `telemetry.shutdown_drain_ms` | 2000; range 1–60000; reserved for M2 telemetry |
 | `telemetry.max_event_bytes` | 16384; range 1024–65536 |
-| `adapting.disabled` | false; `true` turns the whole adapting loop off: no Suggestions are detected and Changes shows nothing new |
+| `adapting.disabled` | false; `true` turns the whole adapting loop off: no Suggestions are detected, no Issues are opened and Changes shows nothing new |
 | `adapting.interval_seconds` | 60; range 5–86400; how often a background pass looks at request history (never during a request) |
-| `adapting.unknown_model.count` | 5; range 1–1000000; upstream 404s for one model from one Application that lead to a Suggestion to add an Alias |
+| `adapting.unknown_model.count` | 5; range 1–1000000; upstream 404s for one model from one Application that open an Issue (with an Alias for that Application as the aiport fix); also how many new 404s reopen a resolved one |
 | `adapting.unknown_model.window_minutes` | 60; range 1–10080; how far back those 404s are counted |
 | `adapting.unknown_token.count` | 10; range 1–1000000; requests refused for a missing or unknown token that lead to an informational Suggestion to pair the Application (only counts per minute are kept, never the token) |
 | `adapting.unknown_token.window_minutes` | 60; range 1–10080; how far back those refusals are counted |
