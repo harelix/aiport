@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import {HelpLink} from './help';
 import {ArrowUpRight, ChevronRight, CircleAlert, History, Lightbulb, Puzzle, Sparkles, Undo2} from 'lucide-react';
 import {type Upstream, UpstreamAction} from './Upstream';
 import {DecisionSoundToggle} from './decisionSound';
@@ -613,10 +614,10 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   const byId = new Map((changes || []).map(c => [c.id, c]));
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
   return <>{!!issues.length && <section className="panel changes" aria-label="Issues">
-    <div className="panel-heading"><h2><CircleAlert size={16} aria-hidden/> Issues</h2><span>Problems aiport keeps seeing for one Application · they close themselves when its calls succeed again</span></div>
+    <div className="panel-heading"><h2><CircleAlert size={16} aria-hidden/> Issues<HelpLink section="Issues"/></h2><span>Problems aiport keeps seeing for one Application · they close themselves when its calls succeed again</span></div>
     {issues.map(i => <IssueCard key={i.id + i.state + (i.fix?.suggestion || '')} issue={i} targets={targets} explain={explain} onDecided={decided} onExplained={() => setReload(x => x + 1)}/>)}
   </section>}{(adapting || pending.length + accepted.length + rejected.length > 0) && <section className="panel changes suggestions" aria-label="Suggestions and Change requests">
-    <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Suggestions and Change requests</h2>
+    <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Suggestions and Change requests<HelpLink section="What waits for your decision"/></h2>
       <div className="task-filters decision-filters" role="tablist" aria-label="Show">
         {([['pending', 'Waiting', pending.length], ['accepted', 'Accepted', accepted.length], ['rejected', 'Rejected', rejected.length]] as const).map(([key, label, n]) =>
           <button key={key} type="button" role="tab" aria-selected={view === key} className={view === key ? 'active' : ''} onClick={() => setView(key)}>{label}<span>{n}</span></button>)}
@@ -643,7 +644,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
       <strong>{s.extension}</strong> ({s.hook}) <UpstreamAction label="Share upstream" draft={s} what={{share: s.extension}} upstream={upstream}/>
     </li>)}</ul>
   </section>}<section className="panel changes">
-    <div className="panel-heading"><h2>Applied changes</h2><div className="header-actions"><span className="caption">Newest first · kept across restarts</span><DecisionSoundToggle/></div></div>
+    <div className="panel-heading"><h2>Applied changes<HelpLink section="Applied changes and Revert"/></h2><div className="header-actions"><span className="caption">Newest first · kept across restarts</span><DecisionSoundToggle/></div></div>
     {autoFix !== null && <label className="check-label compact" title="adapting.auto_fix in aiport.yaml"><input type="checkbox" checked={autoFix} disabled={!!busy || !adapting} onChange={e => switchAutoFix(e.target.checked)}/>
       <span>Automatic fixes: aiport applies an Issue’s aiport fix itself, only when exactly one Connection serves the model, and only for that one Application. Each one is a Change below that you can revert; a fix you revert is never applied automatically again.{!adapting && ' Adapting is turned off in the configuration, so nothing is applied.'}</span></label>}
     {error && <div className="notice error" role="alert">{error}</div>}

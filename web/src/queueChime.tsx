@@ -94,9 +94,10 @@ export function useQueueChime(active: boolean, tick: number) {
 }
 
 export function ChimeToggle({enabled, onChange}: {enabled: boolean; onChange: (v: boolean) => void}) {
-  return <button type="button" className="secondary with-icon" aria-pressed={enabled} onClick={() => onChange(!enabled)}
-    title={enabled ? 'A chime plays when the queue is done. Click to mute.' : 'Muted. Click to play a chime when the queue is done.'}>
-    {enabled ? <Bell size={14} aria-hidden/> : <BellOff size={14} aria-hidden/>}{enabled ? 'Chime on' : 'Chime off'}
+  return <button type="button" className={'icon-button' + (enabled ? ' on' : '')} aria-pressed={enabled} onClick={() => onChange(!enabled)}
+    aria-label={enabled ? 'Chime on' : 'Chime off'}
+    title={enabled ? 'Chime on: a chime plays when the queue is done. Click to mute.' : 'Chime off. Click to play a chime when the queue is done.'}>
+    {enabled ? <Bell size={16} strokeWidth={1.75} aria-hidden/> : <BellOff size={16} strokeWidth={1.75} aria-hidden/>}
   </button>;
 }
 

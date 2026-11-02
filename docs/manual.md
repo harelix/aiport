@@ -78,13 +78,15 @@ queue, `aiport version` prints the version.
 
 The sidebar has three groups:
 
-- **Traffic**: Overview and Activity.
-- **Gateway**: Providers, Routing, Integrate, Compression, Agents and Changes.
-- **Workspace**: Tasks and Settings.
+- **Monitor**: Overview, Activity and Changes, the pages you use every day.
+- **Configure**: Integrate, Providers, Routing, Agents and Compression.
+- **Workspace** (at the bottom): Tasks and Settings.
 
-The header has the help button (this manual), the Light / Dark / System
-appearance switch and Refresh. The dashboard refreshes itself every 10
-seconds while it is open. The bottom of the sidebar shows the address aiport
+The toolbar at the top right has the help button (this manual), the
+Light / Dark / System appearance switch and Refresh (on Tasks, also the
+chime). The dashboard refreshes itself every 10 seconds while it is open;
+Refresh fetches everything at once, for example right after you changed the
+configuration file by hand. The bottom of the sidebar shows the address aiport
 listens on and Sign out (or "Authentication off" when it is turned off).
 
 - **Overview**: request counts, latency, error rate, hourly traffic, provider
@@ -324,6 +326,16 @@ Select an existing application in the list to see how far it got.
 
 ### Connecting a coding agent
 
+**Why connect one.** An Issue tells you *that* an Application keeps
+failing and offers the fixes aiport can see from its side. A coding agent
+connected to the Application's repository lets aiport go further, on your
+click: **Explain** reads the code and tells you the root cause, and
+**Fix it** makes the change on a new branch and shows you the diff to keep
+or discard. Explain only reads; nothing runs without your click; aiport
+never commits to your branch, merges or pushes. Without an agent, aiport
+still explains, more briefly, from the Issue's evidence alone (with the
+Connection and model chosen under Explanations in Settings).
+
 aiport can start a Coding agent installed on this machine to work on an
 Application's Issues, only when you click (Agent runs). Each Application
 can have its own agent, **Claude Code**, **Codex** or **Gemini CLI**, and
@@ -459,7 +471,7 @@ away once a request there succeeds.
 ## Changes
 
 aiport adapts to the Applications that use it, but only with your approval.
-**Changes** in the Gateway menu stays quiet: a badge appears only when
+**Changes** in the Monitor menu stays quiet: a badge appears only when
 something needs a decision.
 
 ### Issues
@@ -791,7 +803,7 @@ to a working Connection).
   The agent runs an allowed command itself, in its own process, in the
   worktree's directory; aiport only answers the permission, and what the
   command changes in the worktree shows in the diff. While a command
-  waits, the Changes badge in the Gateway menu counts it. A command left
+  waits, the Changes badge in the Monitor menu counts it. A command left
   unanswered for 5 minutes stops the run: what it changed so far stays in
   its worktree, and the Issue shows it for review with Keep the branch and
   Discard, as after a finished run (state `stopped_waiting`).

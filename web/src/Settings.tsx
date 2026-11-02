@@ -1,4 +1,5 @@
 import React, {FormEvent, useState} from 'react';
+import {HelpLink} from './help';
 import {Activity, Check, ChevronRight, Cloud, Copy, HardDrive, Plus} from 'lucide-react';
 import {AuthenticationSettings} from './AuthGate';
 import {ProviderLogo} from './ProviderLogo';
@@ -289,7 +290,7 @@ function ProviderGroup({location, targets, presets, providers, taken, sources, s
     <div className="group-heading">
       <span className="group-icon" aria-hidden><Icon size={18} strokeWidth={1.75}/></span>
       <div>
-        <h2 id={'group-' + location}><button type="button" className="group-toggle" aria-expanded={open} aria-controls={body} onClick={() => setOpen(o => !o)}><ChevronRight size={16} strokeWidth={2} aria-hidden className="chevron"/>{g.title} <span className="count">{targets.length}</span></button></h2>
+        <h2 id={'group-' + location}><button type="button" className="group-toggle" aria-expanded={open} aria-controls={body} onClick={() => setOpen(o => !o)}><ChevronRight size={16} strokeWidth={2} aria-hidden className="chevron"/>{g.title} <span className="count">{targets.length}</span></button><HelpLink section="Connections and keys"/></h2>
         <p>{g.blurb}</p>
       </div>
       <div className="group-actions">
@@ -371,7 +372,7 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
   const {targets} = useLists(config, providers);
   return <>
     <section className="panel">
-      <div className="panel-heading"><h2>Protocol defaults</h2><span>Where requests go when an app doesn't pick a connection</span></div>
+      <div className="panel-heading"><h2>Protocol defaults<HelpLink section="Routing and protocol defaults"/></h2><span>Where requests go when an app doesn't pick a connection</span></div>
       <DefaultsForm key={JSON.stringify(config?.defaults) + targets.length} config={config} providers={providers} onChange={onChange}/>
     </section>
     <section className="panel">
@@ -428,7 +429,7 @@ function ExplainerPanel({config, providers, onChange}: {config: SettingsConfig |
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   }
   return <section className="panel">
-    <div className="panel-heading"><h2>Explanations</h2><span>The model that explains an Issue when no Coding agent does</span></div>
+    <div className="panel-heading"><h2>Explanations<HelpLink section="Explain"/></h2><span>The model that explains an Issue when no Coding agent does</span></div>
     <form className="conn-form settings-body" onSubmit={save}>
       <div className="form-row">
         <label>Connection<select value={connection} onChange={e => setConnection(e.target.value)}>

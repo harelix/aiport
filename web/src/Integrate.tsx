@@ -1,4 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
+import {HelpLink} from './help';
 import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, Plus, Terminal} from 'lucide-react';
 import {forgetRejected, MayRequestToggle, Origin, Pairing, PairingList, Rejected, Target, usePairings, useRejected} from './Applications';
 import {ApplicationFix, type ExplainStatus, explainOf, type FixStatus, type Issue, IssueExplanation, IssueFix, issueAnchor} from './Changes';
@@ -154,7 +155,7 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, issues, 
   const lastCall = (id: string) => calls.off ? 'Not recorded' : calls.at[id] === undefined ? '…' : calls.at[id] === null ? 'None in 7 days' : ago(calls.at[id] as number);
   return <section className="panel apps-list" aria-labelledby="apps-heading">
     <div className="panel-heading">
-      <h2 id="apps-heading"><AppWindow size={16} aria-hidden/> Applications</h2>
+      <h2 id="apps-heading"><AppWindow size={16} aria-hidden/> Applications<HelpLink section="Applications"/></h2>
       <div className="apps-tools">
         <div className="segmented apps-filter" role="radiogroup" aria-label="Show applications">
           {FILTERS.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={filter === value} className={filter === value ? 'on' : ''} onClick={() => setFilter(value)}>{label} <span className="count">{counts[value]}</span></button>)}
@@ -214,7 +215,7 @@ function Wizard({origins, app, setApp, pairings, seen, off, adapting, agents, pr
   return <section className="panel wizard" aria-labelledby="wizard-heading">
     <div className="panel-heading wizard-heading">
       <h2 id="wizard-heading"><button type="button" className="group-toggle" aria-expanded={open} aria-controls="wizard-body" onClick={() => setOpen(!open)}>
-        <ChevronRight size={16} strokeWidth={2} aria-hidden className="chevron"/>Onboard an application</button></h2>
+        <ChevronRight size={16} strokeWidth={2} aria-hidden className="chevron"/>Onboard an application</button><HelpLink section="Onboarding an application, step by step"/></h2>
       <span className={'badge' + (pairings.length ? ' warn' : current < 0 && o ? ' good' : ' info')}>{summary}</span>
     </div>
     {open && <div id="wizard-body">
@@ -246,6 +247,7 @@ function Wizard({origins, app, setApp, pairings, seen, off, adapting, agents, pr
           <label className="check-label compact"><input type="checkbox" checked={mcp} onChange={e => setMcp(e.target.checked)}/>The agent adds it as part of step 1. To do it by hand, copy it from the <button type="button" className="text-button" onClick={onAgentBrief}>Coding agent brief</button>.</label>
         </Step>
         <Step n={6} done={steps[5]} current={current === 5} title="Connect a coding agent (optional)">
+          <p className="step-why"><strong>Why connect one:</strong> when this application keeps failing, aiport can show you more than the error. With a coding agent and the repository, <strong>Explain</strong> reads the application's code and tells you the root cause, and <strong>Fix it</strong> makes the change on a new branch for you to review. Nothing runs until you click, Explain only reads, and aiport never commits to your branch, merges or pushes. Without one, aiport still explains from the evidence alone, more briefly.</p>
           <p>The coding agent aiport may start, on your click, to explain an Issue of this application or fix it in its own branch, and the repository it works in. Choose among the agents installed on this machine{agents.default_agent ? <>, or keep the default from Settings</> : <>; a default for every application is in Settings</>}.</p>
           {o ? <AgentSettings o={o} agents={agents} onDone={onDone}/> : 'Once paired: the repository path the agent reported while pairing, as you confirmed it, appears here.'}
         </Step>
@@ -351,7 +353,7 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
     </div>
     <aside className="integrate-strip" aria-labelledby="strip-heading">
       <div className="strip-head">
-        <h2 id="strip-heading">Instructions</h2>
+        <h2 id="strip-heading">Instructions<HelpLink section="The instructions"/></h2>
         <p className="muted-small">What the coding agent reads, written by aiport from this gateway's address and protocols ({doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}). <button type="button" className="text-button" onClick={onManual}>Read the manual</button></p>
       </div>
       <BriefTile id="application" title="Application brief" short="For the agent wiring the application's LLM calls through aiport." icon={<Terminal size={17} strokeWidth={1.75}/>}

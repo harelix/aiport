@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import {HelpLink} from './help';
 import {Bot} from 'lucide-react';
 import type {Origin} from './Applications';
 
@@ -138,7 +139,7 @@ export function DefaultAgentPanel({tick, targets, onChange}: {tick: number; targ
   }
   const current = agents.agents.find(a => a.id === agents.default_agent);
   return <section className="panel" aria-labelledby="default-agent-heading">
-    <div className="panel-heading"><h2 id="default-agent-heading"><Bot size={16} aria-hidden/> Default coding agent</h2><span>For Agent runs</span></div>
+    <div className="panel-heading"><h2 id="default-agent-heading"><Bot size={16} aria-hidden/> Default coding agent<HelpLink section="Connecting a coding agent"/></h2><span>For Agent runs</span></div>
     <div className="conn-form settings-body">
       <div className="settings-group">
         <div className="form-row">
