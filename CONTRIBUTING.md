@@ -1,7 +1,7 @@
-# Contributing to Aiport
+# Contributing to aiport
 
-Thanks for helping. Aiport is a small, local, single-binary AI gateway; please read
-`Aiport_DESIGN.md` before proposing larger changes, and open an issue first for
+Thanks for helping. aiport is a small, local, single-binary AI gateway; please read
+`aiport_DESIGN.md` before proposing larger changes, and open an issue first for
 anything that changes the product scope.
 
 ## Setup
@@ -51,5 +51,5 @@ git commit -s -m "Describe your change"
 ## License
 
 By contributing, you agree that your contributions are licensed under the
-Apache License 2.0 (see `LICENSE`). The Aiport name and logo are covered by
+Apache License 2.0 (see `LICENSE`). The aiport name and logo are covered by
 `TRADEMARKS.md`.

@@ -220,7 +220,7 @@ func minifyJSON(s string) string {
 const dedupeMin = 1024
 
 // DedupeNote replaces earlier copies of repeated blocks.
-const DedupeNote = "[Aiport: identical content omitted here; it appears again later in this conversation]"
+const DedupeNote = "[aiport: identical content omitted here; it appears again later in this conversation]"
 
 // dedupe keeps the last occurrence of each large repeated text and replaces
 // earlier ones, so the model still sees the most recent copy in place.

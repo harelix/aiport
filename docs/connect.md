@@ -1,6 +1,6 @@
-# Aiport Connect
+# aiport Connect
 
-Aiport Connect is how applications learn to talk to an Aiport gateway. A running
+aiport Connect is how applications learn to talk to an aiport gateway. A running
 gateway publishes it, without authentication, at:
 
 - `GET /_connect`: JSON for programs

@@ -1,4 +1,4 @@
-// Package connect describes the Aiport Connect protocol: how an application
+// Package connect describes the aiport Connect protocol: how an application
 // talks to this gateway. It is served unauthenticated at GET /_connect and
 // contains no secrets, target URLs, model names or key status.
 //
@@ -101,22 +101,22 @@ func Describe(c config.Config) Document {
 		},
 		Auth: Auth{
 			Required:    !c.Auth.Disabled,
-			Credential:  "A per-application Aiport token. Never send provider API keys to Aiport; it adds them upstream.",
-			HowToObtain: "Ask the Aiport owner for an application (origin) token. Self-service pairing is planned.",
+			Credential:  "A per-application aiport token. Never send provider API keys to aiport; it adds them upstream.",
+			HowToObtain: "Ask the aiport owner for an application (origin) token. Self-service pairing is planned.",
 		},
 		Request: []Header{
 			{"X-Aiport-Effort", "low, medium, high", "Task difficulty used to pick a model within a tier.", "planned"},
 			{"X-Aiport-Task", "label, up to 64 chars [A-Za-z0-9._-]", "Task kind for activity grouping and routing rules.", "planned"},
 			{"X-Aiport-Session", "opaque id, up to 64 chars", "Groups related calls from one session.", "planned"},
 			{"X-Aiport-Compress", "whitespace, json, dedupe or all (comma-separated); off", "Opt-in request compression of message text. Unknown methods return 400 unknown_compression.", "available"},
-			{"X-Aiport-Version", Version, "Aiport Connect version the client expects.", "planned"},
+			{"X-Aiport-Version", Version, "aiport Connect version the client expects.", "planned"},
 		},
 		Response: []Header{
 			{"X-Aiport-Request-Id", "UUID", "Gateway id for this call; quote it when reporting problems.", "available"},
 			{"X-Aiport-Compression", "methods; status=applied|no_gain|failed; bytes_before=N; bytes_after=N", "Present when compression was requested. On failed or no_gain the original body was sent.", "available"},
 			{"X-Aiport-Model", "model id", "Model actually used after aliases or tier routing.", "planned"},
 			{"X-Aiport-Route", "key=value; ...", "Why that model/target was chosen.", "planned"},
-			{"X-Aiport-Source", "gateway or upstream", "Whether an error came from Aiport or the provider.", "planned"},
+			{"X-Aiport-Source", "gateway or upstream", "Whether an error came from aiport or the provider.", "planned"},
 		},
 		ErrorFormat: `Gateway errors: {"error":{"code":"...","message":"...","request_id":"..."}}. Provider errors pass through unchanged (status, body, headers).`,
 		Errors: []ErrorCode{
@@ -125,8 +125,8 @@ func Describe(c config.Config) Document {
 			{403, "invalid_origin", "Browser cross-origin requests are refused."},
 			{404, "unsupported_path", "Path is not part of this protocol."},
 			{405, "method_not_allowed", "Use the documented method."},
-			{400, "incompatible_protocol", "The selected target speaks the other protocol; Aiport does not translate."},
-			{400, "unknown_compression", "X-Aiport-Compress names a method Aiport does not offer."},
+			{400, "incompatible_protocol", "The selected target speaks the other protocol; aiport does not translate."},
+			{400, "unknown_compression", "X-Aiport-Compress names a method aiport does not offer."},
 			{400, "invalid_feedback", "Feedback needs request_id and a score between 0 and 1."},
 			{404, "request_not_found", "No retained request with this id for this application."},
 			{400, "ambiguous_model", "Body must be one JSON object with a single model field when aliases apply."},
@@ -149,9 +149,9 @@ func Describe(c config.Config) Document {
 			{"pairing", "planned", "POST /aiport/v1/connect: request a token, approved by the owner in the dashboard."},
 		},
 		Privacy: []string{
-			"Aiport records request metadata only (time, route, model, status, latency) when telemetry is on; never prompts or responses.",
+			"aiport records request metadata only (time, route, model, status, latency) when telemetry is on; never prompts or responses.",
 			"X-Aiport-* request headers are removed before forwarding to providers.",
-			"Aiport listens on loopback only and refuses cross-site browser requests.",
+			"aiport listens on loopback only and refuses cross-site browser requests.",
 		},
 	}
 }
@@ -160,9 +160,9 @@ func Describe(c config.Config) Document {
 func Markdown(d Document) string {
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
-	w("# Aiport Connect v%s\n\n", d.Version)
-	w("How to talk to this Aiport gateway. Machine-readable: `GET %s` (JSON).\n\n", Path)
-	w("Base URL: `%s`. Aiport speaks the providers' **native** APIs; existing OpenAI/Anthropic SDKs work by changing the base URL and API key. There is no protocol translation.\n\n", d.BaseURL)
+	w("# aiport Connect v%s\n\n", d.Version)
+	w("How to talk to this aiport gateway. Machine-readable: `GET %s` (JSON).\n\n", Path)
+	w("Base URL: `%s`. aiport speaks the providers' **native** APIs; existing OpenAI/Anthropic SDKs work by changing the base URL and API key. There is no protocol translation.\n\n", d.BaseURL)
 	w("## Authentication\n\n")
 	if d.Auth.Required {
 		w("Required. %s\n\n%s\n\n", d.Auth.Credential, d.Auth.HowToObtain)

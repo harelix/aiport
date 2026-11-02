@@ -1,7 +1,7 @@
 # Request compression
 
-Applications can ask Aiport to shrink a request before it reaches the provider,
-and Aiport measures whether that hurts the answers. Compression is **off unless
+Applications can ask aiport to shrink a request before it reaches the provider,
+and aiport measures whether that hurts the answers. Compression is **off unless
 the application asks for it**, per request, on any chat, responses or messages
 call to any connection.
 
@@ -30,7 +30,7 @@ Every compressed response carries
 
 ## Measuring whether it hurts
 
-For each request Aiport records the methods, status, request size before and
+For each request aiport records the methods, status, request size before and
 after, outcome and latency. Requests without the header are the baseline.
 
 Applications can score the answer they got, using the response's

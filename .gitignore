@@ -7,7 +7,7 @@
 /.cache/
 node_modules
 
-# Local Aiport state: config, credentials, request history, tasks
+# Local aiport state: config, credentials, request history, tasks
 /aiport.yaml
 .env
 *.env

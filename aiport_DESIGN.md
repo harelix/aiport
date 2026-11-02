@@ -1,8 +1,8 @@
-# Aiport — Design and Implementation Specification
+# aiport — Design and Implementation Specification
 
 Version: 0.4 · Date: 2026-11-01 · Status: In implementation; expanded scope recorded
 
-Project: **Aiport** · Repository/executable: `aiport` · Configuration: `aiport.yaml`
+Project: **aiport** · Repository/executable: `aiport` · Configuration: `aiport.yaml`
 
 Positioning: **The lightweight, open-source AI gateway.** Naming does not establish repository, domain, or trademark availability.
 
@@ -31,7 +31,7 @@ original bearer-only browser login and the original unconditional local-auth rul
 ## License decision — 2026-11-01
 
 The maintainer adopted **Apache-2.0** for the source (`LICENSE`, `NOTICE`), with the
-Aiport name and windsock logo reserved under `TRADEMARKS.md` and contributions
+aiport name and windsock logo reserved under `TRADEMARKS.md` and contributions
 accepted under the DCO (`CONTRIBUTING.md`). This resolves the license item in §11.
 
 ## Task queue revision — 2026-11-01
@@ -50,7 +50,7 @@ the CSRF header; `X-Aiport-Actor` attributes agent changes).
 
 Requested by the maintainer: a connectivity standard for applications, exposed by
 the gateway itself. `GET /_connect` (public, loopback, no secrets) publishes
-**Aiport Connect v1** as JSON or Markdown: native endpoints, auth, hint/response
+**aiport Connect v1** as JSON or Markdown: native endpoints, auth, hint/response
 headers, stable error codes, and per-feature status. Model allowlists per
 application, effort-based tiers, capabilities and dashboard-approved pairing are
 recorded as planned and must be marked available only when implemented.
@@ -129,7 +129,7 @@ They are requested capabilities, not shipped support.
   installed clients, show the proposed endpoint/model/credential configuration,
   preserve unrelated settings, and apply the selected integration with a backup.
   Test each advertised client/protocol combination. This configures existing
-  agents; Aiport does not execute or orchestrate agents itself.
+  agents; aiport does not execute or orchestrate agents itself.
 - Provide a modern, clean embedded web interface and a terminal onboarding
   command. The interface covers onboarding, Overview, Activity, and Settings;
   use a restrained neutral visual style, clear hierarchy, accessible controls,
@@ -156,7 +156,7 @@ This document consolidates the “LLM Gateway Comparison” discussion, includin
 
 Source discussion: `chatgpt-conversation://6ae7264f-dfcc-83eb-9b38-abd6bfa604cf`.
 
-**Nothing in this specification establishes shipped support.** No Aiport repository, implementation, release, or live integration was inspected for this handoff. All requirements below are planned unless a future compatibility matrix links them to passing tests and a released version. Configuration syntax, defaults, API paths, and schema below are proposed implementation contracts, not existing commands or guarantees.
+**Nothing in this specification establishes shipped support.** No aiport repository, implementation, release, or live integration was inspected for this handoff. All requirements below are planned unless a future compatibility matrix links them to passing tests and a released version. Configuration syntax, defaults, API paths, and schema below are proposed implementation contracts, not existing commands or guarantees.
 
 Use MUST for release requirements, SHOULD for preferred implementation choices, and MAY for explicitly optional work. Complete one milestone before expanding scope.
 
@@ -388,7 +388,7 @@ Shutdown: stop admission, allow existing requests a configurable grace period, c
 - Restrict upstream destinations to configured target URLs. Disable automatic upstream redirects to prevent credential leakage. Allow explicit loopback HTTP for local providers, preserve HTTPS certificate validation, and do not offer an insecure “skip verification” default.
 - Bound request admission, request size, metadata strings, stream observation buffers, concurrency, timeouts, and query limits. Do not expose credentials in health endpoints or raw error stacks. Render all metadata as text in the UI.
 
-The local OS account and configured upstream providers are trusted. Aiport cannot protect secrets from malware running as the same account, or guarantee privacy after forwarding to a provider. Origin/model/session metadata itself may be sensitive; retention applies to it too.
+The local OS account and configured upstream providers are trusted. aiport cannot protect secrets from malware running as the same account, or guarantee privacy after forwarding to a provider. Origin/model/session metadata itself may be sensitive; retention applies to it too.
 
 ## 10. Embedded dashboard and local API
 

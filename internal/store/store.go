@@ -1,4 +1,4 @@
-// Package store opens Aiport's local SQLite database (<config>.db, 0600).
+// Package store opens aiport's local SQLite database (<config>.db, 0600).
 //
 // The driver is modernc.org/sqlite: pure Go, compiled into the executable, so
 // neither builders nor users need a C toolchain or a system SQLite library.
@@ -16,9 +16,9 @@ import (
 // Path is the database file kept next to the config (aiport.yaml -> aiport.yaml.db).
 func Path(configPath string) string { return configPath + ".db" }
 
-// ErrNewerSchema means the database was written by a newer Aiport. Callers must
+// ErrNewerSchema means the database was written by a newer aiport. Callers must
 // not write to it (telemetry runs disabled instead of risking corruption).
-var ErrNewerSchema = errors.New("database schema is newer than this Aiport; upgrade Aiport")
+var ErrNewerSchema = errors.New("database schema is newer than this aiport; upgrade aiport")
 
 // Open creates or opens the database with private permissions, WAL journaling
 // and a bounded busy timeout, then applies pending migrations.

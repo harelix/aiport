@@ -51,7 +51,7 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 		}
 		return v, nil
 	}
-	terminal.Frost(out, "\n  Aiport · Set up your local gateway\n\n  1  Choose providers\n  2  Connect coding agents\n  3  Start the gateway\n\n")
+	terminal.Frost(out, "\n  aiport · Set up your local gateway\n\n  1  Choose providers\n  2  Connect coding agents\n  3  Start the gateway\n\n")
 	if *provider == "" {
 		fmt.Fprintln(out, "  "+strings.ReplaceAll(config.ProviderIDs(), "|", " · "))
 		v, err := prompt("Providers (comma-separated)", "ollama")
@@ -120,7 +120,7 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 	}
 	c.Listen = *listen
 	for _, preset := range selected {
-		// Presets are written generically: provider (+ region); Aiport derives
+		// Presets are written generically: provider (+ region); aiport derives
 		// protocol, endpoint and key variable when it loads the file.
 		t := config.Target{ID: preset.ID, Provider: preset.ID, BaseURL: *base}
 		if preset.Regional {
@@ -159,7 +159,7 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	environment := "# Generated local Aiport credentials. Keep private; never commit.\nexport AIPORT_LOCAL_TOKEN='" + local + "'\n"
+	environment := "# Generated local aiport credentials. Keep private; never commit.\nexport AIPORT_LOCAL_TOKEN='" + local + "'\n"
 	for _, origin := range c.Origins {
 		v, err := token()
 		if err != nil {

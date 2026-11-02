@@ -82,7 +82,7 @@ func Prepare(c config.Config, name, model string, extra, environment []string) (
 	launch := Launch{Name: name}
 	if name == "codex" {
 		values[origin.TokenEnv] = token
-		settings := []string{`model_provider="aiport"`, `model_providers.aiport.name="Aiport"`, `model_providers.aiport.base_url=` + strconv.Quote(base+"/v1"), `model_providers.aiport.env_key=` + strconv.Quote(origin.TokenEnv), `model_providers.aiport.wire_api="responses"`, `model_providers.aiport.requires_openai_auth=false`, `model_providers.aiport.supports_websockets=false`, `model_providers.aiport.request_max_retries=0`, `model_providers.aiport.stream_max_retries=0`}
+		settings := []string{`model_provider="aiport"`, `model_providers.aiport.name="aiport"`, `model_providers.aiport.base_url=` + strconv.Quote(base+"/v1"), `model_providers.aiport.env_key=` + strconv.Quote(origin.TokenEnv), `model_providers.aiport.wire_api="responses"`, `model_providers.aiport.requires_openai_auth=false`, `model_providers.aiport.supports_websockets=false`, `model_providers.aiport.request_max_retries=0`, `model_providers.aiport.stream_max_retries=0`}
 		for _, setting := range settings {
 			launch.Args = append(launch.Args, "-c", setting)
 		}

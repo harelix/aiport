@@ -114,7 +114,7 @@ func (h *Handler) targetKeyRoute(w http.ResponseWriter, r *http.Request, fail fu
 			return true
 		}
 		if h.isLocalCredential(value) {
-			fail(400, "invalid_api_key", "That is an Aiport token, not a provider API key")
+			fail(400, "invalid_api_key", "That is an aiport token, not a provider API key")
 			return true
 		}
 		source = keySaved

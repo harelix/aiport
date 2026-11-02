@@ -157,7 +157,7 @@ function AddCustom({location, taken, onDone}: {location: Location; taken: Set<st
     catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   }
   return <form className="conn-form add-form" onSubmit={add}>
-    <small>Any server that speaks the OpenAI or Anthropic API natively. Aiport does not translate between them.</small>
+    <small>Any server that speaks the OpenAI or Anthropic API natively. aiport does not translate between them.</small>
     <div className="form-row">
       <label>Provider name<input value={provider} onChange={e => setProvider(e.target.value.trim())} placeholder={location === 'local' ? 'vllm' : 'together'} required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}" spellCheck={false}/></label>
       <label>Connection id<input value={id} onChange={e => setId(e.target.value.trim())} placeholder={provider ? freeId(provider, taken) : 'same as name'} pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}" spellCheck={false}/></label>
@@ -362,7 +362,7 @@ export function AgentsPage({config, providers}: Props) {
   </section>;
 }
 
-/** Settings page: this Aiport install (sign-in, configuration file). */
+/** Settings page: this aiport install (sign-in, configuration file). */
 export default function SettingsPage({config, onChange}: Props) {
   return <>
     <AuthenticationSettings username={config?.auth.username || ''} onChange={onChange}/>

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Development loop for Aiport (make dev). No extra tools needed.
+# Development loop for aiport (make dev). No extra tools needed.
 #
 #   Go:        rebuilds and restarts `aiport serve` when a .go file (or the
 #              config) changes. Polls once a second: Go has no in-process hot

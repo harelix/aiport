@@ -33,7 +33,7 @@ type Config struct {
 	Defaults  Defaults    `yaml:"defaults" json:"defaults"`
 	Aliases   []Alias     `yaml:"aliases" json:"aliases"`
 	Telemetry Telemetry   `yaml:"telemetry" json:"telemetry"`
-	// Evaluation selects the connection and model Aiport uses to judge
+	// Evaluation selects the connection and model aiport uses to judge
 	// compression (NLI, claims, LLM judge). Off when Connection is empty.
 	Evaluation Evaluation `yaml:"evaluation,omitempty" json:"evaluation"`
 }

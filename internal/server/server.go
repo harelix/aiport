@@ -219,7 +219,7 @@ func (w *statusWriter) WriteHeader(status int) {
 }
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-// serveConnect publishes the Aiport Connect protocol. It is public on the
+// serveConnect publishes the aiport Connect protocol. It is public on the
 // loopback listener (Host/Origin checks still apply) and contains no secrets.
 func (h *Handler) serveConnect(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {

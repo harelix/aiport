@@ -104,7 +104,7 @@ func (g *Gateway) key(targetID string) string {
 	return g.keys[targetID]
 }
 
-// Call sends Aiport's own request (used by the evaluator) to a connection,
+// Call sends aiport's own request (used by the evaluator) to a connection,
 // adding its API key the same way forwarding does. The key never leaves the
 // gateway. Path is relative to the connection URL, e.g. "/chat/completions".
 // The response body is read up to limit bytes.

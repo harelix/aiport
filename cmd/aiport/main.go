@@ -125,7 +125,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 			_ = srv.Close()
 		}
 	}()
-	terminal.Frost(out, "Aiport listening on http://"+c.Listen+" (experimental native forwarding)\n")
+	terminal.Frost(out, "aiport listening on http://"+c.Listen+" (experimental native forwarding)\n")
 	printStartupToken(out, c)
 	err = srv.Serve(listener)
 	if errors.Is(err, http.ErrServerClosed) {
@@ -136,7 +136,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 }
 
 // openTelemetry persists request metadata to <config>.db when telemetry is on.
-// If the database cannot be used, Aiport still serves: a newer schema disables
+// If the database cannot be used, aiport still serves: a newer schema disables
 // recording (never write what this build doesn't understand); any other error
 // falls back to session-only history. Either way the reason is printed.
 func openTelemetry(c config.Config, configPath string, errOut io.Writer) (*telemetry.Collector, func()) {

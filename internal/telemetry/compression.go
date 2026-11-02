@@ -101,7 +101,7 @@ func CompressionReport(rows []Event, from int64, bucket time.Duration) map[strin
 	buckets := map[int64]*Bucket{}
 	size := bucket.Milliseconds()
 	for _, e := range rows {
-		// Requests Aiport itself rejected never reached a model, so they say
+		// Requests aiport itself rejected never reached a model, so they say
 		// nothing about response quality.
 		if e.StartedAt < from || e.Outcome == "rejected" || (e.Route != "/v1/chat/completions" && e.Route != "/v1/responses" && e.Route != "/v1/messages") {
 			continue

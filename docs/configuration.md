@@ -11,7 +11,7 @@ IDs, missing references, and incompatible default protocols are rejected.
 ### Providers
 
 Built-in presets keep configuration generic. Name the provider and, where the
-provider is regional, a region; Aiport derives the endpoint when it loads the file:
+provider is regional, a region; aiport derives the endpoint when it loads the file:
 
 ```yaml
 targets:
@@ -174,7 +174,7 @@ off the forwarding path. The queue drains and the last batch is written within
 `max_event_bytes` is reserved and not enforced yet.
 
 If the database cannot be opened, startup prints the reason and history is kept
-for that session only (the banner says so). If it was written by a newer Aiport,
+for that session only (the banner says so). If it was written by a newer aiport,
 recording is turned off instead. WAL, backups and free pages can keep deleted
 metadata; deletion is not a secure-erasure guarantee.
 

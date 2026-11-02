@@ -33,7 +33,7 @@ func TestDashboardAndAuthenticatedMetadata(t *testing.T) {
 		return w
 	}
 	page := request("/", false)
-	if page.Code != 200 || !strings.Contains(page.Body.String(), "Aiport") {
+	if page.Code != 200 || !strings.Contains(page.Body.String(), "aiport") {
 		t.Fatal("embedded page unavailable")
 	}
 	if !strings.Contains(page.Header().Get("Content-Security-Policy"), "script-src 'self'") {

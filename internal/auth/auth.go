@@ -109,7 +109,7 @@ func (m *Manager) newSessionLocked() (string, error) {
 		}
 	}
 	if len(m.sessions) >= 128 {
-		return "", errors.New("too many active sessions; sign out or restart Aiport")
+		return "", errors.New("too many active sessions; sign out or restart aiport")
 	}
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {

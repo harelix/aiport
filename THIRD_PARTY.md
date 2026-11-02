@@ -5,7 +5,7 @@ https://github.com/yaml/go-yaml/tree/v3.0.6.
 
 Original source files, README, module metadata, LICENSE and NOTICE are retained in
 `vendor/go.yaml.in/yaml/v3`. Dependency license terms are in that LICENSE; this is
-separate from Aiport's own license (Apache-2.0, see LICENSE).
+separate from aiport's own license (Apache-2.0, see LICENSE).
 
 Upstream release archive:
 https://codeload.github.com/yaml/go-yaml/zip/refs/tags/v3.0.6

@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="visuals/logo-256.png" alt="Aiport logo" width="128" height="128">
+  <img src="visuals/logo-256.png" alt="aiport logo" width="128" height="128">
 </p>
 
-# Aiport
+# aiport
 
-A local AI gateway, under development from [the design](Aiport_DESIGN.md).
+A local AI gateway, under development from [the design](aiport_DESIGN.md).
 
 **Current build: experimental native forwarding and terminal onboarding.** Chat
 Completions, Responses and Messages share a byte-forwarding path. No provider or
@@ -30,7 +30,7 @@ interactive terminal, `serve` prints the dashboard URL and management token;
 redirected output gets a hint instead. Retrieve it later with
 `./bin/aiport auth token`.
 
-Stop an older running Aiport with Ctrl+C before starting the rebuilt binary.
+Stop an older running aiport with Ctrl+C before starting the rebuilt binary.
 
 ## First-run onboarding
 
@@ -83,7 +83,7 @@ agent options go after `--`. Settings apply to this launch; global client settin
 are not edited. The child receives its own local token, not configured upstream
 keys or the management credential. Codex uses Responses over HTTP, with client
 request/stream retries disabled. Claude Code uses native Messages. The selected
-target must actually support the client's protocol; Aiport does no translation.
+target must actually support the client's protocol; aiport does no translation.
 Ollama/llama.cpp Chat compatibility alone does not establish Codex compatibility.
 
 ## Connect an application
@@ -143,7 +143,7 @@ No archives or supported platform release matrix exist yet.
 
 See [configuration](docs/configuration.md), [implementation](docs/implementation.md),
 [compatibility](docs/compatibility.md), and [dependency notices](THIRD_PARTY.md).
-Aiport is licensed under [Apache-2.0](LICENSE); the name and logo are covered by
+aiport is licensed under [Apache-2.0](LICENSE); the name and logo are covered by
 [TRADEMARKS.md](TRADEMARKS.md). See [CONTRIBUTING.md](CONTRIBUTING.md) (DCO sign-off required).
 
 ## Embedded dashboard preview
@@ -171,9 +171,9 @@ Activity is saved to a private SQLite file next to your configuration
 offer a metadata record to a nonblocking bounded queue; one writer saves records
 in batches and deletes rows older than `retention_days` (default 7). History
 survives restarts. Dropped records and failed writes are counted and shown.
-If the database cannot be opened, Aiport says so at startup and keeps the latest
+If the database cannot be opened, aiport says so at startup and keeps the latest
 500 records in memory for that session instead. A database written by a newer
-Aiport turns recording off rather than risk it. Generated onboarding configs
+aiport turns recording off rather than risk it. Generated onboarding configs
 enable telemetry; existing configs are preserved, so set `telemetry.enabled: true`
 in yours and restart if you want it. When disabled, no request metadata is recorded.
 Deleted rows can linger in SQLite's WAL and free pages; deletion is not secure erasure.

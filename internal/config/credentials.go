@@ -14,7 +14,7 @@ import (
 // API keys entered in the dashboard. It is never part of the YAML.
 func CredentialFile(configPath string) string { return configPath + ".env" }
 
-const credentialHeader = "# Aiport credentials: local tokens and provider API keys entered in the dashboard.\n# Private (0600). Never commit or share this file.\n"
+const credentialHeader = "# aiport credentials: local tokens and provider API keys entered in the dashboard.\n# Private (0600). Never commit or share this file.\n"
 
 // ReadCredentialFile parses `export NAME='value'` lines. A missing file yields an
 // empty map; a file readable by group/others is refused.

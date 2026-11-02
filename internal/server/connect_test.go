@@ -42,7 +42,7 @@ func TestConnectDocument(t *testing.T) {
 		}
 	}
 	md := get("/_connect", "text/markdown")
-	if md.Code != 200 || !strings.HasPrefix(md.Header().Get("Content-Type"), "text/markdown") || !strings.Contains(md.Body.String(), "# Aiport Connect v1") {
+	if md.Code != 200 || !strings.HasPrefix(md.Header().Get("Content-Type"), "text/markdown") || !strings.Contains(md.Body.String(), "# aiport Connect v1") {
 		t.Fatalf("markdown: %d", md.Code)
 	}
 	if get("/_connect?format=markdown", "").Code != 200 || get("/_connect?format=xml", "").Code != 400 {
