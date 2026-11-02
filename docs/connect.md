@@ -60,7 +60,10 @@ configured) and `code`. The dashboard's Integrate page renders the same data.
   `aiport_my_requests`, `aiport_my_issues` and `aiport_issue_fixed` and their
   HTTP equivalents, checking the Application's Issues at the start of a
   session and saying when one is fixed on its side, how to write a Change
-  request (`kind`, `need`, `details`, `why`, `scope`, `scope_case`), waiting
+  request (`kind`, `need`, `details`, `why`, `scope`, `scope_case`, and the
+  optional `alias`, `prefer_connection` and `prefer_model`), naming tasks
+  rather than providers (the Owner decides which provider serves an
+  Application; a preference is advice), waiting
   for the Owner's decision, the permission (`403 change_requests_not_allowed`
   until the Owner allows it) and hints.
 

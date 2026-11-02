@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"aiport/internal/capability"
@@ -78,21 +79,32 @@ type Request struct {
 	Scope     string `json:"scope"`
 	ScopeCase string `json:"scope_case"`
 	FiledBy   string `json:"filed_by,omitempty"`
+	// Alias is the model name the Application sends for this task (for
+	// application_alias): a name for the task, such as review-code, not a
+	// provider's model id.
+	Alias string `json:"alias,omitempty"`
+	// PreferConnection and PreferModel are the Application's advice on what
+	// should serve it. They pre-fill the Owner's decision; the Owner decides.
+	PreferConnection string `json:"prefer_connection,omitempty"`
+	PreferModel      string `json:"prefer_model,omitempty"`
 }
 
 // Answer is what the requesting Application sees of its Change request: what
 // it asked, the status, and the Owner's decision (the Scope granted and the
 // note) once there is one.
 type Answer struct {
-	ID        string `json:"id"`
-	Kind      Kind   `json:"kind"`
-	Need      string `json:"need"`
-	Details   string `json:"details"`
-	Why       string `json:"why"`
-	Scope     Scope  `json:"scope"`
-	ScopeCase string `json:"scope_case"`
-	FiledBy   string `json:"filed_by,omitempty"`
-	Status    Status `json:"status"`
+	ID               string `json:"id"`
+	Kind             Kind   `json:"kind"`
+	Need             string `json:"need"`
+	Details          string `json:"details"`
+	Why              string `json:"why"`
+	Scope            Scope  `json:"scope"`
+	ScopeCase        string `json:"scope_case"`
+	FiledBy          string `json:"filed_by,omitempty"`
+	Alias            string `json:"alias,omitempty"`
+	PreferConnection string `json:"prefer_connection,omitempty"`
+	PreferModel      string `json:"prefer_model,omitempty"`
+	Status           Status `json:"status"`
 	// Repeats counts how often the same request was filed again while it
 	// waited.
 	Repeats   int   `json:"repeats,omitempty"`
@@ -106,7 +118,13 @@ type Answer struct {
 	ChangeID     string `json:"change_id,omitempty"`
 }
 
-var requestFields = []string{"kind", "need", "details", "why", "scope", "scope_case", "filed_by"}
+var requestFields = []string{"kind", "need", "details", "why", "scope", "scope_case", "filed_by", "alias", "prefer_connection", "prefer_model"}
+
+// optionalFields may be left out of a Change request.
+var optionalFields = map[string]bool{"filed_by": true, "alias": true, "prefer_connection": true, "prefer_model": true}
+
+// MaxName is the most characters of an alias, Connection or model name.
+const MaxName = 256
 
 // File files the Change request in body (a JSON object) for Application app
 // at time at. It refuses, in this order: the loop turned off (ErrOff), a
@@ -143,6 +161,7 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 	if err := extension.Check(q.live.Config(), config.HookPolicy, extension.Input{Request: &extension.Request{
 		Application: app, Kind: r.Kind, Supported: capability.BuiltIn(r.Kind), Need: r.Need, Details: r.Details,
 		Why: r.Why, Scope: r.Scope, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,
+		Alias: r.Alias, PreferConnection: r.PreferConnection, PreferModel: r.PreferModel,
 	}}); err != nil {
 		return Answer{}, err
 	}
@@ -154,6 +173,7 @@ func (q *Queue) File(app string, body []byte, at time.Time) (Answer, error) {
 	it := Item{
 		Source: FromRequest, Kind: Kind(r.Kind), Application: app, Subject: r.subject(), Scope: Scope(r.Scope),
 		Need: r.Need, Details: r.Details, Why: r.Why, ScopeCase: r.ScopeCase, FiledBy: r.FiledBy,
+		Proposal: Proposal{Alias: r.Alias, Target: r.PreferConnection, Model: r.PreferModel},
 	}
 	if !capability.BuiltIn(r.Kind) {
 		it.Status = NotSupported
@@ -213,7 +233,7 @@ func readRequest(body []byte) (Request, []Problem) {
 	var raw map[string]json.RawMessage
 	d := json.NewDecoder(bytes.NewReader(body))
 	if d.Decode(&raw) != nil || raw == nil {
-		return Request{}, []Problem{{"", "send a JSON object with kind, need, details, why, scope and scope_case (filed_by is optional)"}}
+		return Request{}, []Problem{{"", "send a JSON object with kind, need, details, why, scope and scope_case (filed_by, alias, prefer_connection and prefer_model are optional)"}}
 	}
 	var problems []Problem
 	values := map[string]string{}
@@ -242,9 +262,13 @@ func readRequest(body []byte) (Request, []Problem) {
 		total += n
 		switch {
 		case v == "":
-			if f != "filed_by" {
+			if !optionalFields[f] {
 				problems = append(problems, Problem{f, "missing; " + fieldHelp[f]})
 			}
+		case (f == "alias" || f == "prefer_connection" || f == "prefer_model") && n > MaxName:
+			problems = append(problems, Problem{f, "too long: at most 256 characters"})
+		case (f == "alias" || f == "prefer_connection" || f == "prefer_model") && strings.ContainsFunc(v, unicode.IsSpace):
+			problems = append(problems, Problem{f, "must be one name without spaces"})
 		case n > MaxField:
 			problems = append(problems, Problem{f, "too long: at most 2,000 characters"})
 		case f == "need" && strings.ContainsAny(v, "\r\n"):
@@ -262,7 +286,8 @@ func readRequest(body []byte) (Request, []Problem) {
 		sortProblems(problems)
 		return Request{}, problems
 	}
-	return Request{Kind: values["kind"], Need: values["need"], Details: values["details"], Why: values["why"], Scope: values["scope"], ScopeCase: values["scope_case"], FiledBy: values["filed_by"]}, nil
+	return Request{Kind: values["kind"], Need: values["need"], Details: values["details"], Why: values["why"], Scope: values["scope"], ScopeCase: values["scope_case"], FiledBy: values["filed_by"],
+		Alias: values["alias"], PreferConnection: values["prefer_connection"], PreferModel: values["prefer_model"]}, nil
 }
 
 var fieldHelp = map[string]string{
@@ -309,13 +334,14 @@ func sortProblems(p []Problem) {
 
 // subject is what identical requests share: all their content.
 func (r Request) subject() string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{r.Kind, r.Need, r.Details, r.Why, r.Scope, r.ScopeCase, r.FiledBy}, "\x00")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{r.Kind, r.Need, r.Details, r.Why, r.Scope, r.ScopeCase, r.FiledBy, r.Alias, r.PreferConnection, r.PreferModel}, "\x00")))
 	return "request:" + hex.EncodeToString(sum[:8])
 }
 
 func answer(it Item) Answer {
 	a := Answer{
 		ID: it.ID, Kind: it.Kind, Need: it.Need, Details: it.Details, Why: it.Why, Scope: it.Scope, ScopeCase: it.ScopeCase, FiledBy: it.FiledBy,
+		Alias: it.Proposal.Alias, PreferConnection: it.Proposal.Target, PreferModel: it.Proposal.Model,
 		Status: it.Status, Repeats: it.Repeats, CreatedAt: it.CreatedAt, UpdatedAt: it.UpdatedAt,
 	}
 	if v := it.Decision; v != nil {

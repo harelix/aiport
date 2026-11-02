@@ -431,3 +431,44 @@ func TestTheOwnerCanListDecidedItemsByOutcome(t *testing.T) {
 		t.Fatalf("an unknown status was accepted: %d %s", w.Code, w.Body)
 	}
 }
+
+// An Application names its task (the alias) and may advise a Connection and
+// model; the advice pre-fills the Owner's decision but never decides it.
+func TestAChangeRequestCarriesTheApplicationsPreferenceAsAdvice(t *testing.T) {
+	h, path := requestsServer(t)
+	id := file(t, h, reqHelper, map[string]any{
+		"alias": "review-code", "prefer_connection": "cpp", "prefer_model": "qwen-coder",
+		"details": "A model for code review; qwen-coder did best in our review tests.",
+	})
+	if a := answerOf(t, h, reqHelper, id); a["alias"] != "review-code" || a["prefer_connection"] != "cpp" || a["prefer_model"] != "qwen-coder" {
+		t.Fatalf("the Application does not see what it asked for: %v", a)
+	}
+	_, out := call(h, "GET", "/api/v1/decisions", "", reqManagement, false)
+	it := out["items"].([]any)[0].(map[string]any)
+	p, _ := it["proposal"].(map[string]any)
+	if p["alias"] != "review-code" || p["target"] != "cpp" || p["model"] != "qwen-coder" {
+		t.Fatalf("the preference does not pre-fill the decision: %v", it)
+	}
+	// The Owner decides otherwise: the alias goes where the Owner says.
+	if code, out := decideOn(t, h, reqManagement, id, `{"action":"accept","scope":"application","alias":"review-code","target":"local","model":"llama3"}`); code != 200 {
+		t.Fatalf("accept: %d %v", code, out)
+	}
+	c := readConfig(t, path)
+	o, _ := c.Application("helper")
+	if len(o.Aliases) != 1 || o.Aliases[0].Alias != "review-code" || o.Aliases[0].Target != "local" || o.Aliases[0].Model != "llama3" {
+		t.Fatalf("the Owner's choice was not applied: %+v", o.Aliases)
+	}
+}
+
+func TestAChangeRequestsPreferenceFieldsAreChecked(t *testing.T) {
+	h, _ := requestsServer(t)
+	w, out := call(h, "POST", RequestsPath, requestBody(map[string]any{"alias": "has space", "prefer_model": strings.Repeat("m", 300)}), reqHelper, false)
+	if w.Code != 400 || errorCode(out) != "invalid_change_request" {
+		t.Fatalf("bad preference fields were accepted: %d %s", w.Code, w.Body)
+	}
+	for _, f := range []string{"alias", "prefer_model"} {
+		if !strings.Contains(w.Body.String(), `"field":"`+f+`"`) {
+			t.Fatalf("problem for %s not listed: %s", f, w.Body)
+		}
+	}
+}

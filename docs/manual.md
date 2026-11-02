@@ -148,6 +148,22 @@ which need a key or are unhealthy. Click a heading to open it.
 Applications never see provider keys. They send their own aiport token, and
 aiport adds the key upstream.
 
+### Removing a Connection, and when one fails
+
+aiport will not remove a Connection that something still uses: a protocol
+default, an Application bound to it, an Alias (shared or an Application's
+own), the compression evaluator, Explanations or the model calls of Agent
+runs. The message names what uses it; move that first, then remove the
+Connection. Every step is a Change you can revert.
+
+There is no automatic fallback. When a Connection is down or keeps
+answering with errors, calls to it fail and the Application gets the
+provider's own error. When it keeps happening for one Application, aiport
+opens an Issue that offers to bind that Application to a working
+Connection; you approve it. Moving an Application to another Connection is
+never applied automatically, so aiport never sends calls where you did not
+choose.
+
 ## Routing and protocol defaults
 
 aiport speaks the providers' native APIs and does not translate between
@@ -899,6 +915,12 @@ Issue opens again and offers the aiport fix again.
   Integrate page to pair it, or Dismiss). Thresholds are under `adapting:`
   in the configuration.
 - **Change requests** come from Applications you allowed to request changes.
+  An Application names a task (for example the alias `review-code`), not a
+  provider: you decide which Connection and model serve it. It may add
+  advice ("suggests claude-sonnet on anthropic", with its reasons); the
+  advice pre-fills the form, and you can choose otherwise now or change it
+  later (`origins[].aliases` in the configuration file, or a new Change
+  request) without touching the Application's code.
   Each shows what it asks for; **Details and reasons** opens the full
   details, why it is needed, the argument for the Scope asked for, and who
   filed it (as stated). Identical requests

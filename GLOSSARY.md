@@ -40,8 +40,9 @@ shared ones.
 
 **Change request**
 An Application asking for aiport to work differently for it, or for every
-Application, with what it needs, why, and an argument for that scope. The
-Owner approves or rejects it.
+Application, with what it needs, why, and an argument for that scope. It
+may advise which provider and model should serve it; the Owner decides,
+approves or rejects it.
 
 **Suggestion**
 aiport proposing a change itself, from patterns in its request history, with

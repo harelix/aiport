@@ -31,8 +31,8 @@ Evidence: 5 failed calls between ` + at("from_ms") + ` and ` + at("to_ms") + ` (
 What aiport found: Connection "local" serves "llama3:8b" (from the Connections' free model lists).
 
 What to change in docs-bot, one of:
-1. Ask aiport to route "llama3:8b" for docs-bot to Connection "local": file a Change request of kind application_alias (alias "llama3:8b", Connection "local", model "llama3:8b"). If the Owner approves aiport's own fix for this Issue instead, no code change is needed.
-2. Send a model the Connection these calls go to serves. Models the openai Connections of this gateway list: gpt-4o-mini, llama3:8b, qwen2.5:7b.
+1. Ask aiport to route "llama3:8b" for docs-bot: file a Change request of kind application_alias (alias "llama3:8b", prefer_connection "local", prefer_model "llama3:8b"). The Owner decides which Connection and model serve it. If the Owner approves aiport's own fix for this Issue instead, no code change is needed.
+2. Send a model this gateway serves. Models the openai Connections of this gateway list: gpt-4o-mini, llama3:8b, qwen2.5:7b.
 Do not retry "llama3:8b" unchanged.
 
 How to confirm: after the change, make one call through aiport with docs-bot's own token and check it answers 200 instead of 404. aiport marks this Issue resolved by itself when calls from docs-bot for "llama3:8b" succeed again; it checks request history, so nothing else needs reporting.`

@@ -352,12 +352,12 @@ func unknownModelFix(is Issue) string {
 			target = d.Serving[0]
 		}
 		if target != "" {
-			b.WriteString("1. Ask aiport to route " + model + " for " + app + " to Connection " + strconv.Quote(target) + ": file a Change request of kind " + string(KindApplicationAlias) + " (alias " + model + ", Connection " + strconv.Quote(target) + ", model " + model + ").")
+			b.WriteString("1. Ask aiport to route " + model + " for " + app + ": file a Change request of kind " + string(KindApplicationAlias) + " (alias " + model + ", prefer_connection " + strconv.Quote(target) + ", prefer_model " + model + "). The Owner decides which Connection and model serve it.")
 		} else {
-			b.WriteString("1. Ask aiport to route " + model + " for " + app + " to a Connection that serves it: file a Change request of kind " + string(KindApplicationAlias) + " (alias " + model + ", the Connection, model " + model + ").")
+			b.WriteString("1. Ask aiport to route " + model + " for " + app + ": file a Change request of kind " + string(KindApplicationAlias) + " (alias " + model + "; prefer_connection and prefer_model only if you know what should serve it). The Owner decides which Connection and model serve it.")
 		}
 		b.WriteString(" If the Owner approves aiport's own fix for this Issue instead, no code change is needed.\n")
-		b.WriteString("2. Send a model the Connection these calls go to serves.")
+		b.WriteString("2. Send a model this gateway serves.")
 		if d != nil && len(d.Available) > 0 {
 			b.WriteString(" Models the " + d.Protocol + " Connections of this gateway list: " + strings.Join(d.Available, ", ") + ".")
 		}

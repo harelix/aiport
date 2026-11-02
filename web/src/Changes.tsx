@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {ArrowUpRight, CircleAlert, History, Lightbulb, Puzzle, Sparkles, Undo2} from 'lucide-react';
+import {ArrowUpRight, ChevronRight, CircleAlert, History, Lightbulb, Puzzle, Sparkles, Undo2} from 'lucide-react';
 import {type Upstream, UpstreamAction} from './Upstream';
 import {DecisionSoundToggle} from './decisionSound';
 import {CopyButton} from './Integrate';
@@ -404,7 +404,7 @@ export function ApplicationFix({issue}: {issue: Issue}) {
   if (!issue.application_fix) return null;
   return <div className="application-fix">
     <CopyButton text={issue.application_fix} label="Copy fix for the Coding agent"/>
-    <details><summary>Read the fix for {issue.application}’s Coding agent</summary><pre>{issue.application_fix}</pre></details>
+    <details><summary><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/>Read the fix for {issue.application}’s Coding agent</summary><pre>{issue.application_fix}</pre></details>
   </div>;
 }
 
@@ -443,7 +443,8 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
   // A failing-Connection Suggestion moves the Application away from its subject: never offer it back.
   const failing = !request && item.kind === 'bind_application' ? item.subject : undefined;
   const choices = targets.filter(t => t !== failing);
-  const [target, setTarget] = useState(item.proposal.target || choices[0] || ''), [model, setModel] = useState(item.proposal.model || '');
+  // The Application's preferred Connection is advice: pre-selected only when it is one of the choices.
+  const [target, setTarget] = useState(item.proposal.target && choices.includes(item.proposal.target) ? item.proposal.target : choices[0] || ''), [model, setModel] = useState(item.proposal.model || '');
   const [name, setName] = useState(item.proposal.alias || ''), [scope, setScope] = useState(item.scope || 'application');
   const [note, setNote] = useState(''), [busy, setBusy] = useState(''), [error, setError] = useState('');
   const [blocked, setBlocked] = useState<Blocked | null>(null);
@@ -481,7 +482,8 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
     {ev && item.kind === 'pair_application' && <div className="evidence">Evidence: {ev.count} refused requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only counts are kept, never the token.</div>}
     {ev && item.kind !== 'pair_application' && <div className="evidence">Evidence: {ev.count} requests between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes). Only request metadata was used.</div>}
     {request && item.details && <p className="decision-ask"><span>Asks for</span> {firstSentence(item.details)}</p>}
-    {request && <details className="decision-more"><summary>Details and reasons</summary>
+    <Advice item={item} targets={choices}/>
+    {request && <details className="decision-more"><summary><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/>Details and reasons</summary>
       {!merged && <dl className="request-text">
         <dt>Details</dt><dd>{item.details}</dd>
         <dt>Why</dt><dd>{item.why}</dd>
@@ -520,6 +522,17 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
   </div>;
 }
 
+/**
+ * An Application's advice on what should serve it (prefer_connection, prefer_model): shown as advice, because the
+ * Owner decides which provider serves an Application. Says so when the preferred Connection is not configured.
+ */
+function Advice({item, targets}: {item: Decision; targets?: string[]}) {
+  const {target, model} = item.proposal;
+  if (item.source !== 'request' || (!target && !model)) return null;
+  const missing = !!target && !!targets && !targets.includes(target);
+  return <p className="decision-ask"><span>{item.application} suggests</span> {model || 'a model'}{target ? ' on ' + target : ''}{missing ? ' (no such Connection here; choose one below)' : ''}. You decide.</p>;
+}
+
 /** A decided Suggestion or Change request: what it asked, the outcome, who decided, when, and the note. Plain text only. */
 function Decided({item}: {item: Decision}) {
   const request = item.source === 'request', d = item.decision;
@@ -534,8 +547,9 @@ function Decided({item}: {item: Decision}) {
       </div>
     </div>
     {request && item.details && <p className="decision-ask"><span>Asked for</span> {firstSentence(item.details)}</p>}
+    <Advice item={item}/>
     {d && <p className="evidence">{outcome} by {d.by} on {when(d.at_ms)}{d.note ? ': “' + d.note + '”' : '.'}{item.status === 'accepted' ? ' The Change is in Applied changes below, where you can revert it.' : ''}</p>}
-    {request && <details className="decision-more"><summary>Details and reasons</summary>
+    {request && <details className="decision-more"><summary><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/>Details and reasons</summary>
       <dl className="request-text">
         {item.details && <><dt>Details</dt><dd>{item.details}</dd></>}
         {item.why && <><dt>Why</dt><dd>{item.why}</dd></>}

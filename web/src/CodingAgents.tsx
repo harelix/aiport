@@ -104,25 +104,27 @@ function RunCalls({agents, targets, onSaved}: {agents: CodingAgents; targets: Ru
     try { await send('agents/calls', {connection, model: model.trim()}, 'PUT'); setMessage('Saved as a Change you can revert.'); onSaved(); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  return <>
+  return <div className="settings-group">
     <h3 className="subheading">Model calls of Agent runs</h3>
-    <div className="agent-fields">
-      <label htmlFor="run-connection">Connection</label>
-      <select id="run-connection" value={connection} disabled={busy} onChange={e => setConnection(e.target.value)}>
-        <option value="">Anthropic protocol default</option>
-        {anthropic.map(t => <option key={t.id} value={t.id}>{t.id} ({t.provider})</option>)}
-      </select>
-      <label htmlFor="run-model">Model</label>
-      <input id="run-model" value={model} disabled={busy} maxLength={256} spellCheck={false} autoComplete="off" placeholder="the agent's own choice" onChange={e => setModel(e.target.value)}/>
+    <div className="form-row">
+      <label>Connection
+        <select id="run-connection" value={connection} disabled={busy} onChange={e => setConnection(e.target.value)}>
+          <option value="">Anthropic protocol default</option>
+          {anthropic.map(t => <option key={t.id} value={t.id}>{t.id} ({t.provider})</option>)}
+        </select>
+      </label>
+      <label>Model
+        <input id="run-model" value={model} disabled={busy} maxLength={256} spellCheck={false} autoComplete="off" placeholder="the agent's own choice" onChange={e => setModel(e.target.value)}/>
+      </label>
     </div>
-    <small className="muted">Claude Code runs call models through aiport, with a credential that lives only as long as the run, and show in Activity under the Application <code>aiport</code>. Codex and Gemini CLI runs use their own login; aiport never edits an agent's configuration files. Explain runs stop after {saved.explain_minutes || 10} minutes (<code>agent_runs.explain_minutes</code>).</small>
-    {!anthropic.length && <p className="muted-small">No Anthropic-protocol Connection is configured, so Claude Code runs use their own login.</p>}
-    <div className="button-row">
-      <button type="button" className="secondary" disabled={busy || !dirty} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+    <small>Claude Code runs call models through aiport, with a credential that lives only as long as the run, and show in Activity under the Application <code>aiport</code>. Codex and Gemini CLI runs use their own login; aiport never edits an agent's configuration files. Explain runs stop after {saved.explain_minutes || 10} minutes (<code>agent_runs.explain_minutes</code>).</small>
+    {!anthropic.length && <small>No Anthropic-protocol Connection is configured, so Claude Code runs use their own login.</small>}
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    <div className="form-actions">
+      <button type="button" className="primary" disabled={busy || !dirty} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
       {message && !dirty && <span className="muted-small" role="status">{message}</span>}
     </div>
-    {error && <p className="auth-error" role="alert">{error}</p>}
-  </>;
+  </div>;
 }
 
 /** Settings: the coding agent of every Application that has none of its own, and where runs' model calls go. */
@@ -137,13 +139,18 @@ export function DefaultAgentPanel({tick, targets, onChange}: {tick: number; targ
   const current = agents.agents.find(a => a.id === agents.default_agent);
   return <section className="panel" aria-labelledby="default-agent-heading">
     <div className="panel-heading"><h2 id="default-agent-heading"><Bot size={16} aria-hidden/> Default coding agent</h2><span>For Agent runs</span></div>
-    <p className="muted">The coding agent aiport starts to explain or fix an Application's Issues, for every Application that has none of its own (set on the Integrate page). aiport only starts agents it found installed, by absolute path.</p>
-    <div className="agent-fields">
-      <label htmlFor="default-agent">Default agent</label>
-      <AgentSelect id="default-agent" value={agents.default_agent || ''} agents={agents.agents} emptyLabel="None" onChange={choose} disabled={busy}/>
+    <div className="conn-form settings-body">
+      <div className="settings-group">
+        <div className="form-row">
+          <label>Default agent
+            <AgentSelect id="default-agent" value={agents.default_agent || ''} agents={agents.agents} emptyLabel="None" onChange={choose} disabled={busy}/>
+          </label>
+        </div>
+        <small>The coding agent aiport starts to explain or fix an Application's Issues, for every Application that has none of its own (set on the Integrate page). aiport only starts agents it found installed, by absolute path. Saved as soon as you choose.</small>
+        <InstallHint agent={current}/>
+        {error && <p className="auth-error" role="alert">{error}</p>}
+      </div>
+      <RunCalls agents={agents} targets={targets} onSaved={() => { refresh(); onChange(); }}/>
     </div>
-    <InstallHint agent={current}/>
-    {error && <p className="auth-error" role="alert">{error}</p>}
-    <RunCalls agents={agents} targets={targets} onSaved={() => { refresh(); onChange(); }}/>
   </section>;
 }

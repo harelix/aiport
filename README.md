@@ -8,7 +8,9 @@ A local AI gateway for the applications and coding agents on your machine: one
 place for provider keys, routing and request history, that notices when an
 application keeps failing and offers to fix it.
 
-<!-- TODO(author): add a dashboard screenshot (Changes or Integrate page), e.g. visuals/dashboard.png -->
+<p align="center">
+  <img src="visuals/providers-sc.png" alt="The aiport dashboard: provider Connections with their keys saved, protocol defaults and connection checks" width="860">
+</p>
 
 ## Quickstart
 

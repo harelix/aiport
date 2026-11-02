@@ -72,11 +72,16 @@ A policy gets `request`:
     "why": "The nightly summary job is cheap.",
     "scope": "application",
     "scope_case": "Only this job needs it.",
-    "filed_by": "nightly agent"
+    "filed_by": "nightly agent",
+    "alias": "fast",
+    "prefer_connection": "local",
+    "prefer_model": "llama3"
   }
 }
 ```
 
+`alias`, `prefer_connection` and `prefer_model` are present only when the
+Application sent them: its task name and its advice on what should serve it.
 `supported` is false for a kind aiport cannot apply (it would be kept as
 `not_supported`); a policy can refuse those too.
 

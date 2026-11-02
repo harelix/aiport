@@ -58,6 +58,11 @@ type Request struct {
 	Scope     string `json:"scope"`
 	ScopeCase string `json:"scope_case"`
 	FiledBy   string `json:"filed_by,omitempty"`
+	// Alias, PreferConnection and PreferModel are the Application's optional
+	// task name and advice on what should serve it.
+	Alias            string `json:"alias,omitempty"`
+	PreferConnection string `json:"prefer_connection,omitempty"`
+	PreferModel      string `json:"prefer_model,omitempty"`
 }
 
 // Change is a Change the Owner approved, about to be applied.
