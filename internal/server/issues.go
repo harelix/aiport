@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 
 	"aiport/internal/decide"
@@ -18,21 +17,7 @@ type modelFinder struct{ h *Handler }
 
 func (f modelFinder) Serves(ctx context.Context, protocol, model string) decide.Diagnosis {
 	s := f.h.gateway.Serves(ctx, protocol, model)
-	d := decide.Diagnosis{Protocol: s.Protocol, Answer: s.Answer, Serving: s.Serving, Unknown: s.Unknown}
-	seen := map[string]bool{}
-	for _, t := range f.h.snapshot().Targets {
-		if t.Disabled || t.Protocol != protocol {
-			continue
-		}
-		for _, id := range f.h.gateway.Models(ctx, t.ID, false).Models {
-			if !seen[id] {
-				seen[id] = true
-				d.Available = append(d.Available, id)
-			}
-		}
-	}
-	sort.Strings(d.Available)
-	return d
+	return decide.Diagnosis{Protocol: s.Protocol, Answer: decide.Served(s.Answer), Serving: s.Serving, Unknown: s.Unknown, Available: f.h.gateway.Available(ctx, protocol)}
 }
 
 // issuesRoute serves Issues to the Owner:

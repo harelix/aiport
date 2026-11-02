@@ -198,8 +198,8 @@ var migrations = []string{
 	`CREATE TABLE issues (
 		id            TEXT PRIMARY KEY,
 		application   TEXT NOT NULL,
-		cause         TEXT NOT NULL, -- unknown_model
-		subject       TEXT NOT NULL, -- for unknown_model, the requested model
+		cause         TEXT NOT NULL, -- unknown_model, failing_connection
+		subject       TEXT NOT NULL, -- for unknown_model the requested model, for failing_connection the Connection id
 		state         TEXT NOT NULL, -- open, resolving, resolved, dismissed
 		created_at_ms INTEGER NOT NULL,
 		updated_at_ms INTEGER NOT NULL,

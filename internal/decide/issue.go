@@ -76,12 +76,16 @@ const (
 	FixReverted FixState = "reverted" // the Change was reverted
 )
 
-// Answers to "which enabled Connections serve this model?" (proxy.Serving).
+// Served answers "which enabled Connections serve this model?", with the
+// wire values of proxy.Answer. (Answer in this package is a Change
+// request's answer.)
+type Served string
+
 const (
-	ServedByOne     = "one"     // certain: exactly one Connection serves it
-	ServedByNone    = "none"    // no Connection lists it
-	ServedBySeveral = "several" // ambiguous
-	ServedUnknown   = "unknown" // a listing failed: no certain answer
+	ServedByOne     Served = "one"     // certain: exactly one Connection serves it
+	ServedByNone    Served = "none"    // no Connection lists it
+	ServedBySeveral Served = "several" // ambiguous
+	ServedUnknown   Served = "unknown" // a listing failed: no certain answer
 )
 
 // Diagnosis is what aiport found out about an Issue's cause. For an unknown
@@ -90,7 +94,7 @@ const (
 // protocol list (Available, bounded), from the free model listings.
 type Diagnosis struct {
 	Protocol  string   `json:"protocol"`
-	Answer    string   `json:"answer"`
+	Answer    Served   `json:"answer"`
 	Serving   []string `json:"serving"`
 	Unknown   []string `json:"unknown"`
 	Available []string `json:"available,omitempty"`

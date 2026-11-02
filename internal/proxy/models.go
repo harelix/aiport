@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -40,20 +41,22 @@ type ModelList struct {
 	ListedAt int64    `json:"listed_at_ms"`
 }
 
-// Answers to "which enabled Connections serve model X for this protocol?".
+// Answer answers "which enabled Connections serve model X for this
+// protocol?".
+type Answer string
+
 const (
-	ServedByOne     = "one"     // certain: exactly one Connection lists it and every listing succeeded
-	ServedByNone    = "none"    // no Connection lists it and every listing succeeded
-	ServedBySeveral = "several" // ambiguous: two or more Connections list it
-	ServedUnknown   = "unknown" // a listing failed, so no certain answer
+	ServedByOne     Answer = "one"     // certain: exactly one Connection lists it and every listing succeeded
+	ServedByNone    Answer = "none"    // no Connection lists it and every listing succeeded
+	ServedBySeveral Answer = "several" // ambiguous: two or more Connections list it
+	ServedUnknown   Answer = "unknown" // a listing failed, so no certain answer
 )
 
 // Serving answers "which enabled Connections of Protocol serve Model?".
 type Serving struct {
 	Model    string `json:"model"`
 	Protocol string `json:"protocol"`
-	// Answer is ServedByOne, ServedByNone, ServedBySeveral or ServedUnknown.
-	Answer string `json:"answer"`
+	Answer Answer `json:"answer"`
 	// Serving are the Connections whose list has the model.
 	Serving []string `json:"serving"`
 	// Unknown are the Connections whose listing failed: they may or may not
@@ -152,6 +155,48 @@ func (g *Gateway) Models(ctx context.Context, targetID string, refresh bool) Mod
 // of the other protocol are not considered. A Connection whose listing
 // fails is Unknown, never "does not serve".
 func (g *Gateway) Serves(ctx context.Context, protocol, model string) Serving {
+	s := Serving{Model: model, Protocol: protocol, Serving: []string{}, Unknown: []string{}}
+	for _, l := range g.listAll(ctx, protocol) {
+		switch {
+		case !l.Listed:
+			s.Unknown = append(s.Unknown, l.Connection)
+		case slices.Contains(l.Models, model):
+			s.Serving = append(s.Serving, l.Connection)
+		}
+	}
+	switch {
+	case len(s.Serving) > 1:
+		s.Answer = ServedBySeveral
+	case len(s.Unknown) > 0:
+		s.Answer = ServedUnknown
+	case len(s.Serving) == 1:
+		s.Answer = ServedByOne
+	default:
+		s.Answer = ServedByNone
+	}
+	return s
+}
+
+// Available lists the models the enabled Connections of protocol list,
+// sorted and without repeats (cached lists are reused; a Connection whose
+// listing fails adds nothing).
+func (g *Gateway) Available(ctx context.Context, protocol string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, l := range g.listAll(ctx, protocol) {
+		for _, id := range l.Models {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// listAll lists every enabled Connection of protocol at once, in id order.
+func (g *Gateway) listAll(ctx context.Context, protocol string) []ModelList {
 	g.targetsMu.RLock()
 	var ids []string
 	for id, t := range g.routes.targets {
@@ -171,35 +216,7 @@ func (g *Gateway) Serves(ctx context.Context, protocol, model string) Serving {
 		}()
 	}
 	wg.Wait()
-	s := Serving{Model: model, Protocol: protocol, Serving: []string{}, Unknown: []string{}}
-	for _, l := range lists {
-		switch {
-		case !l.Listed:
-			s.Unknown = append(s.Unknown, l.Connection)
-		case contains(l.Models, model):
-			s.Serving = append(s.Serving, l.Connection)
-		}
-	}
-	switch {
-	case len(s.Serving) > 1:
-		s.Answer = ServedBySeveral
-	case len(s.Unknown) > 0:
-		s.Answer = ServedUnknown
-	case len(s.Serving) == 1:
-		s.Answer = ServedByOne
-	default:
-		s.Answer = ServedByNone
-	}
-	return s
-}
-
-func contains(list []string, v string) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
+	return lists
 }
 
 // modelIDs reads the model ids of a models listing: OpenAI and Anthropic
