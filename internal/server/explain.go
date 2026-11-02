@@ -30,7 +30,7 @@ func (h *Handler) explainer(app string) (w explain.Writer, agent *agentWriter, c
 	if h.decisions == nil || !h.decisions.On() {
 		return nil, nil, "adapting_off", "Explain is unavailable while adapting is turned off in the configuration."
 	}
-	if a := h.agentExplainer(app); a != nil {
+	if a := h.agentExplainer(app, h.codingAgentOf(app)); a != nil {
 		return nil, a, "", ""
 	}
 	c := h.live.Config()

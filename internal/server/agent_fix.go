@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,46 +32,57 @@ import (
 //     Owner's branch, merges or pushes: merging is the Owner's.
 //   - Discard: the worktree and the branch are removed; the Issue stays open.
 //
-// Stop, the time limit (agent_runs.fix_minutes) and a failed run remove the
-// worktree and the branch, except a run stopped because a command request
-// went unanswered: what it changed so far waits for review like a finished
-// run's diff (decide.BranchStoppedWaiting). The branch and the diff summary
+// Fix it is offered only for causes that can be in the Application's code
+// (FixCauses). Stop by the Owner and a failed run remove the worktree and
+// the branch. A run stopped because a command request went unanswered, or
+// that reached its time limit (agent_runs.fix_minutes), keeps what it
+// changed so far for review like a finished run's diff
+// (decide.BranchStoppedWaiting, BranchTimedOut). The branch and the diff summary
 // are kept with the Issue (decide.BranchFix). A run still recorded as going
 // when aiport starts is marked stopped and its worktree removed
 // (stopLeftFixes).
 
 // fixUnavailable says why Fix it is unavailable for Application app, in a
 // hint the dashboard shows instead of the button; "" when it is available.
-func (h *Handler) fixUnavailable(app string) string {
+func (h *Handler) fixUnavailable(app string, ca codingAgent) string {
 	if h.decisions == nil || !h.decisions.On() {
 		return "Fix it is unavailable while adapting is turned off in the configuration."
 	}
-	agent, path := h.snapshot().CodingAgent(app)
 	switch {
-	case agent == "" && path == "":
+	case ca.ID == "" && ca.Path == "":
 		return "Connect a Coding agent and the repository path of " + app + " (Integrate, the Application's row) to use Fix it."
-	case agent == "":
+	case ca.ID == "":
 		return "Choose the Coding agent of " + app + " (Integrate, the Application's row) to use Fix it."
-	case path == "":
+	case ca.Path == "":
 		return "Add the repository path of " + app + " (Integrate, the Application's row) to use Fix it."
-	}
-	if _, _, ok := h.codingAgentOf(app); !ok {
-		return "Fix it needs the Coding agent " + agent + " ready (Settings, Coding agents) and " + path + " to be the top of a git repository."
+	case !ca.OK:
+		return "Fix it needs the Coding agent " + ca.ID + " ready (Settings, Coding agents) and " + ca.Path + " to be the top of a git repository."
 	}
 	return ""
 }
 
+// FixCauses are the Issue causes Fix it is offered for: those whose cause
+// can be in the Application's code.
+var FixCauses = []decide.Cause{decide.CauseUnknownModel}
+
+// FixCauseHint says why Fix it is not offered for other causes.
+const FixCauseHint = "Fix it changes the Application's code, so it is offered when the cause can be there: a model name the Application asks for that no Connection serves. " +
+	"A failing Connection is not in the Application's code: bind the Application to a working Connection (the aiport fix) instead."
+
+func fixesCause(c decide.Cause) bool { return slices.Contains(FixCauses, c) }
+
 // fixBy says, per Application, whether Fix it is available, with which
-// agent and time limit, or the hint why not (GET /api/v1/issues).
-func (h *Handler) fixBy() map[string]any {
+// agent, time limit and for which causes, or the hint why not (GET
+// /api/v1/issues), from all, every Application's Coding agent.
+func (h *Handler) fixBy(all map[string]codingAgent) map[string]any {
 	out := map[string]any{}
-	for _, o := range h.snapshot().Origins {
-		if hint := h.fixUnavailable(o.ID); hint != "" {
-			out[o.ID] = map[string]any{"available": false, "hint": hint}
+	for app, ca := range all {
+		if hint := h.fixUnavailable(app, ca); hint != "" {
+			out[app] = map[string]any{"available": false, "hint": hint}
 			continue
 		}
-		a, _, _ := h.codingAgentOf(o.ID)
-		out[o.ID] = map[string]any{"available": true, "agent": a.ID, "agent_name": a.Name, "model_calls": h.modelCalls(a), "limit_ms": h.fixTimeLimit().Milliseconds()}
+		out[app] = map[string]any{"available": true, "agent": ca.Agent.ID, "agent_name": ca.Agent.Name, "model_calls": h.modelCalls(ca.Agent),
+			"limit_ms": h.fixTimeLimit().Milliseconds(), "causes": FixCauses, "cause_hint": FixCauseHint}
 	}
 	return out
 }
@@ -120,28 +132,34 @@ func (h *Handler) treeOf(b decide.BranchFix) worktree.Tree {
 	return worktree.Tree{Repo: b.Repository, Dir: b.Worktree, Branch: b.Branch, Base: b.Base, Root: h.worktreeRoot()}
 }
 
+// refused is why a request was refused: a 409 with code and message.
+type refused struct{ code, message string }
+
 // startFix starts Fix it for Issue is: the worktree, the branch fix
-// recorded as running, and the run. It returns the run, or an HTTP status,
-// code and message.
-func (h *Handler) startFix(is decide.Issue) (*agentrun.Run, int, string, string) {
+// recorded as running, and the run. It returns the run, or why not.
+func (h *Handler) startFix(is decide.Issue) (*agentrun.Run, *refused) {
 	h.fixMu.Lock()
 	defer h.fixMu.Unlock()
 	if is.State != decide.IssueOpen {
-		return nil, 409, "issue_not_open", "Fix it works on an open Issue; this one is " + string(is.State)
+		return nil, &refused{"issue_not_open", "Fix it works on an open Issue; this one is " + string(is.State)}
+	}
+	if !fixesCause(is.Cause) {
+		return nil, &refused{"fix_not_for_cause", FixCauseHint}
 	}
 	if b := is.BranchFix; b != nil && (b.State == decide.BranchRunning || b.Reviewable()) {
-		return nil, 409, "fix_waiting", "This Issue's last fix is still going or waiting for the Owner: keep or discard it first"
+		return nil, &refused{"fix_waiting", "This Issue's last fix is still going or waiting for the Owner: keep or discard it first"}
 	}
-	if hint := h.fixUnavailable(is.Application); hint != "" {
-		return nil, 409, "fix_unavailable", hint
+	ca := h.codingAgentOf(is.Application)
+	if hint := h.fixUnavailable(is.Application, ca); hint != "" {
+		return nil, &refused{"fix_unavailable", hint}
 	}
-	a, repo, _ := h.codingAgentOf(is.Application)
+	a := ca.Agent
 	if _, going := h.runner().Active(is.Application); going {
-		return nil, 409, "agent_run_running", agentrun.ErrBusy.Error()
+		return nil, &refused{"agent_run_running", agentrun.ErrBusy.Error()}
 	}
-	t, err := worktree.Create(repo, h.worktreeRoot(), is.ID)
+	t, err := worktree.Create(ca.Repo, h.worktreeRoot(), is.ID)
 	if err != nil {
-		return nil, 409, "worktree_failed", err.Error()
+		return nil, &refused{"worktree_failed", err.Error()}
 	}
 	calls := h.modelCalls(a)
 	env, token, revoke := h.runEnv(a, calls)
@@ -159,18 +177,18 @@ func (h *Handler) startFix(is decide.Issue) (*agentrun.Run, int, string, string)
 	})
 	if err != nil {
 		revoke()
-		_ = t.Discard()
+		_ = h.discardTree(t)
 		if errors.Is(err, agentrun.ErrBusy) {
-			return nil, 409, "agent_run_running", err.Error()
+			return nil, &refused{"agent_run_running", err.Error()}
 		}
-		return nil, 409, "fix_failed", "aiport could not start the agent"
+		return nil, &refused{"fix_failed", "aiport could not start the agent"}
 	}
 	b.Run = run.Info().ID
 	if _, err := h.decisions.RecordBranch(is.ID, b, h.clock()); err != nil {
 		run.Stop()
-		return nil, 409, "fix_failed", "aiport could not record the fix on the Issue"
+		return nil, &refused{"fix_failed", "aiport could not record the fix on the Issue"}
 	}
-	return run, 0, "", ""
+	return run, nil
 }
 
 // fixEnded records how a Fix it run ended: a diff for the Owner, or nothing
@@ -214,7 +232,17 @@ func (h *Handler) fixEnded(issue string, b decide.BranchFix, info agentrun.Info)
 			b.Note = why + "; what it changed so far waits for your review."
 		}
 	case agentrun.TimedOut:
-		discard(decide.BranchStopped, "Reached its time limit of "+time.Duration(info.LimitMS*int64(time.Millisecond)).String()+"; the worktree and the branch were removed.")
+		why := "Reached its time limit of " + time.Duration(info.LimitMS*int64(time.Millisecond)).String()
+		s, err := t.Summary()
+		switch {
+		case err != nil:
+			discard(decide.BranchStopped, why+"; "+err.Error()+"; the worktree was removed.")
+		case s.Empty():
+			discard(decide.BranchStopped, why+" before it changed anything; the worktree and the branch were removed.")
+		default:
+			b.State, b.Summary, b.Files = decide.BranchTimedOut, s.Text, s.Files
+			b.Note = why + "; what it changed so far waits for your review."
+		}
 	default:
 		discard(decide.BranchStopped, "The run failed: "+info.Error+"; the worktree and the branch were removed.")
 	}
@@ -301,9 +329,9 @@ func (h *Handler) fixRoute(w http.ResponseWriter, r *http.Request, fail func(int
 	}
 	switch action {
 	case "fix":
-		run, status, code, message := h.startFix(is)
-		if run == nil {
-			fail(status, code, message)
+		run, no := h.startFix(is)
+		if no != nil {
+			fail(409, no.code, no.message)
 			return true
 		}
 		is, _ = h.decisions.Issue(id)

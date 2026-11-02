@@ -178,7 +178,8 @@ func TestFixItEditsOnlyInsideItsOwnWorktree(t *testing.T) {
 
 func strs(v any) []string {
 	var out []string
-	for _, x := range v.([]any) {
+	l, _ := v.([]any)
+	for _, x := range l {
 		out = append(out, x.(string))
 	}
 	return out
@@ -327,7 +328,7 @@ func TestAFixItRunThatEndsWithoutADiffLeavesNothing(t *testing.T) {
 		note   string
 	}{
 		"stopped":   {script: acpScript{Steps: []acpStep{editConfig.Steps[0], {Say: "Working"}, {Cancel: true}}}, stop: true, state: "stopped", note: "Stopped"},
-		"timed out": {script: acpScript{Steps: []acpStep{editConfig.Steps[0], {Ignore: true}}}, limit: 300 * time.Millisecond, state: "stopped", note: "time limit of 300ms"},
+		"timed out": {script: acpScript{Steps: []acpStep{{Say: "Thinking"}, {Ignore: true}}}, limit: 300 * time.Millisecond, state: "stopped", note: "time limit of 300ms"},
 		"no change": {script: acpScript{Steps: []acpStep{{Say: "Nothing to change here."}}}, state: "empty", note: "without changing anything"},
 		"failed":    {script: acpScript{Steps: []acpStep{editConfig.Steps[0]}, Stop: "refusal"}, state: "stopped", note: "refused"},
 	} {
@@ -404,5 +405,58 @@ func TestFixItNeedsACodingAgentAndARepository(t *testing.T) {
 	_, out = call(five.h, "GET", "/api/v1/issues", "", issuesManagement, false)
 	if by := m(m(out["fix_by"])["docs-bot"]); by["limit_ms"] != float64(5*60*1000) {
 		t.Fatalf("agent_runs.fix_minutes: %v", out["fix_by"])
+	}
+}
+
+// Fix it changes the Application's code, so it is offered only for causes
+// that can be there (an unknown model name), not for a failing Connection.
+func TestFixItIsOnlyForCausesInTheApplicationsCode(t *testing.T) {
+	f, _ := failingFixture(t)
+	repo := gitRepository(t)
+	gitIn(t, repo, "commit", "-q", "--allow-empty", "-m", "start")
+	bin := t.TempDir()
+	installFakeAgent(t, bin, "claude", editConfig)
+	f.h.agentDirs = []string{bin}
+	if w, _ := call(f.h, "PATCH", "/api/v1/origins/docs-bot", `{"agent":"claude","repository":"`+repo+`"}`, issuesManagement, true); w.Code != 200 {
+		t.Fatalf("connect: %d %s", w.Code, w.Body)
+	}
+	f.chat(t, docsBotToken, "llama3:8b", 5)
+	f.detect()
+	is := f.only(t)
+	if is["cause"] != "failing_connection" {
+		t.Fatalf("issue: %v", is)
+	}
+	_, out := call(f.h, "GET", "/api/v1/issues", "", issuesManagement, false)
+	by := m(m(out["fix_by"])["docs-bot"])
+	if by["available"] != true || strings.Join(strs(by["causes"]), " ") != "unknown_model" || !strings.Contains(by["cause_hint"].(string), "Connection") {
+		t.Fatalf("fix_by: %v", by)
+	}
+	w, res := call(f.h, "POST", "/api/v1/issues/"+is["id"].(string)+"/fix", "", issuesManagement, true)
+	if w.Code != 409 || m(res["error"])["code"] != "fix_not_for_cause" {
+		t.Fatalf("Fix it for a failing Connection: %d %v", w.Code, res)
+	}
+	if len(worktrees(t, repo)) != 1 {
+		t.Fatal("a worktree was made")
+	}
+}
+
+// A Fix it run that reaches its time limit keeps its worktree and diff for
+// review, like one whose command went unanswered.
+func TestATimedOutFixKeepsItsDiffForReview(t *testing.T) {
+	f, _ := newFixFixture(t, acpScript{Steps: []acpStep{editConfig.Steps[0], {Ignore: true}}})
+	f.h.fixLimit = 500 * time.Millisecond
+	if code, out := f.fix(t); code != 202 {
+		t.Fatalf("fix: %d %v", code, out)
+	}
+	b := m(f.fixEnded(t)["branch_fix"])
+	if b["state"] != "timed_out" || b["worktree"] == nil || !strings.Contains(b["note"].(string), "time limit") {
+		t.Fatalf("branch fix: %v", b)
+	}
+	_, diff := call(f.h, "GET", "/api/v1/issues/"+f.id+"/fix", "", issuesManagement, false)
+	if !strings.Contains(diff["diff"].(string), "+MODEL = 'qwen2.5:7b'") {
+		t.Fatalf("diff: %v", diff)
+	}
+	if w, out := call(f.h, "POST", "/api/v1/issues/"+f.id+"/fix/keep", "", issuesManagement, true); w.Code != 200 {
+		t.Fatalf("keep: %d %v", w.Code, out)
 	}
 }

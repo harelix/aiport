@@ -36,25 +36,62 @@ func (h *Handler) runner() *agentrun.Runner {
 	return h.runs
 }
 
-// codingAgentOf is the Coding agent and repository an Agent run for app
-// would use: the agent installed with its ACP entry point, and the
-// repository with symbolic links resolved. ok is false when app has no
-// agent or repository, the agent is not ready or the repository fails its
-// check.
-func (h *Handler) codingAgentOf(app string) (a agents.Agent, repo string, ok bool) {
-	id, path := h.snapshot().CodingAgent(app)
-	if id == "" || path == "" {
-		return agents.Agent{}, "", false
+// codingAgent is the Coding agent and repository an Agent run for an
+// Application would use: ID and Path as configured; Agent installed with
+// its ACP entry point and Repo with symbolic links resolved when OK. OK is
+// false when the Application has no agent or repository, the agent is not
+// ready or the repository fails its check.
+type codingAgent struct {
+	ID, Path string
+	Agent    agents.Agent
+	Repo     string
+	OK       bool
+}
+
+// codingAgentOf resolves Application app's Coding agent (looking for
+// installed agents only when app has one and a repository).
+func (h *Handler) codingAgentOf(app string) codingAgent {
+	return resolveAgent(h.snapshot(), app, func() []agents.Agent { return agents.Detect(h.codingAgentDirs()) })
+}
+
+// codingAgents resolves the Coding agent of every Application, looking for
+// installed agents once (GET /api/v1/issues).
+func (h *Handler) codingAgents() map[string]codingAgent {
+	c := h.snapshot()
+	var found []agents.Agent
+	detect := func() []agents.Agent {
+		if found == nil {
+			found = agents.Detect(h.codingAgentDirs())
+		}
+		return found
 	}
-	a, found := agents.Find(h.codingAgentDirs(), id)
-	if !found || !a.Ready || a.ACP == nil || !filepath.IsAbs(a.ACP.Path) {
-		return agents.Agent{}, "", false
+	out := map[string]codingAgent{}
+	for _, o := range c.Origins {
+		out[o.ID] = resolveAgent(c, o.ID, detect)
 	}
-	real, err := agents.Repository(path)
+	return out
+}
+
+func resolveAgent(c config.Config, app string, detect func() []agents.Agent) codingAgent {
+	ca := codingAgent{}
+	ca.ID, ca.Path = c.CodingAgent(app)
+	if ca.ID == "" || ca.Path == "" {
+		return ca
+	}
+	for _, a := range detect() {
+		if a.ID == ca.ID && a.Ready && a.ACP != nil && filepath.IsAbs(a.ACP.Path) {
+			ca.Agent = a
+		}
+	}
+	if ca.Agent.ID == "" {
+		return ca
+	}
+	real, err := agents.Repository(ca.Path)
 	if err != nil {
-		return agents.Agent{}, "", false
+		return ca
 	}
-	return a, real, true
+	ca.Repo, ca.OK = real, true
+	return ca
 }
 
 // modelCalls says where the model calls of a run of agent a go: through
@@ -159,18 +196,17 @@ type agentWriter struct {
 	limit time.Duration
 }
 
-// agentExplainer is the Agent-run writer for app, or nil when app has no
-// usable Coding agent.
-func (h *Handler) agentExplainer(app string) *agentWriter {
-	a, repo, ok := h.codingAgentOf(app)
-	if !ok {
+// agentExplainer is the Agent-run writer for app with Coding agent ca, or
+// nil when ca is not usable.
+func (h *Handler) agentExplainer(app string, ca codingAgent) *agentWriter {
+	if !ca.OK {
 		return nil
 	}
 	limit := h.snapshot().AgentRuns.ExplainLimit()
 	if h.explainLimit > 0 {
 		limit = h.explainLimit
 	}
-	return &agentWriter{h: h, app: app, agent: a, repo: repo, calls: h.modelCalls(a), limit: limit}
+	return &agentWriter{h: h, app: app, agent: ca.Agent, repo: ca.Repo, calls: h.modelCalls(ca.Agent), limit: limit}
 }
 
 func (a *agentWriter) By() decide.Explanation {
@@ -238,15 +274,16 @@ func (h *Handler) removeTree(t worktree.Tree) {
 }
 
 // explainBy says, for each Application whose Issues a Coding agent would
-// explain, which agent and where its model calls go (GET /api/v1/issues).
-func (h *Handler) explainBy() map[string]any {
+// explain, which agent and where its model calls go (GET /api/v1/issues),
+// from all, every Application's Coding agent.
+func (h *Handler) explainBy(all map[string]codingAgent) map[string]any {
 	out := map[string]any{}
 	if h.decisions == nil || !h.decisions.On() {
 		return out
 	}
-	for _, o := range h.snapshot().Origins {
-		if a := h.agentExplainer(o.ID); a != nil {
-			out[o.ID] = map[string]any{"available": true, "source": decide.ByCodingAgent, "agent": a.agent.ID, "agent_name": a.agent.Name, "model_calls": a.calls, "limit_ms": a.limit.Milliseconds()}
+	for app, ca := range all {
+		if a := h.agentExplainer(app, ca); a != nil {
+			out[app] = map[string]any{"available": true, "source": decide.ByCodingAgent, "agent": a.agent.ID, "agent_name": a.agent.Name, "model_calls": a.calls, "limit_ms": a.limit.Milliseconds()}
 		}
 	}
 	return out

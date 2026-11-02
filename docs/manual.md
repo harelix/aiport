@@ -678,6 +678,12 @@ path, as for Explain by a Coding agent; otherwise a one-line hint under
 the Issue says what is missing (for example "Add the repository path of
 docs-bot").
 
+Fix it is offered only when the cause can be in the Application's code:
+a model name the Application asks for that no Connection serves. For a
+failing Connection the Issue says instead that the cause is not in the
+Application's code and points to the aiport fix (binding the Application
+to a working Connection).
+
 - **Its own worktree and branch**: aiport makes a git worktree of the
   repository on a new branch named for the Issue, `aiport/fix-<issue id>`
   (`-2`, `-3`… if that branch exists), starting at your current commit
@@ -746,9 +752,13 @@ docs-bot").
     branch.
   - **Discard**: aiport removes the worktree and deletes the branch; the
     Issue stays open, and you can Fix it again.
-- **Nothing left behind**: Stop, the time limit (30 minutes,
-  `agent_runs.fix_minutes`), a run that fails and a run that changed
-  nothing remove the worktree and the branch; the Issue stays open and
+- **Time limit**: a run stops after 30 minutes (`agent_runs.fix_minutes`).
+  What it changed by then stays in its worktree and waits for your review
+  with Keep the branch and Discard, as after a finished run (state
+  `timed_out`).
+- **Nothing left behind**: Stop, a run that fails and a run that changed
+  nothing (also one that timed out or went unanswered before changing
+  anything) remove the worktree and the branch; the Issue stays open and
   shows why the run ended. A run that was going when aiport stopped is
   marked stopped the next time aiport starts, and its worktree and branch
   are removed.
@@ -778,13 +788,15 @@ agent_runs:
 ```
 
 For scripts: `POST /api/v1/issues/{id}/fix` starts it (`202` with the run;
-`409` with `fix_unavailable` and the hint, `fix_waiting` while an earlier
+`409` with `fix_unavailable` and the hint, `fix_not_for_cause` for a
+failing Connection, `fix_waiting` while an earlier
 diff waits for you, `agent_run_running`, `issue_not_open` or
 `worktree_failed`); `GET /api/v1/issues/{id}/fix` gives `branch_fix` and
 the `diff`; `POST /api/v1/issues/{id}/fix/keep` and `…/fix/discard`.
 `GET /api/v1/issues` says per Application in `fix_by` whether Fix it is
-available, with which agent and time limit, or the hint; each Issue
-carries its `branch_fix`. Commands waiting for you: `GET /api/v1/approvals`
+available, with which agent and time limit and for which `causes` (with
+`cause_hint` for the others), or the hint; each Issue carries its
+`branch_fix`. Commands waiting for you: `GET /api/v1/approvals`
 (each with `id`, `run`, `application`, `issue`, `command`, `expires_at_ms`);
 answer with `POST /api/v1/approvals/{id}` and `{"answer": "allow_once"}`,
 `"allow_run"` (allow until the next edit) or `"deny"` (`404 approval_not_found` once answered or its run
