@@ -4,6 +4,7 @@ import {AuthenticationSettings} from './AuthGate';
 import {ProviderLogo} from './ProviderLogo';
 import type {Reason} from './Reason';
 import {ApplicationsPanel} from './Applications';
+import {DefaultAgentPanel} from './CodingAgents';
 import KeyField, {KeySource, keyBadge} from './KeyField';
 
 export type Location = 'local' | 'remote';
@@ -409,6 +410,7 @@ export function AgentsPage({config, providers}: Props) {
 export default function SettingsPage({config, onChange}: Props) {
   return <>
     <AuthenticationSettings username={config?.auth.username || ''} onChange={onChange}/>
+    <DefaultAgentPanel tick={0} onChange={onChange}/>
     <section className="panel setup">
       <p className="eyebrow">CONFIGURATION</p>
       <h2>One configuration file. Clear ownership.</h2>
