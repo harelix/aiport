@@ -391,6 +391,9 @@ func TestFixItNeedsACodingAgentAndARepository(t *testing.T) {
 	if w, out := call(f.h, "POST", "/api/v1/issues/"+id+"/fix", "", issuesManagement, true); w.Code != 409 || m(out["error"])["code"] != "fix_unavailable" {
 		t.Fatalf("Fix it without an agent: %d %v", w.Code, out)
 	}
+	bin := t.TempDir() // a fake Claude Code, so the test does not depend on what this machine has installed
+	installFakeAgent(t, bin, "claude", editConfig)
+	f.h.agentDirs = []string{bin}
 	if w, _ := call(f.h, "PATCH", "/api/v1/origins/docs-bot", `{"agent":"claude"}`, issuesManagement, true); w.Code != 200 {
 		t.Fatalf("connect: %d %s", w.Code, w.Body)
 	}
