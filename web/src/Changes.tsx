@@ -47,7 +47,29 @@ export type Issue = {
   catalog_change?: CatalogNotice;
 };
 
-type TaskName = {name: string; connection: string; model: string; shared: boolean};
+/** A task name in a Catalog (catalog.TaskName): a Level carries level and the protocol it is mapped on. */
+export type TaskName = {name: string; connection: string; model: string; shared: boolean; level?: boolean; protocol?: string};
+
+/** A Catalog change as aiport keeps it (catalog.Record). */
+export type CatalogRecord = {
+  change_id: string; at_ms: number; revert_of?: string; application: string; before: string; after: string;
+  removed: TaskName[]; added: TaskName[]; moved: {name: string; from: TaskName; to: TaskName}[];
+  routing: {of: string; before: string; after: string}[]; connections_removed: string[]; connections_added: string[];
+};
+
+/** One line per part of a Catalog change: what was removed, moved or added, and routing that switched. */
+export function catalogChangeText(n: {removed: TaskName[]; added?: TaskName[]; moved: {name: string; from: TaskName; to: TaskName}[]; routing: {of: string; before: string; after: string}[]; connections_removed?: string[]; connections_added?: string[]}): string[] {
+  const via = (t: TaskName) => t.connection + '/' + t.model + (t.level && t.protocol ? ' on ' + (t.protocol === 'openai' ? 'OpenAI' : 'Anthropic') : '');
+  const routing = (of: string) => of === 'binding' ? 'Binding' : of === 'openai' ? 'OpenAI default' : of === 'anthropic' ? 'Anthropic default' : of;
+  return [
+    ...n.removed.map(t => '“' + t.name + '” removed (was ' + via(t) + ')'),
+    ...n.moved.map(m => '“' + m.name + '” now ' + via(m.to) + ' (was ' + via(m.from) + ')'),
+    ...(n.added || []).map(t => '“' + t.name + '” added (' + via(t) + ')'),
+    ...n.routing.map(s => routing(s.of) + ' now ' + (s.after || 'none') + (s.before ? ' (was ' + s.before + ')' : '')),
+    ...(n.connections_removed || []).map(c => 'no longer reaches ' + c),
+    ...(n.connections_added || []).map(c => 'now reaches ' + c),
+  ];
+}
 
 /** A Catalog change an Application was told about (decide.CatalogNotice): no Owner decision. */
 export type CatalogNotice = {
@@ -64,13 +86,7 @@ export const isCatalogChange = (i: Issue) => i.cause === 'catalog_changed';
 export function CatalogChange({issue}: {issue: Issue}) {
   const n = issue.catalog_change;
   if (!n) return null;
-  const via = (t: TaskName) => t.connection + '/' + t.model;
-  const routing = (of: string) => of === 'binding' ? 'Binding' : of === 'openai' ? 'OpenAI default' : of === 'anthropic' ? 'Anthropic default' : of;
-  const changed = [
-    ...n.removed.map(t => '“' + t.name + '” removed (was ' + via(t) + ')'),
-    ...n.moved.map(m => '“' + m.name + '” now ' + via(m.to) + ' (was ' + via(m.from) + ')'),
-    ...n.routing.map(s => routing(s.of) + ' now ' + (s.after || 'none') + (s.before ? ' (was ' + s.before + ')' : '')),
-  ];
+  const changed = catalogChangeText(n);
   return <>
     <div className="evidence">Catalog change (Change {n.change_id}, {when(n.at_ms)}): {changed.join('; ')}. {issue.application} was told; nothing waits for you.</div>
     <div className="evidence">Still available: {n.available.length ? n.available.map(t => '“' + t.name + '”').join(', ') : 'no task names'}{n.connections.length ? ', and the models of ' + n.connections.join(', ') : ''}.</div>

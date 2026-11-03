@@ -218,6 +218,28 @@ Connection answers `503 target_disabled`.
 for the Anthropic protocol), the `/_connect` protocol description, and the
 Applications table.
 
+### The Routing map
+
+The **Routing map** panel on Routing answers "if this Application sends this
+name, which Connection and model serve it?" for every Application at once.
+Each Application lists every name it can send: its own task names, the
+shared task names of the Connections it reaches, the Levels mapped for it
+(its own mapping or the shared one, per protocol), and **Any other model
+name**, which goes unchanged to its binding or to the protocol default
+(with the number of models that Connection lists). Each row shows the
+protocol, the Connection with its provider's logo, and the model aiport
+sends upstream. For example, docs-bot sending `fast` on the OpenAI protocol
+reaches the local Connection with `llama3:8b`. Choose an Application or a
+provider to narrow the map.
+
+The map is built from each Application's Catalog, the same one its
+`GET /v1/models` answers, so the two never disagree. The same view for one
+Application, with its recent Catalog changes, is under **Catalog** on its
+row on Integrate. Scripts can read it with the management token at
+`GET /api/v1/routing` (`?application=<id>` for one Application, with its
+`changes`): Application ids, names, task names, model names and Connection
+ids only, never keys or addresses.
+
 ## Applications and pairing
 
 An Application is anything that calls aiport with its own token. Each call
@@ -279,6 +301,11 @@ narrow screen the strip moves below).
   none). Select it to list them under the row: each with its summary, **Open
   in Changes** (opens that Issue on the Changes page, where you approve or
   dismiss it) and **Copy fix for the Coding agent** (see Changes, Issues).
+- **Catalog** shows, under the row, the Application's Catalog: every name it
+  can send with the Connection and model that serve it (as on the Routing
+  map), the models its Connections list, and its recent Catalog changes
+  (newest first), the same changes the Application reads at
+  `/v1/aiport/catalog`.
 - The **Approved / Rejected / All** filter picks what the list shows.
   Rejected Applications are hidden until you choose **Rejected** or **All**;
   each shows when it was rejected, with **Forget**.

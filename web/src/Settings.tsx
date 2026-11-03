@@ -3,6 +3,7 @@ import {HelpLink} from './help';
 import {Activity, Check, ChevronRight, Cloud, Copy, HardDrive, Plus, Trash2, Users, X} from 'lucide-react';
 import {AuthenticationSettings} from './AuthGate';
 import {ProviderLogo} from './ProviderLogo';
+import {RoutingMapPanel} from './RoutingMap';
 import type {Reason} from './Reason';
 import {ApplicationsPanel} from './Applications';
 import {DefaultAgentPanel} from './CodingAgents';
@@ -478,6 +479,7 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
       <div className="panel-heading"><h2>Protocol defaults<HelpLink section="Routing and protocol defaults"/></h2><span>Where requests go when an app doesn't pick a connection</span></div>
       <DefaultsForm key={JSON.stringify(config?.defaults) + targets.length} config={config} providers={providers} onChange={onChange}/>
     </section>
+    <RoutingMapPanel targets={targets} providers={providers} reload={config}/>
     <section className="panel">
       <div className="panel-heading"><h2>Connect an application</h2><span>Point any OpenAI or Anthropic SDK here</span></div>
       <dl>
