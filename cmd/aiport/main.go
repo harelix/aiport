@@ -100,10 +100,18 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return err
 	}
 	for _, id := range secrets.MissingKeys {
-		fmt.Fprintf(errOut, "aiport: connection %q has no API key yet; add it in the dashboard (Settings → Providers). Requests to it return 503 until then.\n", id)
+		fmt.Fprintf(errOut, "aiport: connection %q has no API key yet; add it in the dashboard (Providers). Requests to it return 503 until then.\n", id)
 	}
-	for _, n := range config.LevelNotices(c) {
-		fmt.Fprintln(errOut, n)
+	// check explains each Alias that is a Level now; serve says it once, so a
+	// deliberate Level mapping does not repeat a long notice on every start.
+	if notices := config.LevelNotices(c); len(notices) > 0 {
+		if args[0] == "check" {
+			for _, n := range notices {
+				fmt.Fprintln(errOut, n)
+			}
+		} else {
+			fmt.Fprintf(errOut, "aiport: %d Alias entries are named fast, balanced or best and act as Levels; run `aiport check` for details.\n", len(notices))
+		}
 	}
 	if args[0] == "check" {
 		fmt.Fprintln(out, "Configuration and environment references are valid.")
