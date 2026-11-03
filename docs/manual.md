@@ -334,11 +334,11 @@ and the **May request changes** toggle.
 
 You can also skip pairing and hand an application its token yourself, for
 example when its coding agent is not running, or you would rather paste the
-token into the application's private `.env`:
+token into the application's `.aiport` file:
 
 - **Add with a token** (Integrate, next to *Onboard a new application*): name
   the Application and optionally choose a Connection. aiport adds it and shows
-  its token once, as the two lines to paste into its `.env`:
+  its token once, as the two lines to paste into its `.aiport`:
   `AIPORT_BASE_URL` (this gateway's address) and `AIPORT_APP_TOKEN`.
 - **New token** (the Token column of an Application's row): after you confirm,
   aiport issues a new token and shows it once the same way. The old token

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"aiport/internal/connect"
@@ -62,6 +63,11 @@ func TestGuidanceVersion3TeachesTheTokenFile(t *testing.T) {
 	mustContain(t, "AGENTS.md line", connect.AgentsLine, ".aiport", "401", "New token")
 	mustContain(t, "application brief", getBrief(t, briefServer(t, ""), "?format=handover&for=application"), ".aiport", ".gitignore", "New token", "process.loadEnvFile")
 	mustContain(t, "coding agent brief", getBrief(t, briefServer(t, ""), "?format=handover&for=agent"), ".aiport", "headersHelper", "New token")
+	prompt := connect.AgentPrompt("http://127.0.0.1:8787/_connect?format=markdown")
+	mustContain(t, "agent prompt", prompt, ".aiport", ".gitignore", "read .aiport at startup", "New token")
+	if strings.Contains(prompt, "outside the repository") {
+		t.Fatal("the agent prompt still says to keep the token outside the repository")
+	}
 }
 
 // The three things every surface teaches, in the words a test can find.

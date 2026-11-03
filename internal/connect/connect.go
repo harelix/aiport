@@ -280,9 +280,9 @@ func Markdown(d Document) string {
 // everything the agent needs for both parts.
 func AgentPrompt(docs string) string {
 	return "Read " + docs + " and follow it to connect this application to the aiport gateway on this machine. " +
-		"Do both parts in order: first the section \"Integrate this application with aiport\" (pair the application for its own token, store it as AIPORT_APP_TOKEN outside the repository, point its OpenAI or Anthropic SDK at aiport, remove provider keys, make one test call), " +
-		"then the section \"Ask aiport for changes from this repository\" (add the aiport MCP entry and the AGENTS.md line so later sessions can ask aiport for changes). " +
-		"When pairing shows a code, tell me the code and wait while I approve it in the aiport dashboard. Never write the token into a committed file."
+		"Do both parts in order: first the section \"Integrate this application with aiport\" (pair the application for its own token, save it in .aiport at the repository root with .aiport added to .gitignore, make the application read .aiport at startup, point its OpenAI or Anthropic SDK at aiport, remove provider keys, make one test call), " +
+		"then the section \"Ask aiport for changes from this repository\" (add the aiport MCP entry, which reads the token from .aiport, and the AGENTS.md line so later sessions can ask aiport for changes). " +
+		"When pairing shows a code, tell me the code and wait while I approve it in the aiport dashboard. Never commit .aiport or write the token into any committed file. If the token is ever lost or refused (401), ask me for a New token from the Integrate page into .aiport instead of pairing again."
 }
 
 // startHere opens the markdown document with what a coding agent should do,
