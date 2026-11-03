@@ -1,0 +1,25 @@
+#!/bin/sh
+# aiport pre-commit check: refuses a commit that adds a secret, or one of your
+# own private words (real application names, your email, home paths).
+# Install once with `make hooks`. Skip once (not recommended): git commit --no-verify
+set -e
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --config .gitleaks.toml --redact --no-banner --log-level warn \
+    || { echo "pre-commit: gitleaks found a possible secret in the staged changes (see above)."; exit 1; }
+else
+  echo "pre-commit: gitleaks is not installed (brew install gitleaks); skipping the secret scan." >&2
+fi
+
+# Private words live outside the repository, so the list itself never leaks:
+# one extended regular expression per line in .git/info/private-patterns.
+patterns="$(git rev-parse --git-dir)/info/private-patterns"
+if [ -s "$patterns" ]; then
+  added=$(git diff --cached --no-color -U0 -- . ':(exclude)vendor' ':(exclude)internal/dashboard/dist' | grep '^+' | grep -v '^+++' || true)
+  if [ -n "$added" ] && printf '%s\n' "$added" | grep -i -E -q -f "$patterns"; then
+    echo "pre-commit: the staged changes contain a private word from $patterns:"
+    printf '%s\n' "$added" | grep -i -n -E -f "$patterns" | head -10
+    echo "Use made-up names in anything published, or unstage the file."
+    exit 1
+  fi
+fi

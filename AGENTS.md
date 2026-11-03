@@ -21,6 +21,9 @@
 - Published specs, tickets and docs use made-up Application and model names.
 - Never commit `aiport.yaml`, `*.env`, `*.db` or `aiport.log`; they are
   local and ignored.
+- Secrets and private words are checked before every commit (`make hooks`,
+  gitleaks and `.git/info/private-patterns`); never bypass it with `--no-verify`.
+  `make leaks` scans all history.
 - Tests drive the server Handler over HTTP with a temporary config and
   SQLite, a fixed clock and fake upstreams; assert on responses, not internals.
 

@@ -1,0 +1,20 @@
+# Scans every push and pull request for secrets, with the repository's gitleaks config.
+name: leaks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          v=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${v}/gitleaks_${v}_linux_x64.tar.gz" | tar -xz gitleaks
+      - name: Scan the history of this push
+        run: ./gitleaks git --config .gitleaks.toml --redact --no-banner --log-opts="${{ github.event.before && github.event.before != '0000000000000000000000000000000000000000' && format('{0}..{1}', github.event.before, github.sha) || '--all' }}" .

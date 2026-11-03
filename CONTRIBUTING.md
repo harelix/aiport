@@ -33,6 +33,17 @@ make dev
 - `make dev` uses `bin/aiport-dev`. Run `make web-build` before committing UI
   changes so the embedded dashboard is current.
 
+## Keep secrets and private details out
+
+- Run `make hooks` once: the pre-commit hook refuses a commit that adds a
+  secret (gitleaks, `brew install gitleaks`) or one of your own private words.
+- Put your private words (real application names, your email, home paths),
+  one extended regular expression per line, in `.git/info/private-patterns`.
+  The file stays on your machine; the list itself is never committed.
+- `make leaks` scans the whole history of every branch; the `leaks` workflow
+  scans every push and pull request on GitHub. `.gitleaks.toml` excludes
+  vendored code and the generated dashboard bundle.
+
 ## Pull requests
 
 - Keep them small and focused; include tests for behaviour changes.
