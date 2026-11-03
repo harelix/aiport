@@ -32,7 +32,7 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 	noLevels := fs.Bool("no-levels", false, "")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(out, "aiport init [--config PATH] [--provider "+config.ProviderIDs()+"] [--agent codex|claude|none] [--region REGION] [--base-url URL] [--levels LEVEL=CONNECTION/MODEL,... | --no-levels]")
+			fmt.Fprintln(out, "aiport init [--config PATH] [--provider "+config.ProviderIDs()+"] [--agent codex|claude|none] [--listen HOST:PORT] [--region REGION] [--base-url URL] [--levels LEVEL=CONNECTION/MODEL,... | --no-levels]")
 			return nil
 		}
 		return errors.New("invalid init arguments")

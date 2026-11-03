@@ -16,9 +16,12 @@ model lists (an Application reads its own model names from its Catalog, below).
 Host/Origin protections still apply.
 
 Addresses in the document (`base_url`, `docs`, `agent_prompt`, briefs and
-snippets) use the gateway's advertised address: the first entry of
-`hostnames` on the listen port when the Owner set one (for example
-`http://aiport.localhost:8787`), otherwise the listen address. aiport accepts
+snippets) use the gateway's numeric listen address, with a wildcard listen
+address given as `127.0.0.1` (by default `http://127.0.0.1:8787`). Applications
+and their agents get the IP address even when the Owner set `hostnames`: some
+resolvers and sandbox proxies do not resolve `*.localhost`, and the name may
+resolve to `::1` first while aiport listens on IPv4. The dashboard can still be
+opened under a configured hostname. aiport accepts
 `Host` and `Origin` for the listen address and each configured hostname on
 the listen port, and refuses everything else with `403 invalid_host` /
 `invalid_origin`.
@@ -36,9 +39,17 @@ An application without a token asks for one: `POST /v1/aiport/pair`
 a short `code` and a secret `poll` path. The owner approves the code in the
 dashboard's Integrate page (or the Applications table on Routing), optionally binding a connection; aiport adds
 the application as a client, with its own token, without a restart. `GET` on the
-poll path returns `pending`, `rejected`, or `approved` with the token, which is
-delivered exactly once. Unapproved requests expire after 10 minutes. The token
-lives in the private credential file as `AIPORT_APP_<ID>_TOKEN`. The source of truth is
+poll path returns `pending`, `rejected`, `expired`, or `approved` with the token.
+Unapproved requests expire after 30 minutes and survive a gateway restart (the
+poll secret is stored only as a hash). One application gets one request: asking
+again with the same name or repository returns the same code, and when an
+Application with that name or repository already exists the Owner can give it a
+new token instead of adding a second one. The token lives in the private
+credential file as `AIPORT_APP_<ID>_TOKEN`; the application keeps it as
+`AIPORT_APP_TOKEN=...` in a gitignored `.aiport` file at its repository root,
+which both the application and its coding agent read. On Integrate the Owner
+can also add an Application with a token directly, issue a **New token** (the
+old one stops working) and remove an Application (a revertable Change). The source of truth is
 `internal/connect/connect.go`; bump `Version` on incompatible changes.
 
 ## The Catalog
@@ -141,7 +152,8 @@ lists where they are served under `briefs` (`for`, `title`, `audience`,
 configured) and `code`. The dashboard's Integrate page renders the same data.
 
 - The **Application brief** covers pairing for the Application's own token,
-  `AIPORT_BASE_URL` and `AIPORT_APP_TOKEN`, SDK base URLs with snippets for the
+  keeping it in `.aiport` (gitignored, loaded at startup) as `AIPORT_BASE_URL`
+  and `AIPORT_APP_TOKEN`, what to do when it is lost or revoked, SDK base URLs with snippets for the
   OpenAI and Anthropic SDKs in Python and TypeScript plus curl, removing
   provider keys, model names (a Level or a task name, never a provider's
   model id; read `GET /v1/models`, the `models` snippet; `level_unmapped`),
@@ -185,8 +197,9 @@ is open for the Application, a failing call's `X-Aiport-Hint` names that Issue
 `/v1/aiport/capabilities` shows `open_issues`.
 
 The coding-agent brief tells the coding agent to add a project-level MCP entry
-pointing at this gateway's `/mcp`, with the token taken from
-`${AIPORT_APP_TOKEN}` (never the value), and the line from
+pointing at this gateway's `/mcp` whose `headersHelper` reads the token from
+`AIPORT_APP_TOKEN` or, when that is unset, from `.aiport` at the repository root
+(never the value itself in `.mcp.json`), and the line from
 `connect.AgentsLine` to the application's `AGENTS.md`: send a Level or a task
 name, never a provider's model id; state effort with `X-Aiport-Effort`; check
 `aiport_catalog`, `aiport_my_issues` and `aiport_guidance` at the start of a

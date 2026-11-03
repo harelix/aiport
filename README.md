@@ -8,6 +8,7 @@
 One place for provider keys, routing and request history, that notices when an application keeps failing and offers to fix it.</p>
 
 <p>
+  <a href="https://github.com/harelix/aiport/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/harelix/aiport/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-5E81AC"></a>
   <img alt="Go 1.27+" src="https://img.shields.io/badge/go-1.27%2B-88C0D0">
   <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-EBCB8B">
@@ -41,7 +42,7 @@ One place for provider keys, routing and request history, that notices when an a
 ```mermaid
 flowchart LR
   A["Applications<br/>and coding agents"] -- "own aiport token" --> G(("aiport"))
-  G -- "provider key added" --> P["Providers<br/>OpenAI · Anthropic · Bedrock<br/>Ollama · llama.cpp"]
+  G -- "provider key added" --> P["Providers<br/>OpenAI · Anthropic · Bedrock · Meta<br/>Ollama · llama.cpp"]
   G -. "Issues and Suggestions" .-> O["You, in the dashboard"]
   O -. "approve, revert" .-> G
 ```
@@ -65,7 +66,7 @@ Open the dashboard address `serve` prints (**http://127.0.0.1:8787/** by default
 
 ## Using it
 
-- **Connect an application.** On **Integrate**, copy the instruction at the top to the coding agent working on the application. It switches the application's SDK to aiport and pairs it; you approve the short code it shows. See [Connect](docs/connect.md).
+- **Connect an application.** On **Integrate**, open **Instructions** at the top and copy them to the coding agent working on the application. It switches the application's SDK to `http://127.0.0.1:8787` and pairs it; you approve the short code it shows. The application's token goes in a gitignored `.aiport` file at its repository root, read by both the application and its coding agent; **New token** replaces a lost one and the trash icon removes an application. See [Connect](docs/connect.md).
 - **Launch a coding agent through aiport.** `./bin/aiport agent claude --model MODEL` or `./bin/aiport agent codex --model MODEL` (add `--dry-run` to inspect). The agent gets its own token, never your provider keys.
 - **Decide on Changes.** Issues, Suggestions and Change requests wait on **Changes**, with a badge only when one needs you. Every Change can be reverted.
 
@@ -96,7 +97,7 @@ aiport is experimental. No provider and coding-agent combination has passed the 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Run `make test`, `make check` and `make check-offline`, and sign off every commit (DCO). Larger changes start from [the design](docs/design.md); the vocabulary is in the [glossary](GLOSSARY.md), and dependency licenses are in [THIRD_PARTY.md](THIRD_PARTY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md). CI runs on every push; locally, run `make test`, `make check` and `make check-offline`, and sign off every commit (DCO). Larger changes start from [the design](docs/design.md); the vocabulary is in the [glossary](GLOSSARY.md), and dependency licenses are in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## License
 
