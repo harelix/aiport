@@ -16,12 +16,8 @@ import "aiport/internal/config"
 // "The protocol default" is the one left once the removal is applied: when
 // the removed Connection is itself the default, the default's suggestion.
 func Suggest(c config.Config, removed string, models Models) map[string]string {
-	protocol := ""
-	for _, t := range c.Targets {
-		if t.ID == removed {
-			protocol = t.Protocol
-		}
-	}
+	gone, _ := c.Connection(removed)
+	protocol := gone.Protocol
 	var candidates []string
 	for _, t := range c.Targets {
 		if t.ID != removed && !t.Disabled && t.Protocol == protocol {

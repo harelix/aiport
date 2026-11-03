@@ -186,6 +186,21 @@ func TestDiffGivesEachAffectedApplicationItsCatalogChange(t *testing.T) {
 				Routing:            []Switch{{Of: "openai", Before: "hosted", After: "local"}},
 				ConnectionsRemoved: []string{"hosted"}, ConnectionsAdded: []string{"local"},
 			},
+			// The built-in Application follows the defaults too (no agent_runs.connection).
+			config.BuiltinApplication: {
+				Removed:            []TaskName{{Name: "fast", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
+				Added:              []TaskName{{Name: "small", Connection: "local", Model: "llama3:8b", Shared: true}},
+				Routing:            []Switch{{Of: RoutedOpenAI, Before: "hosted", After: "local"}},
+				ConnectionsRemoved: []string{"hosted"}, ConnectionsAdded: []string{"local"},
+			},
+		}},
+		{"Agent runs' model calls bound to a Connection", func(c *config.Config) { c.AgentRuns.Connection = "claude" }, map[string]Change{
+			config.BuiltinApplication: {
+				Removed:            []TaskName{{Name: "fast", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
+				Added:              []TaskName{},
+				Routing:            []Switch{{Of: RoutedBinding, Before: "", After: "claude"}},
+				ConnectionsRemoved: []string{"hosted"}, ConnectionsAdded: []string{},
+			},
 		}},
 		{"a binding removed", func(c *config.Config) { c.Origins[1].Target = "" }, map[string]Change{"review-code": {
 			Removed:            []TaskName{{Name: "small", Connection: "local", Model: "llama3:8b", Shared: true}},

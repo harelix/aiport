@@ -194,6 +194,17 @@ func (c Config) Application(id string) (Origin, bool) {
 	return Origin{}, false
 }
 
+// Connection returns the Connection with id (an entry under targets), and
+// whether there is one: its Protocol says which protocol it speaks.
+func (c Config) Connection(id string) (Target, bool) {
+	for _, t := range c.Targets {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	return Target{}, false
+}
+
 var dnsLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // validHostnames checks the hostnames option: lowercase DNS names that are

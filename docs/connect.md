@@ -47,7 +47,8 @@ the models those Connections list, with a version. The document describes it
 as the `catalog` feature, the `X-Aiport-Catalog` response header and a
 `GET /v1/models` endpoint under each protocol:
 
-- `GET /v1/models` with the Application's own token: the model names it can
+- `GET /v1/models` with the Application's own token (the management token gets
+  `403 application_token_required`): the model names it can
   use on that protocol, in the OpenAI list shape, or the Anthropic one when the
   request carries `anthropic-version`. Task names come first (`owned_by:
   "aiport"`, or "(aiport task name)" in `display_name`), then the models of
@@ -62,9 +63,11 @@ as the `catalog` feature, the `X-Aiport-Catalog` response header and a
   `change_id`, `at_ms`, `revert_of`, `before`/`after` versions, `removed`,
   `added`, `moved`, `routing`, `connections_removed` and `connections_added`.
   The management token gets `403 application_token_required`.
-- `GET /v1/aiport/capabilities` carries `catalog: {version, changed_at_ms}`.
-- A Change that takes away something the Application had (a task name, or the
-  binding or a protocol default it follows) opens an Issue of cause
+- `GET /v1/aiport/capabilities` carries `catalog: {version, changed_at_ms}`
+  (`changed_at_ms` is `null` when no Catalog change is kept).
+- A Change that takes away something the Application used within request
+  history (it sent a removed task name, or a model name that went through the
+  moved binding or protocol default) opens an Issue of cause
   `catalog_changed` with `catalog_change`; a failing call that sent a removed
   task name carries an `X-Aiport-Hint` naming it.
 

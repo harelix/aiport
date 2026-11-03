@@ -168,18 +168,24 @@ Connection picker, already set to the best match:
 Choose **None** to leave an item without a Connection on purpose: a protocol
 default is unset, a binding is removed (the Application follows the protocol
 defaults again), an Alias is removed (its task name is retired), and
-Explanations, Agent runs' model calls or the evaluator are turned off.
+Explanations, Agent runs' model calls or the evaluator are turned off (Agent
+runs then use the coding agent's own login).
 
 Below the list the dialog names the Applications whose Catalog the removal
 changes (task names removed or moved, a binding or a protocol default they
-follow), and updates as you change a picker. Confirming applies all the
+follow), and updates as you change a picker. aiport itself is among them
+when the removal moves what its own model calls (Explanations and Agent
+runs) use: `agent_runs.connection`, or the protocol defaults when that is
+not set. Its Catalog changes are kept like any Application's, but it gets
+no Issue: it has no coding agent to tell. Confirming applies all the
 re-pointing and the removal as **one Change**: one revert in **Changes**
 restores the Connection and everything that used it. Each affected
 Application is told through its Catalog, and an Application the removal
-took something from gets a Catalog-change Issue (see The Catalog).
+took something it used from gets a Catalog-change Issue (see The Catalog).
 
 Without the dialog (a `DELETE /api/v1/targets/{id}` with no plan), aiport
-still refuses to remove a Connection something uses, and the message names
+still refuses to remove a Connection something uses (Explanations and Agent
+runs' model calls included), and the message names
 what uses it. The dialog reads `GET /api/v1/targets/{id}/dependents` and
 sends the plan as `{"plan": {"<item>": "<Connection id or empty>"}}`.
 
@@ -452,8 +458,9 @@ tokens never appear.
 - **`GET /v1/models`**, where OpenAI and Anthropic SDKs and coding agents
   already look for models, answers in the OpenAI list shape, or in the
   Anthropic shape when the request carries `anthropic-version` (Anthropic
-  SDKs may send the token in `X-Api-Key`). Only names usable on that
-  protocol are listed. Task names come first, marked as aiport's
+  SDKs may send the token in `X-Api-Key`). Your management token gets `403
+  application_token_required`: a Catalog belongs to one Application. Only
+  names usable on that protocol are listed. Task names come first, marked as aiport's
   (`owned_by: "aiport"`, or "(aiport task name)" in the display name); then
   the models of the Connection the Application is bound to, or of the
   protocol defaults. A Connection whose model list cannot be read adds
@@ -486,7 +493,9 @@ and time, the version before and after, task names `removed`, `added` or
 `moved` (`from` → `to`), the binding or protocol defaults that changed
 (`routing`), and the Connections the Application no longer or newly reaches
 (`connections_removed`, `connections_added`). An Application the Change did
-not affect gets nothing.
+not affect gets nothing. aiport's own model calls (the built-in Application
+`aiport`, which follows `agent_runs.connection`, else the protocol defaults)
+get Catalog changes recorded too.
 
 Catalog changes are kept as long as request history
 (`telemetry.retention_days`) and survive a restart. They hold Application
@@ -495,10 +504,13 @@ addresses, prompts, responses or tokens.
 
 ### When a Change takes something away
 
-Removing a task name an Application had, or moving its binding or a
-protocol default it follows, does more than change the version: aiport
+Removing a task name an Application used, or moving its binding or a
+protocol default it followed, does more than change the version: aiport
 opens a **Catalog-change Issue** (cause `catalog_changed`) for that
-Application, saying what changed and what it can still use. It needs no
+Application, saying what changed and what it can still use. "Used" means
+its calls sent that task name, or a model name that went through that
+binding or default, within request history; an Application that never did
+gets only the Catalog change. It needs no
 decision from you and resolves itself; see
 **A Catalog change** under Issues. Before a removal, the
 removal dialog shows which Applications it will affect (see
@@ -641,8 +653,12 @@ Catalog: a task name it had, or the binding or a protocol default it
 follows moves; for
 example you remove a Connection and leave docs-bot's Alias `summarize`
 without one), aiport opens one Issue of cause `catalog_changed` for that
-Application, one per Change. Applications the Change took nothing from get
-none, and a Change that is an Issue's own aiport fix (or its revert) opens
+Application, one per Change, when the Application used what went away: within
+request history (`telemetry.retention_days`) it sent the removed task name,
+or a model name (not a task name) that went to the Connection its binding or
+the moved protocol default pointed at. An Application that never sent it,
+and the built-in `aiport` Application, get the Catalog change recorded but
+no Issue. Applications the Change took nothing from get none, and a Change that is an Issue's own aiport fix (or its revert) opens
 none: that Issue already says so.
 
 - **What it says**: what changed (task names removed or moved, the binding

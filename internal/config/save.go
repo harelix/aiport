@@ -170,15 +170,18 @@ func removeTarget(id string) Edit {
 	}
 }
 
+// DependentKind is what kind of item uses a Connection.
+type DependentKind string
+
 // Dependent kinds: what can use a Connection.
 const (
-	DependentDefault          = "default"           // a protocol default
-	DependentBinding          = "binding"           // an Application bound to it
-	DependentAlias            = "alias"             // a shared Alias
-	DependentApplicationAlias = "application_alias" // an Application's own Alias
-	DependentExplain          = "explain"           // the Connection writing Explanations
-	DependentAgentRuns        = "agent_runs"        // Agent runs' model calls
-	DependentEvaluation       = "evaluation"        // the compression evaluator
+	DependentDefault          DependentKind = "default"           // a protocol default
+	DependentBinding          DependentKind = "binding"           // an Application bound to it
+	DependentAlias            DependentKind = "alias"             // a shared Alias
+	DependentApplicationAlias DependentKind = "application_alias" // an Application's own Alias
+	DependentExplain          DependentKind = "explain"           // the Connection writing Explanations
+	DependentAgentRuns        DependentKind = "agent_runs"        // Agent runs' model calls
+	DependentEvaluation       DependentKind = "evaluation"        // the compression evaluator
 )
 
 // Dependent is one item that uses a Connection. ID names it in a removal
@@ -186,11 +189,11 @@ const (
 // "application_alias:<application>:<name>", "explain", "agent_runs" or
 // "evaluation".
 type Dependent struct {
-	ID          string `json:"id"`
-	Kind        string `json:"kind"`
-	Protocol    string `json:"protocol,omitempty"`
-	Application string `json:"application,omitempty"`
-	Alias       string `json:"alias,omitempty"`
+	ID          string        `json:"id"`
+	Kind        DependentKind `json:"kind"`
+	Protocol    string        `json:"protocol,omitempty"`
+	Application string        `json:"application,omitempty"`
+	Alias       string        `json:"alias,omitempty"`
 	// Model is the model the item asks the Connection for, when it names one.
 	Model string `json:"model,omitempty"`
 }
@@ -225,13 +228,13 @@ func Dependents(c Config, id string) []Dependent {
 		}
 	}
 	if e := c.Adapting.Explain; e.Connection == id {
-		out = append(out, Dependent{ID: DependentExplain, Kind: DependentExplain, Model: e.Model})
+		out = append(out, Dependent{ID: string(DependentExplain), Kind: DependentExplain, Model: e.Model})
 	}
 	if a := c.AgentRuns; a.Connection == id {
-		out = append(out, Dependent{ID: DependentAgentRuns, Kind: DependentAgentRuns, Protocol: "anthropic", Model: a.Model})
+		out = append(out, Dependent{ID: string(DependentAgentRuns), Kind: DependentAgentRuns, Protocol: "anthropic", Model: a.Model})
 	}
 	if e := c.Evaluation; e.Connection == id {
-		out = append(out, Dependent{ID: DependentEvaluation, Kind: DependentEvaluation, Model: e.Model})
+		out = append(out, Dependent{ID: string(DependentEvaluation), Kind: DependentEvaluation, Model: e.Model})
 	}
 	return out
 }
@@ -246,11 +249,8 @@ func Dependents(c Config, id string) []Dependent {
 // default on a Connection of another protocol, say) happens when the edit is
 // applied.
 func RemoveTargetWith(current Config, id string, plan map[string]string) (Edit, error) {
-	known := map[string]bool{}
-	for _, t := range current.Targets {
-		known[t.ID] = true
-	}
-	if !known[id] {
+	known := func(id string) bool { _, ok := current.Connection(id); return ok }
+	if !known(id) {
 		return nil, errors.New("connection not found in configuration")
 	}
 	deps := Dependents(current, id)
@@ -264,7 +264,7 @@ func RemoveTargetWith(current Config, id string, plan map[string]string) (Edit, 
 			problems = append(problems, d.ID+": choose a replacement Connection or none")
 		case to == id:
 			problems = append(problems, d.ID+": the replacement cannot be the Connection being removed")
-		case to != "" && !known[to]:
+		case to != "" && !known(to):
 			problems = append(problems, d.ID+": no Connection "+to)
 		}
 	}

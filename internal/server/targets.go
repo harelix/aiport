@@ -62,11 +62,7 @@ func (h *Handler) targetRoute(w http.ResponseWriter, r *http.Request, fail func(
 		return true
 	}
 	current := h.snapshot()
-	exists := false
-	for _, t := range current.Targets {
-		exists = exists || t.ID == id
-	}
-	if id != "" && !exists {
+	if _, exists := current.Connection(id); id != "" && !exists {
 		fail(404, "target_not_found", "No connection with this id")
 		return true
 	}

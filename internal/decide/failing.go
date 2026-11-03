@@ -44,7 +44,7 @@ func failingSymptoms(c config.Config, history History, at time.Time) (out []*sym
 	events := history.Find(telemetry.Query{From: from.UnixMilli(), To: at.UnixMilli(), InferenceOnly: true})
 	sort.SliceStable(events, func(i, j int) bool { return events[i].StartedAt < events[j].StartedAt })
 	for _, e := range events {
-		if e.Outcome == "success" {
+		if telemetry.Succeeded(e.Outcome) {
 			working[e.Target]++
 			key := [2]string{e.Origin, e.Target}
 			success[key] = max(success[key], e.StartedAt)

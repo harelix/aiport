@@ -141,6 +141,18 @@ func entries(t *testing.T, out map[string]any, field string) [][2]string {
 	return got
 }
 
+// A Catalog belongs to one Application: the management token has none.
+func TestModelsNeedsAnApplicationToken(t *testing.T) {
+	f := catalogServer(t)
+	w, out := listModels(f.h, catManagement)
+	if w.Code != 403 || errorCode(out) != "application_token_required" {
+		t.Fatalf("GET /v1/models with the management token: %d %s", w.Code, w.Body)
+	}
+	if w, _ := listModels(f.h, ""); w.Code != 401 {
+		t.Fatalf("GET /v1/models without a token: %d", w.Code)
+	}
+}
+
 func TestModelsListsTheApplicationsTaskNamesFirstInTheOpenAIShape(t *testing.T) {
 	f := catalogServer(t)
 	w, out := listModels(f.h, catDocs)

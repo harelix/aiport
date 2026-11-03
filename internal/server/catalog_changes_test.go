@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"aiport/internal/catalog"
 	"aiport/internal/config"
 	"aiport/internal/telemetry"
 )
@@ -283,5 +284,20 @@ func TestBindingDefaultsAndRevertsRecordCatalogChangesForTheApplicationsTheyAffe
 	}
 	if got := catalogChanges(t, catalogOf(t, h, reqWriter)); len(got) != 1 {
 		t.Fatalf("the revert changed a bound Application's Catalog: %v", got)
+	}
+}
+
+// Without a database the Catalog change log is kept in memory; keeping new
+// Catalog changes forgets the ones older than request history, so it cannot
+// grow without bound.
+func TestTheInMemoryCatalogLogForgetsOldChangesAsItKeepsNewOnes(t *testing.T) {
+	l := &catalogLog{}
+	day := int64(24 * time.Hour / time.Millisecond)
+	old := catalog.Record{ChangeID: "old", At: 1 * day, Change: catalog.Change{Application: "docs-bot"}}
+	recent := catalog.Record{ChangeID: "new", At: 30 * day, Change: catalog.Change{Application: "docs-bot"}}
+	l.keep([]catalog.Record{old}, 0, config.Config{})
+	l.keep([]catalog.Record{recent}, 23*day, config.Config{})
+	if got := l.Recent("docs-bot", 0, 10); len(got) != 1 || got[0].ChangeID != "new" {
+		t.Fatalf("kept in memory: %v", got)
 	}
 }

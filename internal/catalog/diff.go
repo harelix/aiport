@@ -9,11 +9,20 @@ type Move struct {
 	To   TaskName `json:"to"`
 }
 
+// Routed names what a Switch changed: the binding or one protocol default.
+type Routed string
+
+// What a Switch changed.
+const (
+	RoutedBinding   Routed = "binding"   // the Connection the Application is bound to
+	RoutedOpenAI    Routed = "openai"    // the OpenAI protocol default it follows
+	RoutedAnthropic Routed = "anthropic" // the Anthropic protocol default it follows
+)
+
 // Switch is a change in where an Application's model names go: its binding
-// (Of "binding") or a protocol default it follows (Of "openai" or
-// "anthropic"). "" means none.
+// or a protocol default it follows. "" means none.
 type Switch struct {
-	Of     string `json:"of"`
+	Of     Routed `json:"of"`
 	Before string `json:"before"`
 	After  string `json:"after"`
 }
@@ -46,15 +55,20 @@ func (c Change) Empty() bool {
 // Diff returns the Catalog change from configuration before to after of
 // every Application in both, by Application id, leaving out those whose
 // Catalog did not change. A removed Application is not told; a new one has
-// no change, only a Catalog.
+// no change, only a Catalog. The built-in Application
+// (config.BuiltinApplication, aiport's own model calls) is always in both:
+// its Catalog follows agent_runs.connection, else the protocol defaults.
 func Diff(before, after config.Config) map[string]Change {
 	out := map[string]Change{}
+	ids := []string{config.BuiltinApplication}
 	for _, o := range after.Origins {
-		if _, ok := before.Application(o.ID); !ok {
-			continue
+		if _, ok := before.Application(o.ID); ok {
+			ids = append(ids, o.ID)
 		}
-		if c := diff(For(before, o.ID, nil), For(after, o.ID, nil)); !c.Empty() {
-			out[o.ID] = c
+	}
+	for _, id := range ids {
+		if c := diff(For(before, id, nil), For(after, id, nil)); !c.Empty() {
+			out[id] = c
 		}
 	}
 	return out
@@ -82,11 +96,11 @@ func diff(b, a Catalog) Change {
 		}
 	}
 	if b.Binding != a.Binding {
-		c.Routing = append(c.Routing, Switch{Of: "binding", Before: b.Binding, After: a.Binding})
+		c.Routing = append(c.Routing, Switch{Of: RoutedBinding, Before: b.Binding, After: a.Binding})
 	} else if b.Binding == "" {
-		for _, p := range []string{"openai", "anthropic"} {
-			if b.Defaults[p] != a.Defaults[p] {
-				c.Routing = append(c.Routing, Switch{Of: p, Before: b.Defaults[p], After: a.Defaults[p]})
+		for _, p := range []Routed{RoutedOpenAI, RoutedAnthropic} {
+			if b.Defaults[string(p)] != a.Defaults[string(p)] {
+				c.Routing = append(c.Routing, Switch{Of: p, Before: b.Defaults[string(p)], After: a.Defaults[string(p)]})
 			}
 		}
 	}

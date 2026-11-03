@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"go.yaml.in/yaml/v3"
 
+	"aiport/internal/config"
 	"aiport/internal/telemetry"
 )
 
@@ -37,6 +39,21 @@ func removeHostedLeavingSummarize(t *testing.T, h *Handler) string {
 		t.Fatalf("remove with a plan: %d %s", w.Code, w.Body)
 	}
 	return out["change_id"].(string)
+}
+
+// useBeforeRemoval makes the calls that make docs-bot and review-code users
+// of what removing hosted takes away: docs-bot sends its task name
+// "summarize", review-code a model name that follows its binding to hosted.
+// nightly sends nothing.
+func useBeforeRemoval(t *testing.T, h *Handler) {
+	t.Helper()
+	if code, _ := remCall(t, h, remDocs, "summarize"); code != 200 {
+		t.Fatalf("docs-bot's call: %d", code)
+	}
+	if code, _ := remCall(t, h, remReview, "gpt-4o"); code != 200 {
+		t.Fatalf("review-code's call: %d", code)
+	}
+	time.Sleep(2 * time.Millisecond)
 }
 
 // appIssues lists an Application's own Issues over HTTP.
@@ -98,6 +115,7 @@ func detectNow(h *Handler) {
 func TestRemovingAConnectionAnAliasUsedOpensOneCatalogIssueForThatApplication(t *testing.T) {
 	f := removalFixture(t, "")
 	f.h.now = time.Now // calls are recorded on the real clock
+	useBeforeRemoval(t, f.h)
 	changeID := removeHostedLeavingSummarize(t, f.h)
 
 	mine := appIssues(t, f.h, remDocs)
@@ -184,6 +202,7 @@ func TestRemovingAConnectionAnAliasUsedOpensOneCatalogIssueForThatApplication(t 
 func TestTheApplicationSayingItFixedACatalogIssueResolvesIt(t *testing.T) {
 	f := removalFixture(t, "")
 	f.h.now = time.Now
+	useBeforeRemoval(t, f.h)
 	removeHostedLeavingSummarize(t, f.h)
 	id := appIssues(t, f.h, remDocs)[0]["id"].(string)
 
@@ -202,6 +221,7 @@ func TestTheApplicationSayingItFixedACatalogIssueResolvesIt(t *testing.T) {
 func TestRevertingTheChangeResolvesItsCatalogIssues(t *testing.T) {
 	f := removalFixture(t, "")
 	f.h.now = time.Now
+	useBeforeRemoval(t, f.h)
 	changeID := removeHostedLeavingSummarize(t, f.h)
 	if w, _ := call(f.h, "POST", "/api/v1/changes/"+changeID+"/revert", "", remManagement, true); w.Code != 200 {
 		t.Fatalf("revert: %d %s", w.Code, w.Body)
@@ -217,6 +237,7 @@ func TestRevertingTheChangeResolvesItsCatalogIssues(t *testing.T) {
 func TestNoCatalogIssuesWhileAdaptingIsOff(t *testing.T) {
 	f := removalFixture(t, "adapting: {disabled: true}\n")
 	f.h.now = time.Now
+	useBeforeRemoval(t, f.h)
 	removeHostedLeavingSummarize(t, f.h)
 	// Disclosure still works with adapting off.
 	if out := catalogOf(t, f.h, remDocs); len(catalogChanges(t, out)) != 1 {
@@ -240,5 +261,93 @@ func TestNoCatalogIssuesWhileAdaptingIsOff(t *testing.T) {
 	}
 	if got := appIssues(t, f.h, remDocs); len(got) != 0 {
 		t.Fatalf("docs-bot's Issues: %v", got)
+	}
+}
+
+// An Application that never sent what a Change took away is not told by an
+// Issue: the Catalog change is still recorded and readable.
+func TestNoCatalogIssueForAnApplicationThatNeverUsedWhatWasTakenAway(t *testing.T) {
+	f := removalFixture(t, "")
+	f.h.now = time.Now
+	removeHostedLeavingSummarize(t, f.h)
+	if got := ownerIssues(t, f.h, "?state=all"); len(got) != 0 {
+		t.Fatalf("Issues opened without any call: %v", got)
+	}
+	for _, token := range []string{remDocs, remReview} {
+		if got := catalogChanges(t, catalogOf(t, f.h, token)); len(got) != 1 {
+			t.Fatalf("the Catalog change was not recorded: %v", got)
+		}
+	}
+}
+
+// Following a moved protocol default or binding counts as use; sending only
+// a task name that is still there does not.
+func TestOnlyCallsThatFollowedMovedRoutingCountAsUse(t *testing.T) {
+	f := removalFixture(t, "")
+	f.h.now = time.Now
+	// docs-bot sends only "fast" (a shared task name that moves to spare);
+	// review-code sends a model name that follows its binding to hosted.
+	if code, _ := remCall(t, f.h, remDocs, "fast"); code != 200 {
+		t.Fatalf("docs-bot's call: %d", code)
+	}
+	if code, _ := remCall(t, f.h, remReview, "gpt-4o"); code != 200 {
+		t.Fatalf("review-code's call: %d", code)
+	}
+	time.Sleep(2 * time.Millisecond)
+	removeHostedLeavingSummarize(t, f.h)
+	if got := appIssues(t, f.h, remDocs); len(got) != 0 {
+		t.Fatalf("docs-bot never used what was taken away: %v", got)
+	}
+	if got := appIssues(t, f.h, remReview); len(got) != 1 || got[0]["cause"] != "catalog_changed" {
+		t.Fatalf("review-code followed its binding: %v", got)
+	}
+}
+
+// A Change and its revert, applied back to back, leave no open Issue: the
+// revert is never handled before the Change it reverts.
+func TestAChangeRevertedAtOnceLeavesNoOpenCatalogIssue(t *testing.T) {
+	f := removalFixture(t, "")
+	f.h.now = time.Now
+	useBeforeRemoval(t, f.h)
+	plan := map[string]string{"default:openai": "spare", "binding:review-code": "spare", "alias:fast": "spare", "application_alias:docs-bot:summarize": "", "evaluation": "spare"}
+	// Readers of the Issues drain the queued notices too, at the same time.
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	for range 4 {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					call(f.h, "GET", "/api/v1/issues?state=all", "", remManagement, false)
+				}
+			}
+		}()
+	}
+	for i := 0; i < 40; i++ {
+		edit, err := config.RemoveTargetWith(f.h.snapshot(), "hosted", plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, ch, err := f.h.live.Change("remove connection hosted", edit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := f.h.live.Revert(ch.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(stop)
+	readers.Wait()
+	for _, is := range ownerIssues(t, f.h, "?state=all") {
+		if is["cause"] == "catalog_changed" && is["state"] != "resolved" {
+			t.Fatalf("a reverted Change left an Issue %v", is["state"])
+		}
+	}
+	if got := ownerIssues(t, f.h, "?state=all"); len(got) != 80 {
+		t.Fatalf("want one resolved Issue per Change and Application, got %d", len(got))
 	}
 }

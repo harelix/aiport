@@ -14,7 +14,10 @@ import (
 // Catalog-change Issues. A configuration Change that takes something away
 // from an Application's Catalog (a task name it had, or the binding or a
 // protocol default it follows) opens an Issue of CauseCatalogChanged for
-// that Application, one per Change, Subject the Change id. It needs no
+// that Application, one per Change, Subject the Change id, when the
+// Application used what went away within request history (it sent the
+// removed task name, or a model name that followed the moved binding or
+// default). It needs no
 // Owner decision (there is no aiport fix) and is delivered like every
 // Issue. It resolves itself when the Application's calls succeed after the
 // change (and after any failing call that sent a removed name), when the
@@ -68,26 +71,61 @@ func (q *Queue) CatalogChanged(notices []CatalogNotice) {
 	go q.drainCatalog()
 }
 
-// drainCatalog turns the queued Catalog changes into Issues. Never called
-// with the lock held.
+// drainCatalog turns the queued Catalog changes into Issues, in the order
+// the Changes were made: the inbox is taken while the lock is held, so a
+// drain that took later notices (a revert) never handles them before an
+// earlier drain has handled the ones before (the Change it reverts). Never
+// called with the lock held.
 func (q *Queue) drainCatalog() {
+	retention := time.Duration(q.live.Config().Telemetry.RetentionDays) * 24 * time.Hour
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.inboxMu.Lock()
 	notices := q.inbox
 	q.inbox = nil
 	q.inboxMu.Unlock()
-	if len(notices) == 0 {
-		return
-	}
-	q.mu.Lock()
-	defer q.mu.Unlock()
 	for _, n := range notices {
-		q.catalogNotice(n)
+		q.catalogNotice(n, retention)
 	}
 }
 
-// catalogNotice opens the Issue for notice n, or, for a revert, resolves the
-// Issue the reverted Change opened. Called with the lock held.
-func (q *Queue) catalogNotice(n CatalogNotice) {
+// usedTakenAway reports whether Application n.Application used, within
+// request history before the change (retention long), what the change took
+// away: it sent a removed task name, or sent a model name that is not a task
+// name and went to the Connection its binding or a protocol default it
+// follows pointed at before. Called with the lock held.
+func (q *Queue) usedTakenAway(n CatalogNotice, retention time.Duration) bool {
+	if q.history == nil {
+		return false
+	}
+	removed := n.removedNames()
+	taskName := func(name string) bool {
+		return slices.ContainsFunc(n.Available, func(t catalog.TaskName) bool { return t.Name == name })
+	}
+	from := time.UnixMilli(n.At).Add(-retention).UnixMilli()
+	for _, e := range q.history.Find(telemetry.Query{Origin: n.Application, From: from, To: n.At, InferenceOnly: true}) {
+		if e.RequestedModel == nil {
+			continue
+		}
+		if slices.Contains(removed, *e.RequestedModel) {
+			return true
+		}
+		if taskName(*e.RequestedModel) {
+			continue
+		}
+		for _, s := range n.Routing {
+			if s.Before != "" && e.Target == s.Before && (s.Of == catalog.RoutedBinding || e.Protocol == string(s.Of)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// catalogNotice opens the Issue for notice n when the Application used what
+// it took away within request history (retention long), or, for a revert,
+// resolves the Issue the reverted Change opened. Called with the lock held.
+func (q *Queue) catalogNotice(n CatalogNotice, retention time.Duration) {
 	if n.RevertOf != "" {
 		if i := q.issueFor(n.Application, CauseCatalogChanged, n.RevertOf); i >= 0 && undecided(q.issues[i].State) {
 			q.resolve(&q.issues[i], Stopped, n.At)
@@ -100,6 +138,11 @@ func (q *Queue) catalogNotice(n CatalogNotice) {
 	// An Issue's aiport fix for this Application, or its revert, is told by
 	// that Issue itself (it resolves, or reopens): no second Issue.
 	if q.fixChange(n.Application, n.ChangeID) || q.fixChange(n.Application, n.RevertOf) {
+		return
+	}
+	// An Application that never sent what went away has nothing to fix: the
+	// Catalog change is recorded and readable, but no Issue opens.
+	if !q.usedTakenAway(n, retention) {
 		return
 	}
 	notice := n
@@ -145,7 +188,7 @@ func (q *Queue) catalogResolutions(at time.Time) {
 			switch {
 			case sentRemoved(e, names):
 				after = max(after, e.StartedAt)
-			case e.Outcome == "success":
+			case telemetry.Succeeded(e.Outcome):
 				success = max(success, e.StartedAt)
 			}
 		}
@@ -210,7 +253,7 @@ func catalogFix(is Issue) string {
 		}
 		b.WriteString(", and the models " + word + strings.Join(n.Connections, ", ") + " list")
 	}
-	b.WriteString(". Read the full list with GET /v1/models (" + app + "'s own token), and the Catalog with its recent changes at " + catalogPath + " or the MCP tool aiport_catalog.\n\n")
+	b.WriteString(". Read the full list with GET /v1/models (" + app + "'s own token), and the Catalog with its recent changes at " + refusal.CatalogPath + " or the MCP tool aiport_catalog.\n\n")
 
 	b.WriteString("What to change in " + app + ": stop sending ")
 	if names := n.removedNames(); len(names) > 0 {
@@ -223,14 +266,11 @@ func catalogFix(is Issue) string {
 	return b.String()
 }
 
-// catalogPath is where an Application reads its Catalog (server.CatalogPath).
-const catalogPath = "/v1/aiport/catalog"
-
 func routingOf(s catalog.Switch) string {
-	if s.Of == "binding" {
+	if s.Of == catalog.RoutedBinding {
 		return "the binding (every model name without an Alias)"
 	}
-	return "the " + s.Of + " protocol default (model names without an Alias)"
+	return "the " + string(s.Of) + " protocol default (model names without an Alias)"
 }
 
 func connectionOrNone(id string) string {

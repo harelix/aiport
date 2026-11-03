@@ -26,14 +26,16 @@ func (h *Handler) setCatalogVersions(c config.Config) {
 	h.catalogVersions.Store(&set)
 }
 
-// catalogVersion is the Catalog version of Application application.
+// catalogVersion is the Catalog version of Application application, read
+// from the versions setCatalogVersions precomputed for every configured
+// Application (New and every configuration Change, which also makes new
+// Application tokens live). "" for an id it does not know: no Catalog is
+// worked out on the forwarding path.
 func (h *Handler) catalogVersion(application string) string {
 	if set := h.catalogVersions.Load(); set != nil {
-		if v, ok := (*set)[application]; ok {
-			return v
-		}
+		return (*set)[application]
 	}
-	return catalog.For(h.snapshot(), application, nil).Version
+	return ""
 }
 
 // catalogFor is the Catalog of application with the model lists of the
@@ -73,25 +75,26 @@ func (h *Handler) serveModels(w http.ResponseWriter, r *http.Request, applicatio
 		fail(405, "method_not_allowed", "Use GET")
 		return
 	}
+	if !h.isApplication(application) {
+		fail(403, "application_token_required", "A Catalog belongs to one Application: send that Application's own token")
+		return
+	}
 	c := h.snapshot()
 	protocol := "openai"
 	if r.Header.Get("anthropic-version") != "" {
 		protocol = "anthropic"
 	}
-	protocols := map[string]string{}
-	for _, t := range c.Targets {
-		protocols[t.ID] = t.Protocol
-	}
+	speaks := func(id string) bool { t, ok := c.Connection(id); return ok && t.Protocol == protocol }
 	cat := h.catalogFor(r, c, application)
 	type entry struct{ id, connection string }
 	var list []entry
 	for _, t := range cat.TaskNames {
-		if protocols[t.Connection] == protocol {
+		if speaks(t.Connection) {
 			list = append(list, entry{t.Name, ""})
 		}
 	}
 	for _, m := range cat.Models {
-		if protocols[m.Connection] == protocol {
+		if speaks(m.Connection) {
 			list = append(list, entry{m.ID, m.Connection})
 		}
 	}

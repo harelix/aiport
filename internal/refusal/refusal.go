@@ -68,6 +68,10 @@ const (
 	IssuesTool = "aiport_my_issues"
 )
 
+// CatalogPath is where an Application reads its Catalog and its recent
+// Catalog changes.
+const CatalogPath = "/v1/aiport/catalog"
+
 // IssueHint goes with a failing call while Issue id is open for the
 // Application: it names the Issue and where its fix is.
 func IssueHint(id string) string {

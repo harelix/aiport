@@ -217,15 +217,22 @@ that protocol, where `answer` is `one`, `none`, `several` or `unknown` (a
 Connection whose listing failed is in `unknown`). Lists are kept in memory
 for two minutes; a failed listing is not kept.
 
-Catalog (Application token; works with `adapting.disabled`): `GET /v1/models`
+Catalog (Application token; the management token gets `403
+application_token_required`; works with `adapting.disabled`): `GET /v1/models`
 lists the calling Application's task names, then the models its reached
 Connections list, from the same cached lists (OpenAI list shape; Anthropic
 shape with `anthropic-version`). Every answer to an Application token carries
 `X-Aiport-Catalog: <version>` (12 hex characters of SHA-256 over its binding,
 followed protocol defaults, task names and their targets; model lists do not
-change it). `GET /v1/aiport/catalog` returns `{catalog, changes}`. Catalog
-changes are worked out from every configuration Change and revert and kept in
-the `catalog_changes` table of `<config>.db` for `telemetry.retention_days`.
+change it). `GET /v1/aiport/catalog` returns `{catalog, changes}`; the capabilities answer
+carries `catalog: {version, changed_at_ms}`, where `changed_at_ms` is `null`
+when no Catalog change is kept for the Application. Catalog
+changes are worked out from every configuration Change and revert, for every
+Application and the built-in `aiport` one, and kept in the `catalog_changes`
+table of `<config>.db` for `telemetry.retention_days` (pruned at startup and
+hourly; without a database they are kept in memory for this session, also no
+longer than that). A `catalog_changed` Issue opens only for an Application
+that used what the Change took away within request history.
 
 Removing a Connection (management access): `GET /api/v1/targets/{id}/dependents`
 (or `POST` with `X-Aiport-CSRF: 1` and a draft plan) returns `{connection, dependents, applications,

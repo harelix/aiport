@@ -253,7 +253,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// notices a change on its next call. Forwarded answers keep it: the
 	// provider's headers are added, its body is never changed.
 	if application {
-		w.Header().Set(CatalogHeader, h.catalogVersion(originID))
+		if v := h.catalogVersion(originID); v != "" {
+			w.Header().Set(CatalogHeader, v)
+		}
 	}
 	// A run credential authenticates only an Agent run's model calls, as the
 	// built-in Application; it is never an Application's or the Owner's.

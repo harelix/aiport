@@ -28,6 +28,10 @@ func IsError(outcome string) bool {
 	return false
 }
 
+// Succeeded reports whether an outcome is a success: the request was
+// admitted and answered without error.
+func Succeeded(outcome string) bool { return outcome == "success" }
+
 // Admitted reports whether a request got past aiport's own checks. Error
 // rates are always computed over admitted requests.
 func Admitted(outcome string) bool { return outcome != "rejected" }

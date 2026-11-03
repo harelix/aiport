@@ -144,7 +144,7 @@ func TestDependentsListEveryUseWithASuggestionAndTheAffectedApplications(t *test
 			t.Fatalf("%s suggested %q, want %q (all: %v)", id, got[id], s, got)
 		}
 	}
-	if a := affected(t, out); strings.Join(a, ",") != "docs-bot,review-code" {
+	if a := affected(t, out); strings.Join(a, ",") != "aiport,docs-bot,review-code" {
 		t.Fatalf("affected Applications %v", a)
 	}
 	if strings.Contains(w.Body.String(), "127.0.0.1") {
@@ -180,7 +180,7 @@ func TestRemovalWithAPlanIsOneChangeAndOneRevertRestoresEverything(t *testing.T)
 		t.Fatalf("removal with a plan: %d %s", w.Code, w.Body)
 	}
 	id, _ := out["change_id"].(string)
-	if id == "" || strings.Join(affected(t, out), ",") != "docs-bot,review-code" {
+	if id == "" || strings.Join(affected(t, out), ",") != "aiport,docs-bot,review-code" {
 		t.Fatalf("removal answer: %s", w.Body)
 	}
 	c := readConfig(t, path)
@@ -248,5 +248,60 @@ func TestNoneLeavesEveryItemWithoutAConnection(t *testing.T) {
 	review, _ := c.Application("review-code")
 	if c.Defaults.OpenAITarget != "" || review.Target != "" || len(docs.Aliases) != 0 || len(c.Aliases) != 0 || c.Evaluation != (config.Evaluation{}) {
 		t.Fatalf("something still points somewhere: %+v %+v %+v %+v %+v", c.Defaults, review, docs, c.Aliases, c.Evaluation)
+	}
+}
+
+// The built-in aiport Application (Explanations and Agent runs' model calls)
+// follows the protocol defaults unless agent_runs.connection binds it, so a
+// removal that moves a default changes its Catalog: it is listed among the
+// affected Applications, by name, and its Catalog change is kept.
+func TestTheBuiltInApplicationIsAmongTheAffectedApplications(t *testing.T) {
+	h, _ := removalServer(t)
+	_, out := call(h, "GET", "/api/v1/targets/hosted/dependents", "", remManagement, false)
+	var builtin map[string]any
+	for _, a := range out["applications"].([]any) {
+		if m := a.(map[string]any); m["application"] == config.BuiltinApplication {
+			builtin = m
+		}
+	}
+	if builtin == nil || builtin["name"] != "aiport" {
+		t.Fatalf("the built-in Application is not listed: %v", out["applications"])
+	}
+	if r, _ := builtin["routing"].([]any); len(r) != 1 || r[0].(map[string]any)["of"] != "openai" {
+		t.Fatalf("the built-in Application's change: %v", builtin)
+	}
+	// Removing local (nightly's binding) changes nothing for it.
+	_, out = call(h, "POST", "/api/v1/targets/local/dependents", planBody(map[string]string{"binding:nightly": ""}), remManagement, true)
+	if a := affected(t, out); strings.Join(a, ",") != "nightly" {
+		t.Fatalf("affected by removing local: %v", a)
+	}
+
+	// Removing hosted keeps the built-in Application's Catalog change, and
+	// opens no Issue for it (it has no coding agent to tell).
+	_, out = call(h, "GET", "/api/v1/targets/hosted/dependents", "", remManagement, false)
+	if w, _ := call(h, "DELETE", "/api/v1/targets/hosted", planBody(suggestions(t, out)), remManagement, true); w.Code != 200 {
+		t.Fatalf("removal: %d %s", w.Code, w.Body)
+	}
+	if got := h.recentCatalogChanges(config.BuiltinApplication, 10); len(got) != 1 {
+		t.Fatalf("the built-in Application's Catalog changes: %v", got)
+	}
+	for _, is := range ownerIssues(t, h, "?state=all") {
+		if is["application"] == config.BuiltinApplication {
+			t.Fatalf("an Issue opened for the built-in Application: %v", is)
+		}
+	}
+}
+
+// A removal body larger than the API accepts is refused like elsewhere.
+func TestAnOversizedRemovalBodyIsRefused(t *testing.T) {
+	h, path := removalServer(t)
+	before, _ := os.ReadFile(path)
+	body := `{"plan":{"x":"` + strings.Repeat("a", 70<<10) + `"}}`
+	w, out := call(h, "DELETE", "/api/v1/targets/hosted", body, remManagement, true)
+	if w.Code != 413 || errorCode(out) != "request_too_large" {
+		t.Fatalf("an oversized removal body: %d %s", w.Code, w.Body)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatal("a refused removal changed the file")
 	}
 }

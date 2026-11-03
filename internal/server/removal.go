@@ -57,7 +57,7 @@ func (h *Handler) targetDependentsRoute(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 	current := h.snapshot()
-	if !hasConnection(current, id) {
+	if _, ok := current.Connection(id); !ok {
 		fail(404, "target_not_found", "No connection with this id")
 		return true
 	}
@@ -91,7 +91,12 @@ func (h *Handler) targetDependentsRoute(w http.ResponseWriter, r *http.Request, 
 // without one, the removal is refused while anything uses it.
 func (h *Handler) removeTarget(w http.ResponseWriter, r *http.Request, current config.Config, id string, fail func(int, string, string)) {
 	var in removalPlan
-	if body, _ := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10)); strings.TrimSpace(string(body)) != "" {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
+	if err != nil {
+		fail(413, "request_too_large", "A removal body must be at most 64 KiB")
+		return
+	}
+	if strings.TrimSpace(string(body)) != "" {
 		r.Body = io.NopCloser(strings.NewReader(string(body)))
 		if decodeJSON(w, r, &in) != nil {
 			fail(400, "invalid_request", "Send no body, or a JSON body with plan: {dependent id: Connection id or \"\"}")
@@ -116,13 +121,19 @@ func (h *Handler) removeTarget(w http.ResponseWriter, r *http.Request, current c
 		fail(400, "invalid_removal_plan", err.Error())
 		return
 	}
-	after, ch, err := h.live.Change(what, edit)
+	_, ch, err := h.live.Change(what, edit)
 	if err != nil {
 		// Validation messages name fields and ids only, never secret values.
 		fail(400, "invalid_removal_plan", err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "change_id": ch.ID, "applications": affectedBy(current, after)})
+	// The Applications affected are worked out from the configuration the
+	// Change started from, not the snapshot the plan was checked against.
+	answer := map[string]any{"ok": true, "change_id": ch.ID, "applications": []affectedApplication{}}
+	if before, after, err := ch.Configs(); err == nil {
+		answer["applications"] = affectedBy(before, after)
+	}
+	writeJSON(w, 200, answer)
 }
 
 // removalAffects is the Applications whose Catalog removing id with plan
@@ -132,18 +143,21 @@ func (h *Handler) removalAffects(current config.Config, id string, plan map[stri
 	if err != nil {
 		return nil, err
 	}
-	after, err := h.live.Try(edit)
+	before, after, err := h.live.Try(edit)
 	if err != nil {
 		return nil, err
 	}
-	return affectedBy(current, after), nil
+	return affectedBy(before, after), nil
 }
 
 func affectedBy(before, after config.Config) []affectedApplication {
 	out := []affectedApplication{}
 	for app, ch := range catalog.Diff(before, after) {
-		o, _ := after.Application(app)
-		out = append(out, affectedApplication{ch, o.Name})
+		name := config.BuiltinApplication // aiport's own model calls
+		if o, ok := after.Application(app); ok {
+			name = o.Name
+		}
+		out = append(out, affectedApplication{ch, name})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Application < out[j].Application })
 	return out
@@ -174,13 +188,4 @@ func (h *Handler) suggestReplacements(ctx context.Context, c config.Config, id s
 	}
 	wg.Wait()
 	return catalog.Suggest(c, id, models)
-}
-
-func hasConnection(c config.Config, id string) bool {
-	for _, t := range c.Targets {
-		if t.ID == id {
-			return true
-		}
-	}
-	return false
 }

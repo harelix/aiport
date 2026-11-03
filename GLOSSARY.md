@@ -36,6 +36,12 @@ A model name an Application sends that aiport replaces with a real model on a
 Connection. An Application can have its own Aliases; they come before the
 shared ones.
 
+**Task name**
+An Alias named for what the Application does, such as `review-code` or
+`summarize`, rather than for a model. The Application sends the task name;
+the Owner decides which Connection and model serve it.
+_Avoid_: model alias, nickname.
+
 **Catalog**
 What one Application can use through aiport: its task names (its own Aliases
 and the shared ones) and the models listed by the Connections it reaches, with
@@ -45,8 +51,8 @@ _Avoid_: model list (that is one Connection's).
 
 **Catalog change**
 The difference one Change made to one Application's Catalog: task names
-removed, added or moved, and routing that changed. One that takes something
-away is told to the Application as an Issue.
+removed, added or moved, and routing that changed. One that takes away
+something the Application used is told to it as an Issue.
 
 ## Adapting aiport
 

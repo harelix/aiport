@@ -530,7 +530,7 @@ func unknownModelSymptoms(c config.Config, history History, at time.Time) []*sym
 			continue
 		}
 		failed := notFound(e) && !hasAlias(o, *e.RequestedModel)
-		if !failed && e.Outcome != "success" {
+		if !failed && !telemetry.Succeeded(e.Outcome) {
 			continue
 		}
 		key := [2]string{e.Origin, *e.RequestedModel}

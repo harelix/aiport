@@ -226,18 +226,32 @@ func (l *Live) commit(c Config, ch Change) {
 
 // Try applies edit to a copy of the configuration file and validates the
 // result, without writing or publishing anything: the configuration Change
-// would make.
-func (l *Live) Try(edit Edit) (Config, error) {
+// would make, and the configuration it would start from.
+func (l *Live) Try(edit Edit) (before, after Config, err error) {
 	if l.path == "" {
-		return Config{}, ErrReadOnly
+		return Config{}, Config{}, ErrReadOnly
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, _, c, err := applyEdit(l.path, edit)
+	from, _, c, err := applyEdit(l.path, edit)
 	if err != nil {
-		return Config{}, err
+		return Config{}, Config{}, err
 	}
-	return copyConfig(c), nil
+	if before, err = Parse(from); err != nil {
+		return Config{}, Config{}, err
+	}
+	return before, copyConfig(c), nil
+}
+
+// Configs returns the configuration ch started from and the one it made.
+func (ch Change) Configs() (before, after Config, err error) {
+	if before, err = Parse(ch.Before); err != nil {
+		return Config{}, Config{}, err
+	}
+	if after, err = Parse(ch.After); err != nil {
+		return Config{}, Config{}, err
+	}
+	return before, after, nil
 }
 
 // editFile applies edit to the YAML document at path, validates the complete

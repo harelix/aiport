@@ -10,12 +10,13 @@ import (
 	"aiport/internal/catalog"
 	"aiport/internal/config"
 	"aiport/internal/decide"
+	"aiport/internal/refusal"
 	"aiport/internal/store"
 )
 
 // CatalogPath answers the calling Application's Catalog and its recent
 // Catalog changes.
-const CatalogPath = "/v1/aiport/catalog"
+const CatalogPath = refusal.CatalogPath
 
 // catalogChangesLimit bounds the Catalog changes one answer lists.
 const catalogChangesLimit = 50
@@ -42,15 +43,17 @@ func (l *catalogLog) Watch(fn func(after config.Config, records []catalog.Record
 	l.watchers = append(l.watchers, fn)
 }
 
-// keep stores records and tells the watchers.
-func (l *catalogLog) keep(records []catalog.Record, after config.Config) {
+// keep stores records and tells the watchers. Kept in memory, the Catalog
+// changes made before since are forgotten at the same time, so the log
+// cannot grow without bound; the database is pruned by prune alone.
+func (l *catalogLog) keep(records []catalog.Record, since int64, after config.Config) {
 	l.mu.Lock()
 	if l.db != nil {
 		if err := l.db.Save(records); err != nil {
 			log.Printf("aiport: %v", err) // names what failed, never contents
 		}
 	} else {
-		l.mem = append(l.mem, records...)
+		l.mem = append(l.forget(since), records...)
 	}
 	watchers := append([]func(config.Config, []catalog.Record){}, l.watchers...)
 	l.mu.Unlock()
@@ -86,16 +89,24 @@ func (l *catalogLog) prune(before int64) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.db != nil {
-		_ = l.db.Prune(before)
+		if err := l.db.Prune(before); err != nil {
+			log.Printf("aiport: %v", err)
+		}
 		return
 	}
+	l.mem = l.forget(before)
+}
+
+// forget returns the in-memory Catalog changes made at or after before.
+// Called with the lock held.
+func (l *catalogLog) forget(before int64) []catalog.Record {
 	kept := l.mem[:0]
 	for _, r := range l.mem {
 		if r.At >= before {
 			kept = append(kept, r)
 		}
 	}
-	l.mem = kept
+	return kept
 }
 
 // openCatalogLog keeps Catalog changes in the database Changes are kept in,
@@ -113,8 +124,10 @@ func (h *Handler) openCatalogLog() {
 // noticeCatalogChanges hands one Change's Catalog changes to the decision
 // queue, which opens a Catalog-change Issue for each Application the Change
 // took something from. None while aiport does not adapt (as configured
-// after the Change). It runs inside the Change: after is the configuration
-// it made, and the queue only queues the notices.
+// after the Change), and none for the built-in Application (its Catalog
+// changes are kept, but it has no coding agent to tell). It runs inside the
+// Change: after is the configuration it made, and the queue only queues the
+// notices.
 func (h *Handler) noticeCatalogChanges(after config.Config, records []catalog.Record) {
 	q := h.decisions
 	if q == nil || after.Adapting.Disabled {
@@ -122,6 +135,9 @@ func (h *Handler) noticeCatalogChanges(after config.Config, records []catalog.Re
 	}
 	notices := make([]decide.CatalogNotice, 0, len(records))
 	for _, r := range records {
+		if r.Application == config.BuiltinApplication {
+			continue // aiport's own model calls: no coding agent to tell, its change is only kept
+		}
 		now := catalog.For(after, r.Application, nil)
 		notices = append(notices, decide.CatalogNotice{Record: r, Available: now.TaskNames, Connections: now.Connections})
 	}
@@ -140,23 +156,21 @@ func (h *Handler) recordCatalogChanges(ch config.Change, before, after config.Co
 		records = append(records, catalog.Record{ChangeID: ch.ID, At: ch.At, RevertOf: ch.RevertOf, Change: c})
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].Application < records[j].Application })
-	h.catalogLog.keep(records, after)
 	// after, not the live configuration: this runs while the Change is applied.
-	h.pruneCatalogChanges(after, time.UnixMilli(ch.At))
+	h.catalogLog.keep(records, catalogKeptSince(after, time.UnixMilli(ch.At)), after)
 }
 
 // catalogKeptSince is the oldest time a Catalog change is kept from at at
-// under configuration c: as long as request history (telemetry.retention_days).
+// under configuration c: as long as request history (telemetry.retention_days,
+// validated to 1–3650 days).
 func catalogKeptSince(c config.Config, at time.Time) int64 {
-	days := c.Telemetry.RetentionDays
-	if days < 1 {
-		return 0
-	}
-	return at.Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
+	return at.Add(-time.Duration(c.Telemetry.RetentionDays) * 24 * time.Hour).UnixMilli()
 }
 
 // pruneCatalogChanges forgets Catalog changes older than request history
-// under configuration c at time at.
+// under configuration c at time at. It is the one place the kept Catalog
+// changes are pruned: at startup and on the hourly ticker (StartAdapting).
+// Readers never see older ones anyway (Recent reads from catalogKeptSince).
 func (h *Handler) pruneCatalogChanges(c config.Config, at time.Time) {
 	if h.catalogLog != nil {
 		h.catalogLog.prune(catalogKeptSince(c, at))

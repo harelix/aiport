@@ -42,10 +42,9 @@ func (h *Handler) openDecisions() {
 }
 
 // Detect runs one background pass at time at, as the ticker does: it
-// forgets decided items and Catalog changes older than request history,
-// then detects over request history.
+// forgets decided items older than request history, then detects over
+// request history. (Catalog changes are pruned at startup and hourly.)
 func (h *Handler) Detect(at time.Time) {
-	h.pruneCatalogChanges(h.snapshot(), at)
 	if h.decisions != nil {
 		h.decisions.Prune(at)
 		h.decisions.Detect(at)
