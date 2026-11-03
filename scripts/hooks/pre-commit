@@ -13,7 +13,7 @@ fi
 
 # Private words live outside the repository, so the list itself never leaks:
 # one extended regular expression per line in .git/info/private-patterns.
-patterns="$(git rev-parse --git-dir)/info/private-patterns"
+patterns="$(git rev-parse --git-common-dir)/info/private-patterns" # shared by every worktree
 if [ -s "$patterns" ]; then
   added=$(git diff --cached --no-color -U0 -- . ':(exclude)vendor' ':(exclude)internal/dashboard/dist' | grep '^+' | grep -v '^+++' || true)
   if [ -n "$added" ] && printf '%s\n' "$added" | grep -i -E -q -f "$patterns"; then
