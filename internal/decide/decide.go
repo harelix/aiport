@@ -22,6 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/harelix/aiport/internal/capability"
 	"github.com/harelix/aiport/internal/config"
@@ -360,7 +361,7 @@ func (q *Queue) Decide(id string, d Decision, at time.Time) (Item, config.Change
 	if !q.On() {
 		return Item{}, config.Change{}, ErrOff
 	}
-	if len(d.Note) > 2000 {
+	if utf8.RuneCountInString(d.Note) > 2000 {
 		return Item{}, config.Change{}, Invalid{"the note must be at most 2,000 characters"}
 	}
 	if d.By == "" {

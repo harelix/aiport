@@ -619,7 +619,6 @@ func TestRunDetectsUntilStopped(t *testing.T) {
 // dismissal) count the note's bytes: a 2,000-character note in a script
 // outside ASCII is refused.
 func TestANoteOf2000CharactersFits(t *testing.T) {
-	t.Skip("BUG: Decide and DecideIssue check len(d.Note) > 2000 (bytes) while the refusal says \"at most 2,000 characters\"; a 2,000-character non-ASCII note is refused")
 	f := newFixture(t, "", false)
 	it, _ := f.q.Submit(changeRequest(decide.KindBindApplication, decide.Proposal{Target: "hosted"}), t0)
 	if _, _, err := f.q.Decide(it.ID, decide.Decision{Action: decide.Reject, Note: strings.Repeat("é", 2000)}, t0); err != nil {

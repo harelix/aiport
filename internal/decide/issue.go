@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/harelix/aiport/internal/config"
 	"github.com/harelix/aiport/internal/telemetry"
@@ -282,7 +283,7 @@ func (q *Queue) DecideIssue(id string, d Decision, at time.Time) (Issue, config.
 			return Issue{}, config.Change{}, ErrNoFix
 		}
 		// Nothing waits for the Owner: dismiss the Issue itself.
-		if len(d.Note) > 2000 {
+		if utf8.RuneCountInString(d.Note) > 2000 {
 			return Issue{}, config.Change{}, Invalid{"the note must be at most 2,000 characters"}
 		}
 		if d.By == "" {
