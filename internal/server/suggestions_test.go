@@ -84,11 +84,11 @@ func pendingDecisions(t *testing.T, h *Handler, token string) (bool, []map[strin
 
 func seededHistory() []telemetry.Event {
 	var seed []telemetry.Event
-	seed = append(seed, upstream404s("nightly-report", "fast", 6, 50*time.Minute)...) // the pattern
-	seed = append(seed, upstream404s("nightly-report", "slow", 2, 30*time.Minute)...) // too few
-	seed = append(seed, upstream404s("other", "fast", 1, 20*time.Minute)...)          // another Application, too few
-	seed = append(seed, upstream404s("nightly-report", "old", 9, 5*time.Hour)...)     // outside the window
-	ok := "fast"
+	seed = append(seed, upstream404s("nightly-report", "quick", 6, 50*time.Minute)...) // the pattern
+	seed = append(seed, upstream404s("nightly-report", "slow", 2, 30*time.Minute)...)  // too few
+	seed = append(seed, upstream404s("other", "quick", 1, 20*time.Minute)...)          // another Application, too few
+	seed = append(seed, upstream404s("nightly-report", "old", 9, 5*time.Hour)...)      // outside the window
+	ok := "quick"
 	seed = append(seed, telemetry.Event{ID: "00000000-0000-4000-9000-000000000001", StartedAt: suggestionsNow.Add(-55 * time.Minute).UnixMilli(), Origin: "nightly-report", Target: "local", Route: "/v1/chat/completions", Status: 200, Outcome: "success", RequestedModel: &ok})
 	return seed
 }
@@ -116,12 +116,12 @@ func TestUnknownModelSuggestion(t *testing.T) {
 	if evidence["count"] != float64(6) || evidence["from_ms"] != float64(suggestionsNow.Add(-50*time.Minute).UnixMilli()) || evidence["to_ms"] != float64(suggestionsNow.Add(-45*time.Minute).UnixMilli()) || evidence["window_minutes"] != float64(60) {
 		t.Fatalf("evidence: %v", evidence)
 	}
-	// local's model list cannot be read, so which Connection serves "fast"
+	// local's model list cannot be read, so which Connection serves "quick"
 	// is unknown: the Owner chooses.
-	if proposal["alias"] != "fast" || proposal["target"] != nil || proposal["model"] != "fast" {
+	if proposal["alias"] != "quick" || proposal["target"] != nil || proposal["model"] != "quick" {
 		t.Fatalf("proposal: %v", proposal)
 	}
-	if !strings.Contains(s["need"].(string), "fast") || !strings.Contains(s["need"].(string), "6") {
+	if !strings.Contains(s["need"].(string), "quick") || !strings.Contains(s["need"].(string), "6") {
 		t.Fatalf("need does not explain the evidence: %v", s["need"])
 	}
 	if w, _ := call(h, "GET", "/api/v1/decisions", "", strings.Repeat("n", 40), false); w.Code != 401 {
@@ -173,11 +173,11 @@ func TestApproveSuggestionCreatesRevertableAlias(t *testing.T) {
 	if code, out := decideOn(t, h, management, id, `{"action":"accept"}`); code != 400 || !strings.Contains(fmt.Sprint(out["error"]), "Connection") {
 		t.Fatalf("accept without a Connection: %d %v", code, out)
 	}
-	code, out := decideOn(t, h, management, id, `{"action":"accept","target":"local","model":"llama3","note":"fast is llama3 here"}`)
+	code, out := decideOn(t, h, management, id, `{"action":"accept","target":"local","model":"llama3","note":"quick is llama3 here"}`)
 	if code != 200 || out["change_id"] == "" {
 		t.Fatalf("accept: %d %v", code, out)
 	}
-	if got := appAliases(t, h, "nightly-report"); len(got) != 1 || got[0] != (config.OriginAlias{Alias: "fast", Target: "local", Model: "llama3"}) {
+	if got := appAliases(t, h, "nightly-report"); len(got) != 1 || got[0] != (config.OriginAlias{Alias: "quick", Target: "local", Model: "llama3"}) {
 		t.Fatalf("alias not live for nightly-report: %v", got)
 	}
 	if got := appAliases(t, h, "other"); len(got) != 0 || len(liveConfig(t, h, management).Aliases) != 0 {
@@ -190,7 +190,7 @@ func TestApproveSuggestionCreatesRevertableAlias(t *testing.T) {
 		t.Fatalf("decided twice: %d %v", code, out)
 	}
 	changes := listChanges(t, h, management)
-	if len(changes) != 1 || changes[0]["id"] != out["change_id"] || !strings.Contains(changes[0]["what"].(string), "fast") {
+	if len(changes) != 1 || changes[0]["id"] != out["change_id"] || !strings.Contains(changes[0]["what"].(string), "quick") {
 		t.Fatalf("Change not recorded: %v", changes)
 	}
 	// Old 404s in the window don't bring the Suggestion back once the alias exists.
@@ -230,10 +230,10 @@ func TestARejectedSuggestionIsNotQuiet(t *testing.T) {
 func TestDismissedSuggestionStaysQuiet(t *testing.T) {
 	day := 24 * time.Hour
 	var seed []telemetry.Event
-	seed = append(seed, upstream404s("nightly-report", "fast", 6, 50*time.Minute)...)         // day 0: 6
-	seed = append(seed, upstream404s("nightly-report", "fast", 11, -day+30*time.Minute)...)   // day 1: 11, not double
-	seed = append(seed, upstream404s("nightly-report", "fast", 12, -2*day+30*time.Minute)...) // day 2: 12, double
-	seed = append(seed, upstream404s("nightly-report", "fast", 6, -10*day+30*time.Minute)...) // day 10: quiet period over
+	seed = append(seed, upstream404s("nightly-report", "quick", 6, 50*time.Minute)...)         // day 0: 6
+	seed = append(seed, upstream404s("nightly-report", "quick", 11, -day+30*time.Minute)...)   // day 1: 11, not double
+	seed = append(seed, upstream404s("nightly-report", "quick", 12, -2*day+30*time.Minute)...) // day 2: 12, double
+	seed = append(seed, upstream404s("nightly-report", "quick", 6, -10*day+30*time.Minute)...) // day 10: quiet period over
 	path := filepath.Join(t.TempDir(), "aiport.yaml")
 	at := suggestionsNow
 	h, management := suggestionsServer(t, path, "", seed, &at)
@@ -329,7 +329,7 @@ func TestForwardingUnchangedByAdapting(t *testing.T) {
 		received = append(received, r.URL.String()+" "+string(b))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(404)
-		_, _ = w.Write([]byte(`{"error":{"message":"model \"fast\" not found"}}`))
+		_, _ = w.Write([]byte(`{"error":{"message":"model \"quick\" not found"}}`))
 	}))
 	defer upstream.Close()
 	forward := func(extra string) (*Handler, string, []string) {
@@ -347,7 +347,7 @@ func TestForwardingUnchangedByAdapting(t *testing.T) {
 		h.StartAdapting(stop)
 		var got []string
 		for i := 0; i < 5; i++ {
-			r := httptest.NewRequest("POST", "http://127.0.0.1:8787/v1/chat/completions", strings.NewReader(`{"model":"fast","messages":[]}`))
+			r := httptest.NewRequest("POST", "http://127.0.0.1:8787/v1/chat/completions", strings.NewReader(`{"model":"quick","messages":[]}`))
 			r.Header.Set("Authorization", "Bearer "+strings.Repeat("n", 40))
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)

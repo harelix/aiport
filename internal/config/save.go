@@ -179,6 +179,8 @@ const (
 	DependentBinding          DependentKind = "binding"           // an Application bound to it
 	DependentAlias            DependentKind = "alias"             // a shared Alias
 	DependentApplicationAlias DependentKind = "application_alias" // an Application's own Alias
+	DependentLevel            DependentKind = "level"             // a shared Level mapping
+	DependentApplicationLevel DependentKind = "application_level" // an Application's own Level mapping
 	DependentExplain          DependentKind = "explain"           // the Connection writing Explanations
 	DependentAgentRuns        DependentKind = "agent_runs"        // Agent runs' model calls
 	DependentEvaluation       DependentKind = "evaluation"        // the compression evaluator
@@ -186,8 +188,10 @@ const (
 
 // Dependent is one item that uses a Connection. ID names it in a removal
 // plan: "default:<protocol>", "binding:<application>", "alias:<name>",
-// "application_alias:<application>:<name>", "explain", "agent_runs" or
-// "evaluation".
+// "application_alias:<application>:<name>", "level:<level>:<protocol>",
+// "application_level:<application>:<level>:<protocol>", "explain",
+// "agent_runs" or "evaluation". A Level mapping carries its Protocol: its
+// replacement must speak it.
 type Dependent struct {
 	ID          string        `json:"id"`
 	Kind        DependentKind `json:"kind"`
@@ -199,9 +203,9 @@ type Dependent struct {
 }
 
 // Dependents lists everything in c that uses Connection id: protocol
-// defaults, bindings, shared Aliases, Applications' own Aliases,
-// Explanations, Agent runs' model calls and the compression evaluator, in
-// that order.
+// defaults, bindings, shared Aliases and Level mappings, Applications' own
+// Aliases and Level mappings, Explanations, Agent runs' model calls and the
+// compression evaluator, in that order.
 func Dependents(c Config, id string) []Dependent {
 	out := []Dependent{}
 	if c.Defaults.OpenAITarget == id {
@@ -215,14 +219,26 @@ func Dependents(c Config, id string) []Dependent {
 			out = append(out, Dependent{ID: "binding:" + o.ID, Kind: DependentBinding, Application: o.ID})
 		}
 	}
+	protocol := ""
+	if t, ok := c.Connection(id); ok {
+		protocol = t.Protocol
+	}
 	for _, a := range c.Aliases {
-		if a.Target == id {
+		switch {
+		case a.Target != id:
+		case IsLevel(a.Alias):
+			out = append(out, Dependent{ID: "level:" + a.Alias + ":" + protocol, Kind: DependentLevel, Protocol: protocol, Alias: a.Alias, Model: a.Model})
+		default:
 			out = append(out, Dependent{ID: "alias:" + a.Alias, Kind: DependentAlias, Alias: a.Alias, Model: a.Model})
 		}
 	}
 	for _, o := range c.Origins {
 		for _, a := range o.Aliases {
-			if a.Target == id {
+			switch {
+			case a.Target != id:
+			case IsLevel(a.Alias):
+				out = append(out, Dependent{ID: "application_level:" + o.ID + ":" + a.Alias + ":" + protocol, Kind: DependentApplicationLevel, Protocol: protocol, Application: o.ID, Alias: a.Alias, Model: a.Model})
+			default:
 				out = append(out, Dependent{ID: "application_alias:" + o.ID + ":" + a.Alias, Kind: DependentApplicationAlias, Application: o.ID, Alias: a.Alias, Model: a.Model})
 			}
 		}
@@ -243,9 +259,10 @@ func Dependents(c Config, id string) []Dependent {
 // uses it, as one edit (so one Change, reverted at once). plan maps each
 // Dependent's ID to its replacement Connection, or "" for none: a protocol
 // default is unset, a binding is removed (the Application follows the
-// defaults), an Alias is removed, and Explanations, Agent runs' model calls
-// or the evaluator are turned off. The plan must answer every Dependent and
-// nothing else, never with id itself. Validation of the result (a protocol
+// defaults), an Alias or Level mapping is removed, and Explanations, Agent
+// runs' model calls or the evaluator are turned off. The plan must answer
+// every Dependent and nothing else, never with id itself, and a Level
+// mapping only with a Connection of its protocol. Validation of the result (a protocol
 // default on a Connection of another protocol, say) happens when the edit is
 // applied.
 func RemoveTargetWith(current Config, id string, plan map[string]string) (Edit, error) {
@@ -266,6 +283,10 @@ func RemoveTargetWith(current Config, id string, plan map[string]string) (Edit, 
 			problems = append(problems, d.ID+": the replacement cannot be the Connection being removed")
 		case to != "" && !known(to):
 			problems = append(problems, d.ID+": no Connection "+to)
+		case to != "" && (d.Kind == DependentLevel || d.Kind == DependentApplicationLevel):
+			if t, _ := current.Connection(to); t.Protocol != d.Protocol {
+				problems = append(problems, d.ID+": a Level mapped on the "+d.Protocol+" protocol needs a Connection of that protocol, and "+to+" speaks "+t.Protocol)
+			}
 		}
 	}
 	for key := range plan {
@@ -285,10 +306,10 @@ func RemoveTargetWith(current Config, id string, plan map[string]string) (Edit, 
 			edits = append(edits, SetDefaultTarget(d.Protocol, to))
 		case DependentBinding:
 			edits = append(edits, BindOrigin(d.Application, to))
-		case DependentAlias:
+		case DependentAlias, DependentLevel:
 			edits = append(edits, repointAlias(id, d.Alias, to))
-		case DependentApplicationAlias:
-			edits = append(edits, repointOriginAlias(d.Application, d.Alias, to))
+		case DependentApplicationAlias, DependentApplicationLevel:
+			edits = append(edits, repointOriginAlias(d.Application, id, d.Alias, to))
 		case DependentExplain:
 			edits = append(edits, SetExplainer(Explainer{Connection: to, Model: modelIf(to, d.Model)}))
 		case DependentAgentRuns:
@@ -325,9 +346,10 @@ func repointAlias(from, name, to string) Edit {
 	}
 }
 
-// repointOriginAlias moves Application app's own Alias name to Connection
-// to, or removes it when to is "".
-func repointOriginAlias(app, name, to string) Edit {
+// repointOriginAlias moves Application app's own Alias name on Connection
+// from to Connection to, or removes it when to is "". (A Level may be
+// mapped once per protocol, so the name alone does not find it.)
+func repointOriginAlias(app, from, name, to string) Edit {
 	return func(root *yaml.Node) error {
 		seq := mappingValue(root, "origins")
 		if seq == nil || seq.Kind != yaml.SequenceNode {
@@ -336,7 +358,7 @@ func repointOriginAlias(app, name, to string) Edit {
 		for _, item := range seq.Content {
 			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == app {
 				return repointIn(mappingValue(item, "aliases"), item, "aliases", func(a *yaml.Node) bool {
-					return scalarValue(a, "alias") == name
+					return scalarValue(a, "target") == from && scalarValue(a, "alias") == name
 				}, to)
 			}
 		}

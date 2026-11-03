@@ -19,10 +19,10 @@ targets:
  - {id: off, provider: openai, protocol: openai, base_url: 'https://off.example/v1', disabled: true}
  - {id: claude, provider: anthropic, protocol: anthropic, base_url: 'https://anthropic.example/v1'}
 origins:
- - {id: nightly, name: Nightly job, token_env: NIGHTLY_TOKEN, aliases: [{alias: fast, target: local, model: llama3.1}, {alias: broken, target: off, model: x}]}
+ - {id: nightly, name: Nightly job, token_env: NIGHTLY_TOKEN, aliases: [{alias: quick, target: local, model: llama3.1}, {alias: broken, target: off, model: x}]}
  - {id: pinned, name: Pinned, token_env: PINNED_TOKEN, target: local}
 aliases:
- - {target: main, alias: fast, model: gpt-x-mini}
+ - {target: main, alias: quick, model: gpt-x-mini}
 defaults: {openai_target: main, anthropic_target: claude}
 `
 
@@ -42,10 +42,10 @@ func TestResolveOrder(t *testing.T) {
 		rewrite                               map[string]string
 		refused                               *refusal.Refusal
 	}{
-		{"client alias wins over global alias", "nightly", "openai", "fast", "local", map[string]string{"fast": "llama3.1"}, nil},
-		{"other models use the default and its global aliases", "nightly", "openai", "gpt-4o", "main", map[string]string{"fast": "gpt-x-mini"}, nil},
-		{"unknown model not yet read", "nightly", "openai", "", "main", map[string]string{"fast": "gpt-x-mini"}, nil},
-		{"binding beats default", "pinned", "openai", "fast", "local", nil, nil},
+		{"client alias wins over global alias", "nightly", "openai", "quick", "local", map[string]string{"quick": "llama3.1"}, nil},
+		{"other models use the default and its global aliases", "nightly", "openai", "gpt-4o", "main", map[string]string{"quick": "gpt-x-mini"}, nil},
+		{"unknown model not yet read", "nightly", "openai", "", "main", map[string]string{"quick": "gpt-x-mini"}, nil},
+		{"binding beats default", "pinned", "openai", "quick", "local", nil, nil},
 		{"unknown client gets the protocol default", "someone", "anthropic", "claude-x", "claude", nil, nil},
 		{"client alias to a disabled connection", "nightly", "openai", "broken", "off", nil, &refusal.TargetDisabled},
 		{"binding with the wrong protocol", "pinned", "anthropic", "", "local", nil, &refusal.IncompatibleProtocol},
@@ -91,11 +91,11 @@ func TestClientAliasEndToEnd(t *testing.T) {
 		w := httptest.NewRecorder()
 		g.Forward(w, httptest.NewRequest("POST", "http://local/v1/chat/completions", strings.NewReader(`{"model":"`+model+`","messages":[]}`)), origin, func(ref refusal.Refusal) { t.Fatalf("refused: %s", ref.Code) })
 	}
-	send("nightly", "fast")
+	send("nightly", "quick")
 	if host != "127.0.0.1:11434" || !strings.Contains(body, `"model":"llama3.1"`) {
 		t.Fatalf("client alias: %s %s", host, body)
 	}
-	send("someone", "fast")
+	send("someone", "quick")
 	if host != "upstream.example" || !strings.Contains(body, `"model":"gpt-x-mini"`) {
 		t.Fatalf("global alias for other clients: %s %s", host, body)
 	}
@@ -103,9 +103,9 @@ func TestClientAliasEndToEnd(t *testing.T) {
 
 func TestClientAliasValidation(t *testing.T) {
 	for name, origin := range map[string]string{
-		"missing target": `{id: a, name: A, token_env: A_TOKEN, aliases: [{alias: fast, target: nope, model: m}]}`,
-		"duplicate":      `{id: a, name: A, token_env: A_TOKEN, aliases: [{alias: fast, target: main, model: m}, {alias: fast, target: main, model: n}]}`,
-		"empty model":    `{id: a, name: A, token_env: A_TOKEN, aliases: [{alias: fast, target: main, model: ''}]}`,
+		"missing target": `{id: a, name: A, token_env: A_TOKEN, aliases: [{alias: quick, target: nope, model: m}]}`,
+		"duplicate":      `{id: a, name: A, token_env: A_TOKEN, aliases: [{alias: quick, target: main, model: m}, {alias: quick, target: main, model: n}]}`,
+		"empty model":    `{id: a, name: A, token_env: A_TOKEN, aliases: [{alias: quick, target: main, model: ''}]}`,
 	} {
 		y := "version: 1\nauth: {token_env: LOCAL_TOKEN}\ntargets:\n - {id: main, provider: openai, protocol: openai, base_url: 'https://upstream.example/v1'}\norigins:\n - " + origin + "\n"
 		if _, err := config.Parse([]byte(y)); err == nil {

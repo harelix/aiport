@@ -42,6 +42,16 @@ An Alias named for what the Application does, such as `review-code` or
 the Owner decides which Connection and model serve it.
 _Avoid_: model alias, nickname.
 
+**Level**
+A capability name every aiport shares (`fast`, `balanced`, `best`) that the
+Owner maps, per protocol, to a model on a Connection. It is a reserved Alias:
+an Application's own mapping comes before the shared one.
+_Avoid_: tier, `<provider>-<tier>` names.
+
+**Effort**
+How hard one call is (`low`, `medium`, `high`), stated by the client and used
+only to pick the model.
+
 **Catalog**
 What one Application can use through aiport: its task names (its own Aliases
 and the shared ones) and the models listed by the Connections it reaches, with

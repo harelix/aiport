@@ -30,11 +30,14 @@ type Config struct {
 	// Hostnames are local names for aiport (each under .localhost) that it
 	// also answers to on the listen port. The first one replaces the IP in
 	// every address aiport hands out; the socket stays on the IP.
-	Hostnames []string  `yaml:"hostnames,omitempty" json:"hostnames"`
-	Auth      Auth      `yaml:"auth" json:"auth"`
-	Targets   []Target  `yaml:"targets" json:"targets"`
-	Origins   []Origin  `yaml:"origins" json:"origins"`
-	Defaults  Defaults  `yaml:"defaults" json:"defaults"`
+	Hostnames []string `yaml:"hostnames,omitempty" json:"hostnames"`
+	Auth      Auth     `yaml:"auth" json:"auth"`
+	Targets   []Target `yaml:"targets" json:"targets"`
+	Origins   []Origin `yaml:"origins" json:"origins"`
+	Defaults  Defaults `yaml:"defaults" json:"defaults"`
+	// Aliases are the shared Aliases. One whose name is a Level (fast,
+	// balanced, best) is the shared mapping of that Level on the protocol
+	// of its Connection: see Levels.
 	Aliases   []Alias   `yaml:"aliases" json:"aliases"`
 	Telemetry Telemetry `yaml:"telemetry" json:"telemetry"`
 	// Evaluation selects the connection and model aiport uses to judge
@@ -96,7 +99,8 @@ type Origin struct {
 	Target   string `yaml:"target,omitempty" json:"target,omitempty"`
 	// Aliases apply only to this client and take priority over the global
 	// aliases. Each maps a model name the client sends to a connection and
-	// the model to use there.
+	// the model to use there. One whose name is a Level is this
+	// Application's own mapping of that Level on its Connection's protocol.
 	Aliases []OriginAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 	// MayRequestChanges lets this Application file Change requests. Off by
 	// default: pairing alone never opens a channel into the Owner's queue.
@@ -354,21 +358,29 @@ func (c Config) Validate() error {
 		}
 		seen := map[string]bool{}
 		for _, a := range o.Aliases {
-			if _, ok := targets[a.Target]; !ok {
+			t, ok := targets[a.Target]
+			if !ok {
 				return fmt.Errorf("origin %q alias references a missing target", o.ID)
 			}
 			if !boundedModel(a.Alias) || !boundedModel(a.Model) {
 				return errors.New("alias and model must contain 1–256 non-control bytes")
 			}
-			if seen[a.Alias] {
+			// A Level may be mapped once per protocol; any other name once.
+			key := aliasKey(a.Alias, t)
+			if seen[key] && IsLevel(a.Alias) {
+				return fmt.Errorf("origin %q maps Level %q twice on the %s protocol", o.ID, a.Alias, t.Protocol)
+			}
+			if seen[key] {
 				return fmt.Errorf("origin %q has a duplicate alias %q", o.ID, a.Alias)
 			}
-			seen[a.Alias] = true
+			seen[key] = true
 		}
 	}
 	aliases := map[string]bool{}
+	levels := map[string]bool{}
 	for _, a := range c.Aliases {
-		if _, ok := targets[a.Target]; !ok {
+		t, ok := targets[a.Target]
+		if !ok {
 			return errors.New("alias references a missing target")
 		}
 		if !boundedModel(a.Alias) || !boundedModel(a.Model) {
@@ -379,6 +391,13 @@ func (c Config) Validate() error {
 			return errors.New("duplicate target/model alias")
 		}
 		aliases[key] = true
+		// A shared Level mapping chooses the Connection: one per protocol.
+		if IsLevel(a.Alias) {
+			if levels[aliasKey(a.Alias, t)] {
+				return fmt.Errorf("Level %q is mapped twice on the %s protocol", a.Alias, t.Protocol)
+			}
+			levels[aliasKey(a.Alias, t)] = true
+		}
 	}
 	p := c.Proxy
 	if p.MaxConcurrent < 1 || p.MaxConcurrent > 1024 || p.MaxRequestBytes < 1 || p.MaxRequestBytes > 64<<20 || p.ConnectTimeoutMS < 1 || p.ConnectTimeoutMS > 300000 || p.ResponseHeaderTimeoutMS < 1 || p.ResponseHeaderTimeoutMS > 600000 || p.StreamIdleTimeoutMS < 1 || p.StreamIdleTimeoutMS > 3600000 || p.RequestReadTimeoutMS < 1 || p.RequestReadTimeoutMS > 600000 {

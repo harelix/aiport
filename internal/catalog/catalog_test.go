@@ -21,14 +21,14 @@ func base() config.Config {
 		},
 		Defaults: config.Defaults{OpenAITarget: "hosted", AnthropicTarget: "claude"},
 		Aliases: []config.Alias{
-			{Alias: "fast", Target: "hosted", Model: "gpt-4o-mini"},
+			{Alias: "quick", Target: "hosted", Model: "gpt-4o-mini"},
 			{Alias: "small", Target: "local", Model: "llama3:8b"},
 			{Alias: "careful", Target: "claude", Model: "claude-sonnet"},
 		},
 		Origins: []config.Origin{
 			{ID: "docs-bot", Aliases: []config.OriginAlias{
 				{Alias: "summarize", Target: "local", Model: "llama3:8b"},
-				{Alias: "fast", Target: "local", Model: "qwen2.5:7b"},
+				{Alias: "quick", Target: "local", Model: "qwen2.5:7b"},
 			}},
 			{ID: "review-code", Target: "local", Aliases: []config.OriginAlias{
 				{Alias: "review", Target: "hosted", Model: "gpt-4o"},
@@ -64,10 +64,10 @@ func TestForListsTaskNamesFirstThenTheModelsOfReachedConnections(t *testing.T) {
 	}{
 		{
 			// Own Aliases first (sorted), then shared ones of the Connections
-			// it reaches; its own "fast" hides the shared "fast"; the shared
+			// it reaches; its own "quick" hides the shared "quick"; the shared
 			// "small" is on local, which docs-bot does not reach by default.
 			name: "follows the defaults", application: "docs-bot", models: models,
-			want:        []string{"fast", "summarize", "careful", "gpt-4o", "gpt-4o-mini", "claude-haiku", "claude-sonnet"},
+			want:        []string{"quick", "summarize", "careful", "gpt-4o", "gpt-4o-mini", "claude-haiku", "claude-sonnet"},
 			connections: []string{"hosted", "claude"},
 		},
 		{
@@ -77,12 +77,12 @@ func TestForListsTaskNamesFirstThenTheModelsOfReachedConnections(t *testing.T) {
 		},
 		{
 			name: "an unreadable model list contributes nothing", application: "quiet", models: Models{"claude": {"claude-haiku"}},
-			want:        []string{"careful", "fast", "claude-haiku"},
+			want:        []string{"careful", "quick", "claude-haiku"},
 			connections: []string{"hosted", "claude"},
 		},
 		{
 			name: "an unknown Application follows the defaults", application: "nobody", models: nil,
-			want:        []string{"careful", "fast"},
+			want:        []string{"careful", "quick"},
 			connections: []string{"hosted", "claude"},
 		},
 	} {
@@ -101,7 +101,7 @@ func TestForListsTaskNamesFirstThenTheModelsOfReachedConnections(t *testing.T) {
 func TestATaskNameSaysWhereItGoes(t *testing.T) {
 	got := For(base(), "docs-bot", nil)
 	want := []TaskName{
-		{Name: "fast", Connection: "local", Model: "qwen2.5:7b"},
+		{Name: "quick", Connection: "local", Model: "qwen2.5:7b"},
 		{Name: "summarize", Connection: "local", Model: "llama3:8b"},
 		{Name: "careful", Connection: "claude", Model: "claude-sonnet", Shared: true},
 	}
@@ -156,39 +156,39 @@ func TestDiffGivesEachAffectedApplicationItsCatalogChange(t *testing.T) {
 		{"nothing that matters changed", func(c *config.Config) { c.Targets[0].Disabled = true }, map[string]Change{}},
 		{"own Alias removed, added and re-pointed", func(c *config.Config) {
 			c.Origins[0].Aliases = []config.OriginAlias{
-				{Alias: "fast", Target: "hosted", Model: "gpt-4o"},
+				{Alias: "quick", Target: "hosted", Model: "gpt-4o"},
 				{Alias: "draft", Target: "local", Model: "llama3:8b"},
 			}
 		}, map[string]Change{"docs-bot": {
 			Removed: []TaskName{{Name: "summarize", Connection: "local", Model: "llama3:8b"}},
 			Added:   []TaskName{{Name: "draft", Connection: "local", Model: "llama3:8b"}},
-			Moved: []Move{{Name: "fast",
-				From: TaskName{Name: "fast", Connection: "local", Model: "qwen2.5:7b"},
-				To:   TaskName{Name: "fast", Connection: "hosted", Model: "gpt-4o"}}},
+			Moved: []Move{{Name: "quick",
+				From: TaskName{Name: "quick", Connection: "local", Model: "qwen2.5:7b"},
+				To:   TaskName{Name: "quick", Connection: "hosted", Model: "gpt-4o"}}},
 		}}},
 		{"own Alias removed uncovers the shared one", func(c *config.Config) {
 			c.Origins[0].Aliases = c.Origins[0].Aliases[:1]
 		}, map[string]Change{"docs-bot": {
-			Moved: []Move{{Name: "fast",
-				From: TaskName{Name: "fast", Connection: "local", Model: "qwen2.5:7b"},
-				To:   TaskName{Name: "fast", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}}},
+			Moved: []Move{{Name: "quick",
+				From: TaskName{Name: "quick", Connection: "local", Model: "qwen2.5:7b"},
+				To:   TaskName{Name: "quick", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}}},
 		}}},
 		{"a protocol default changed", func(c *config.Config) { c.Defaults.OpenAITarget = "local" }, map[string]Change{
 			"docs-bot": {
-				// its own "fast" hides the shared one, so nothing is removed
+				// its own "quick" hides the shared one, so nothing is removed
 				Added:              []TaskName{{Name: "small", Connection: "local", Model: "llama3:8b", Shared: true}},
 				Routing:            []Switch{{Of: "openai", Before: "hosted", After: "local"}},
 				ConnectionsRemoved: []string{"hosted"}, ConnectionsAdded: []string{"local"},
 			},
 			"quiet": {
-				Removed:            []TaskName{{Name: "fast", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
+				Removed:            []TaskName{{Name: "quick", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
 				Added:              []TaskName{{Name: "small", Connection: "local", Model: "llama3:8b", Shared: true}},
 				Routing:            []Switch{{Of: "openai", Before: "hosted", After: "local"}},
 				ConnectionsRemoved: []string{"hosted"}, ConnectionsAdded: []string{"local"},
 			},
 			// The built-in Application follows the defaults too (no agent_runs.connection).
 			config.BuiltinApplication: {
-				Removed:            []TaskName{{Name: "fast", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
+				Removed:            []TaskName{{Name: "quick", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
 				Added:              []TaskName{{Name: "small", Connection: "local", Model: "llama3:8b", Shared: true}},
 				Routing:            []Switch{{Of: RoutedOpenAI, Before: "hosted", After: "local"}},
 				ConnectionsRemoved: []string{"hosted"}, ConnectionsAdded: []string{"local"},
@@ -196,7 +196,7 @@ func TestDiffGivesEachAffectedApplicationItsCatalogChange(t *testing.T) {
 		}},
 		{"Agent runs' model calls bound to a Connection", func(c *config.Config) { c.AgentRuns.Connection = "claude" }, map[string]Change{
 			config.BuiltinApplication: {
-				Removed:            []TaskName{{Name: "fast", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
+				Removed:            []TaskName{{Name: "quick", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
 				Added:              []TaskName{},
 				Routing:            []Switch{{Of: RoutedBinding, Before: "", After: "claude"}},
 				ConnectionsRemoved: []string{"hosted"}, ConnectionsAdded: []string{},
@@ -204,7 +204,7 @@ func TestDiffGivesEachAffectedApplicationItsCatalogChange(t *testing.T) {
 		}},
 		{"a binding removed", func(c *config.Config) { c.Origins[1].Target = "" }, map[string]Change{"review-code": {
 			Removed:            []TaskName{{Name: "small", Connection: "local", Model: "llama3:8b", Shared: true}},
-			Added:              []TaskName{{Name: "careful", Connection: "claude", Model: "claude-sonnet", Shared: true}, {Name: "fast", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
+			Added:              []TaskName{{Name: "careful", Connection: "claude", Model: "claude-sonnet", Shared: true}, {Name: "quick", Connection: "hosted", Model: "gpt-4o-mini", Shared: true}},
 			Routing:            []Switch{{Of: "binding", Before: "local", After: ""}},
 			ConnectionsRemoved: []string{"local"}, ConnectionsAdded: []string{"hosted", "claude"},
 		}}},

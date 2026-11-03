@@ -68,7 +68,8 @@ func (h *Handler) catalogFor(r *http.Request, c config.Config, application strin
 // the OpenAI list shape, or the Anthropic one when the request carries
 // anthropic-version. Only names usable on that protocol are listed: task
 // names first (owned by aiport), then the models of the Connections the
-// Application reaches. Never keys or URLs.
+// Application reaches. Levels are task names too, listed on the protocol
+// they are mapped on. Never keys or URLs.
 func (h *Handler) serveModels(w http.ResponseWriter, r *http.Request, application string, fail func(int, string, string)) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
@@ -86,23 +87,29 @@ func (h *Handler) serveModels(w http.ResponseWriter, r *http.Request, applicatio
 	}
 	speaks := func(id string) bool { t, ok := c.Connection(id); return ok && t.Protocol == protocol }
 	cat := h.catalogFor(r, c, application)
-	type entry struct{ id, connection string }
+	type entry struct {
+		id, connection string
+		level          bool
+	}
 	var list []entry
 	for _, t := range cat.TaskNames {
 		if speaks(t.Connection) {
-			list = append(list, entry{t.Name, ""})
+			list = append(list, entry{t.Name, "", t.Level})
 		}
 	}
 	for _, m := range cat.Models {
 		if speaks(m.Connection) {
-			list = append(list, entry{m.ID, m.Connection})
+			list = append(list, entry{m.ID, m.Connection, false})
 		}
 	}
 	if protocol == "anthropic" {
 		data := []map[string]any{}
 		for _, e := range list {
 			name := e.id
-			if e.connection == "" {
+			switch {
+			case e.level:
+				name += " (aiport Level)"
+			case e.connection == "":
 				name += " (aiport task name)"
 			}
 			data = append(data, map[string]any{"type": "model", "id": e.id, "display_name": name, "created_at": "1970-01-01T00:00:00Z"})

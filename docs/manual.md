@@ -432,6 +432,46 @@ Changes: approving a Suggestion or Change request of kind
 list its own Aliases with `GET /v1/aiport/capabilities`, and every task name
 it can use with `GET /v1/models` (see The Catalog).
 
+## Levels
+
+Every aiport shares three model names, the **Levels** `fast`, `balanced` and
+`best`. An Application sends one as its model to say what proficiency it
+needs, without naming a provider; you decide what each Level means here, per
+protocol. A Level is a reserved Alias name:
+
+- **The shared mapping** is an entry under `aliases:` whose `alias` is the
+  Level, on a Connection of the protocol it serves. Each Level is mapped at
+  most once per protocol.
+- **An Application's own mapping** is the same entry under its
+  `origins[].aliases`, and comes before the shared one, on that protocol only.
+
+```yaml
+aliases:
+  - {target: hosted, alias: best, model: gpt-4o}          # OpenAI protocol
+  - {target: local, alias: fast, model: 'llama3:8b'}      # OpenAI protocol
+  - {target: claude, alias: balanced, model: claude-sonnet} # Anthropic protocol
+origins:
+  - id: review-code
+    # ...
+    aliases:
+      - {alias: best, target: local, model: 'llama3:70b'} # its own best, OpenAI only
+```
+
+Unlike a plain shared Alias, which only renames a model on the Connection a
+request already goes to, a Level mapping chooses the Connection, also for an
+Application bound to another one or with no protocol default. Only the
+`model` field is replaced; the rest of the request goes to the provider
+unchanged. A Level not mapped on the request's protocol is refused with
+`400 level_unmapped`, naming the Level and protocol: aiport never quietly
+uses another model. Mapped Levels are listed in each Application's
+`GET /v1/models` (on the protocol they are mapped on) and in its Catalog, and
+changing a mapping is a Change you can revert and a Catalog change the
+Applications are told about. Removing a Connection a Level is mapped on asks
+for a replacement Connection of the same protocol.
+
+If your configuration already had an Alias called `fast`, `balanced` or
+`best`, it is now that Level's mapping on its Connection's protocol.
+
 ## The Catalog
 
 An Application's **Catalog** is what it can use through aiport: its task

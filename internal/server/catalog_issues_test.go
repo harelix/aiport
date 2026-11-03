@@ -30,7 +30,7 @@ func removeHostedLeavingSummarize(t *testing.T, h *Handler) string {
 	plan := map[string]string{
 		"default:openai":                       "spare",
 		"binding:review-code":                  "spare",
-		"alias:fast":                           "spare",
+		"alias:quick":                          "spare",
 		"application_alias:docs-bot:summarize": "",
 		"evaluation":                           "spare",
 	}
@@ -127,7 +127,7 @@ func TestRemovingAConnectionAnAliasUsedOpensOneCatalogIssueForThatApplication(t 
 		t.Fatalf("docs-bot's Issue: %v", is)
 	}
 	fix, _ := is["application_fix"].(string)
-	for _, want := range []string{"summarize", "removed", "fast", "/v1/models", CatalogPath, "aiport_issue_fixed"} {
+	for _, want := range []string{"summarize", "removed", "quick", "/v1/models", CatalogPath, "aiport_issue_fixed"} {
 		if !strings.Contains(fix, want) {
 			t.Fatalf("the Application fix does not mention %q:\n%s", want, fix)
 		}
@@ -176,7 +176,7 @@ func TestRemovingAConnectionAnAliasUsedOpensOneCatalogIssueForThatApplication(t 
 	if code, hint := remCall(t, f.h, remDocs, "summarize"); code != 404 || !strings.Contains(hint, is["id"].(string)) {
 		t.Fatalf("a failing call with the removed name: %d %q", code, hint)
 	}
-	if _, hint := remCall(t, f.h, remDocs, "fast"); strings.Contains(hint, is["id"].(string)) {
+	if _, hint := remCall(t, f.h, remDocs, "quick"); strings.Contains(hint, is["id"].(string)) {
 		t.Fatalf("a failing call with a name still there names the Issue: %q", hint)
 	}
 	detectNow(f.h)
@@ -285,9 +285,9 @@ func TestNoCatalogIssueForAnApplicationThatNeverUsedWhatWasTakenAway(t *testing.
 func TestOnlyCallsThatFollowedMovedRoutingCountAsUse(t *testing.T) {
 	f := removalFixture(t, "")
 	f.h.now = time.Now
-	// docs-bot sends only "fast" (a shared task name that moves to spare);
+	// docs-bot sends only "quick" (a shared task name that moves to spare);
 	// review-code sends a model name that follows its binding to hosted.
-	if code, _ := remCall(t, f.h, remDocs, "fast"); code != 200 {
+	if code, _ := remCall(t, f.h, remDocs, "quick"); code != 200 {
 		t.Fatalf("docs-bot's call: %d", code)
 	}
 	if code, _ := remCall(t, f.h, remReview, "gpt-4o"); code != 200 {
@@ -329,7 +329,7 @@ func TestAChangeRevertedAtOnceLeavesNoOpenCatalogIssue(t *testing.T) {
 	f := removalFixture(t, "")
 	f.h.now = time.Now
 	useBeforeRemoval(t, f.h)
-	plan := map[string]string{"default:openai": "spare", "binding:review-code": "spare", "alias:fast": "spare", "application_alias:docs-bot:summarize": "", "evaluation": "spare"}
+	plan := map[string]string{"default:openai": "spare", "binding:review-code": "spare", "alias:quick": "spare", "application_alias:docs-bot:summarize": "", "evaluation": "spare"}
 	// Readers of the Issues drain the queued notices too, at the same time.
 	stop := make(chan struct{})
 	var readers sync.WaitGroup

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"net/http"
+	"strconv"
 
 	"aiport/internal/config"
 	"aiport/internal/refusal"
@@ -15,17 +16,38 @@ type routes struct {
 	origins       map[string]string                        // origin → bound target
 	aliases       map[string]map[string]string             // target → alias → model
 	originAliases map[string]map[string]config.OriginAlias // origin → alias → mapping
-	defaults      config.Defaults
+	// levels are the Level mappings each Application gets (own, else
+	// shared), by origin then protocol and Level; origin "" holds the
+	// shared ones, for an Application the configuration does not list.
+	levels   map[string]map[levelKey]config.LevelMapping
+	defaults config.Defaults
 }
 
+type levelKey struct{ protocol, level string }
+
 func buildRoutes(c config.Config) routes {
-	rt := routes{targets: map[string]config.Target{}, origins: map[string]string{}, aliases: map[string]map[string]string{}, originAliases: map[string]map[string]config.OriginAlias{}, defaults: c.Defaults}
+	rt := routes{targets: map[string]config.Target{}, origins: map[string]string{}, aliases: map[string]map[string]string{}, originAliases: map[string]map[string]config.OriginAlias{}, levels: map[string]map[levelKey]config.LevelMapping{}, defaults: c.Defaults}
 	for _, t := range c.Targets {
 		rt.targets[t.ID] = t
+	}
+	for _, id := range append([]string{""}, applicationIDs(c)...) {
+		for _, p := range config.Protocols {
+			for _, l := range config.Levels {
+				if m, ok := c.Level(id, p, l); ok {
+					if rt.levels[id] == nil {
+						rt.levels[id] = map[levelKey]config.LevelMapping{}
+					}
+					rt.levels[id][levelKey{p, l}] = m
+				}
+			}
+		}
 	}
 	for _, o := range c.Origins {
 		rt.origins[o.ID] = o.Target
 		for _, a := range o.Aliases {
+			if config.IsLevel(a.Alias) {
+				continue // a Level mapping: see levels
+			}
 			if rt.originAliases[o.ID] == nil {
 				rt.originAliases[o.ID] = map[string]config.OriginAlias{}
 			}
@@ -38,12 +60,56 @@ func buildRoutes(c config.Config) routes {
 		rt.origins[config.BuiltinApplication] = c.AgentRuns.Connection
 	}
 	for _, a := range c.Aliases {
+		if config.IsLevel(a.Alias) {
+			continue // a Level mapping: see levels
+		}
 		if rt.aliases[a.Target] == nil {
 			rt.aliases[a.Target] = map[string]string{}
 		}
 		rt.aliases[a.Target][a.Alias] = a.Model
 	}
 	return rt
+}
+
+func applicationIDs(c config.Config) []string {
+	ids := make([]string, 0, len(c.Origins))
+	for _, o := range c.Origins {
+		ids = append(ids, o.ID)
+	}
+	return ids
+}
+
+// level is the mapping of Level level on protocol for origin.
+func (rt routes) level(origin, protocol, level string) (config.LevelMapping, bool) {
+	set, ok := rt.levels[origin]
+	if !ok {
+		set = rt.levels[""]
+	}
+	m, ok := set[levelKey{protocol, level}]
+	return m, ok
+}
+
+// named reports whether a model name could still route a request from
+// origin on protocol when its binding or protocol default refuses it: the
+// origin has its own Aliases, or a Level is mapped on that protocol.
+func (rt routes) named(origin, protocol string) bool {
+	if len(rt.originAliases[origin]) > 0 {
+		return true
+	}
+	for _, l := range config.Levels {
+		if _, ok := rt.level(origin, protocol, l); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// protocolName is how a protocol is named to people.
+func protocolName(protocol string) string {
+	if protocol == "anthropic" {
+		return "Anthropic"
+	}
+	return "OpenAI"
 }
 
 // Route is where one request goes.
@@ -58,12 +124,25 @@ type Route struct {
 // "anthropic"), asking for model, should go. model may be "" when it is not
 // known yet; then only the client's binding and the protocol default apply.
 //
-// Order: the client's own alias for model, then its bound connection, then
-// the protocol default. Global aliases of the chosen connection apply unless
-// a client alias matched.
+// Order: a Level (the client's own mapping on this protocol, then the
+// shared one; refused with level_unmapped when neither maps it), then the
+// client's own alias for model, then its bound connection, then the
+// protocol default. Global aliases of the chosen connection apply unless a
+// Level or client alias matched.
 func (rt routes) resolve(origin, protocol, model string) (Route, *refusal.Refusal) {
 	var route Route
-	if a, ok := rt.originAliases[origin][model]; ok && model != "" {
+	if config.IsLevel(model) {
+		m, ok := rt.level(origin, protocol, model)
+		if !ok {
+			r := refusal.LevelUnmapped.WithMessage("Level " + strconv.Quote(model) + " is not mapped on the " + protocolName(protocol) + " protocol on this aiport; send another Level or model name, or ask the Owner to map it")
+			return Route{}, &r
+		}
+		t, ok := rt.targets[m.Connection]
+		if !ok {
+			return Route{}, &refusal.TargetUnconfigured
+		}
+		route = Route{Target: t, Rewrite: map[string]string{model: m.Model}}
+	} else if a, ok := rt.originAliases[origin][model]; ok && model != "" {
 		t, ok := rt.targets[a.Target]
 		if !ok {
 			return Route{}, &refusal.TargetUnconfigured

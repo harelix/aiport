@@ -76,14 +76,16 @@ func Diff(before, after config.Config) map[string]Change {
 
 func diff(b, a Catalog) Change {
 	c := Change{Application: a.Application, Before: b.Version, After: a.Version, Removed: []TaskName{}, Added: []TaskName{}, Moved: []Move{}, Routing: []Switch{}, ConnectionsRemoved: []string{}, ConnectionsAdded: []string{}}
+	// A task name is one name; a Level is one name per protocol.
+	key := func(t TaskName) string { return t.Name + "\x00" + t.Protocol }
 	now := map[string]TaskName{}
 	for _, t := range a.TaskNames {
-		now[t.Name] = t
+		now[key(t)] = t
 	}
 	was := map[string]bool{}
 	for _, t := range b.TaskNames {
-		was[t.Name] = true
-		switch u, ok := now[t.Name]; {
+		was[key(t)] = true
+		switch u, ok := now[key(t)]; {
 		case !ok:
 			c.Removed = append(c.Removed, t)
 		case u != t:
@@ -91,7 +93,7 @@ func diff(b, a Catalog) Change {
 		}
 	}
 	for _, t := range a.TaskNames {
-		if !was[t.Name] {
+		if !was[key(t)] {
 			c.Added = append(c.Added, t)
 		}
 	}

@@ -173,10 +173,13 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 		}
 		return false
 	}
-	// Refuse early on the client's own binding, before admitting the body.
+	// Refuse early on the client's own binding, before admitting the body,
+	// unless a model name (its own Alias or a Level) could still route it.
 	route, ref := rt.resolve(origin, protocol, "")
-	if refuse(route, ref) {
-		return
+	if ref == nil || !rt.named(origin, protocol) {
+		if refuse(route, ref) {
+			return
+		}
 	}
 	select {
 	case g.slots <- struct{}{}:
@@ -213,12 +216,13 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 			o.Event.RequestedModel = &model
 		}
 	}
-	// The model is known now: a client alias may pick another connection.
-	if model != "" && len(rt.originAliases[origin]) > 0 {
+	// The model is known now: a Level or a client alias may pick another
+	// connection.
+	if model != "" && (len(rt.originAliases[origin]) > 0 || config.IsLevel(model)) {
 		route, ref = rt.resolve(origin, protocol, model)
-		if refuse(route, ref) {
-			return
-		}
+	}
+	if refuse(route, ref) {
+		return
 	}
 	t := route.Target
 	secret := g.key(t.ID)

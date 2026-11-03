@@ -25,7 +25,7 @@ var (
 )
 
 // removalServer: hosted (OpenAI protocol, gpt-4o and gpt-4o-mini) is the
-// OpenAI default, carries the shared Alias "fast" (gpt-4o-mini), docs-bot's
+// OpenAI default, carries the shared Alias "quick" (gpt-4o-mini), docs-bot's
 // own Alias "summarize" (gpt-4o), review-code's binding and the evaluator.
 // spare also serves gpt-4o; local serves only llama3:8b and is nightly's
 // binding; claude is the only Anthropic-protocol Connection.
@@ -57,7 +57,7 @@ func removalFixture(t *testing.T, extra string) removal {
 		"  - {id: local, provider: acme3, protocol: openai, base_url: '" + local.srv.URL + "/v1'}\n" +
 		"  - {id: claude, provider: acme4, protocol: anthropic, base_url: '" + claude.srv.URL + "/v1'}\n" +
 		"defaults: {openai_target: hosted, anthropic_target: claude}\n" +
-		"aliases:\n  - {target: hosted, alias: fast, model: gpt-4o-mini}\n" +
+		"aliases:\n  - {target: hosted, alias: quick, model: gpt-4o-mini}\n" +
 		"evaluation: {connection: hosted, model: gpt-4o-mini}\n" +
 		"origins:\n" +
 		"  - id: docs-bot\n    name: Docs Bot\n    token_env: REM_DOCS_TOKEN\n    aliases:\n      - {alias: summarize, target: hosted, model: gpt-4o}\n" +
@@ -131,7 +131,7 @@ func TestDependentsListEveryUseWithASuggestionAndTheAffectedApplications(t *test
 	want := map[string]string{
 		"default:openai":                       "spare", // serves most of hosted's models
 		"binding:review-code":                  "spare",
-		"alias:fast":                           "spare", // nobody else serves gpt-4o-mini: the (new) protocol default
+		"alias:quick":                          "spare", // nobody else serves gpt-4o-mini: the (new) protocol default
 		"application_alias:docs-bot:summarize": "spare", // serves gpt-4o
 		"evaluation":                           "spare",
 	}
@@ -174,7 +174,7 @@ func TestRemovalWithAPlanIsOneChangeAndOneRevertRestoresEverything(t *testing.T)
 	before, _ := os.ReadFile(path)
 	_, out := call(h, "GET", "/api/v1/targets/hosted/dependents", "", remManagement, false)
 	plan := suggestions(t, out)
-	plan["alias:fast"] = "" // retire this task name on purpose
+	plan["alias:quick"] = "" // retire this task name on purpose
 	w, out := call(h, "DELETE", "/api/v1/targets/hosted", planBody(plan), remManagement, true)
 	if w.Code != 200 {
 		t.Fatalf("removal with a plan: %d %s", w.Code, w.Body)
@@ -239,7 +239,7 @@ func TestRemovalWithoutAPlanIsRefusedAsBefore(t *testing.T) {
 
 func TestNoneLeavesEveryItemWithoutAConnection(t *testing.T) {
 	h, path := removalServer(t)
-	plan := map[string]string{"default:openai": "", "binding:review-code": "", "alias:fast": "", "application_alias:docs-bot:summarize": "", "evaluation": ""}
+	plan := map[string]string{"default:openai": "", "binding:review-code": "", "alias:quick": "", "application_alias:docs-bot:summarize": "", "evaluation": ""}
 	if w, _ := call(h, "DELETE", "/api/v1/targets/hosted", planBody(plan), remManagement, true); w.Code != 200 {
 		t.Fatalf("removal with none everywhere: %d %s", w.Code, w.Body)
 	}

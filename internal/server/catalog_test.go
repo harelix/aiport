@@ -69,7 +69,7 @@ type catalogFixture struct {
 // catalogServer: docs-bot follows the protocol defaults (hosted for OpenAI,
 // claude for Anthropic) and has its own Alias "summarize"; review-code is
 // bound to a Connection whose model list cannot be read and has its own
-// Alias "review". The shared Alias "fast" is on hosted.
+// Alias "review". The shared Alias "quick" is on hosted.
 func catalogServer(t *testing.T) *catalogFixture {
 	t.Helper()
 	f := &catalogFixture{
@@ -82,7 +82,7 @@ func catalogServer(t *testing.T) *catalogFixture {
 		"  - {id: claude, provider: acme2, protocol: anthropic, base_url: '" + f.claude.srv.URL + "/v1'}\n" +
 		"  - {id: broken, provider: acme3, protocol: openai, base_url: '" + f.broken.srv.URL + "/v1'}\n" +
 		"defaults: {openai_target: hosted, anthropic_target: claude}\n" +
-		"aliases:\n  - {target: hosted, alias: fast, model: gpt-4o-mini}\n" +
+		"aliases:\n  - {target: hosted, alias: quick, model: gpt-4o-mini}\n" +
 		"origins:\n" +
 		"  - id: docs-bot\n    name: Docs Bot\n    token_env: CAT_DOCS_TOKEN\n    aliases:\n      - {alias: summarize, target: hosted, model: gpt-4o}\n" +
 		"  - id: review-code\n    name: Review Code\n    token_env: CAT_REVIEW_TOKEN\n    target: broken\n    aliases:\n      - {alias: review, target: hosted, model: gpt-4o}\n"
@@ -159,7 +159,7 @@ func TestModelsListsTheApplicationsTaskNamesFirstInTheOpenAIShape(t *testing.T) 
 	if w.Code != 200 || out["object"] != "list" {
 		t.Fatalf("GET /v1/models: %d %s", w.Code, w.Body)
 	}
-	want := [][2]string{{"summarize", "aiport"}, {"fast", "aiport"}, {"gpt-4o", "hosted"}, {"gpt-4o-mini", "hosted"}}
+	want := [][2]string{{"summarize", "aiport"}, {"quick", "aiport"}, {"gpt-4o", "hosted"}, {"gpt-4o-mini", "hosted"}}
 	got := entries(t, out, "owned_by")
 	if len(got) != len(want) {
 		t.Fatalf("listed %v, want %v", got, want)
@@ -222,7 +222,7 @@ func TestAnUnreadableModelListDoesNotFailTheAnswer(t *testing.T) {
 		t.Fatalf("GET /v1/models: %d %s", w.Code, w.Body)
 	}
 	// review-code is bound to broken: its own Alias only; docs-bot's
-	// "summarize" and the shared "fast" (on hosted) are not its.
+	// "summarize" and the shared "quick" (on hosted) are not its.
 	got := entries(t, out, "owned_by")
 	if len(got) != 1 || got[0] != [2]string{"review", "aiport"} {
 		t.Fatalf("listed %v, want only review", got)

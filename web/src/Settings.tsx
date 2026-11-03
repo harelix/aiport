@@ -225,6 +225,8 @@ const dependentLabel = (d: Dependent) => {
     case 'binding': return d.application + ' is bound to it';
     case 'alias': return 'Shared Alias ' + d.alias + model;
     case 'application_alias': return d.application + "'s Alias " + d.alias + model;
+    case 'level': return 'Level ' + d.alias + ' (' + protoName(d.protocol || 'openai') + ')' + model;
+    case 'application_level': return d.application + "'s Level " + d.alias + ' (' + protoName(d.protocol || 'openai') + ')' + model;
     case 'explain': return 'Explanations' + model;
     case 'agent_runs': return "Agent runs' model calls" + model;
     default: return 'Compression evaluator' + model;
@@ -233,6 +235,7 @@ const dependentLabel = (d: Dependent) => {
 /** What "None" does to each kind of item. */
 const noneLabel: Record<string, string> = {
   default: 'None (no default)', binding: 'None (follow the defaults)', alias: 'None (remove the Alias)', application_alias: 'None (remove the Alias)',
+  level: 'None (Level not mapped)', application_level: 'None (use the shared mapping)',
   explain: 'None (Explanations off)', agent_runs: 'None (agents use their own login)', evaluation: 'None (evaluator off)',
 };
 const affectedText = (a: Affected) => [
@@ -276,7 +279,7 @@ function RemoveDialog({t, targets, onClose, onRemoved}: {t: Target; targets: Tar
     try { await mutate('DELETE', 'targets/' + encodeURIComponent(t.id), {plan}); onRemoved(); }
     catch (err) { setError((err as Error).message); setBusy(false); }
   }
-  const others = (d: Dependent) => targets.filter(o => o.id !== t.id && !o.disabled && (d.kind === 'default' || d.kind === 'agent_runs' ? o.protocol === t.protocol : true));
+  const others = (d: Dependent) => targets.filter(o => o.id !== t.id && !o.disabled && (['default', 'agent_runs', 'level', 'application_level'].includes(d.kind) ? o.protocol === t.protocol : true));
   return <dialog ref={dialog} className="recovery-dialog removal-dialog" onClose={onClose} aria-labelledby={'remove-' + t.id}>
     <div className="panel-heading">
       <h2 id={'remove-' + t.id} className="with-icon"><Trash2 size={18} aria-hidden/>Remove {t.id}</h2>

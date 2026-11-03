@@ -20,7 +20,7 @@ targets:
   - {id: claude2, provider: acme4, protocol: anthropic, base_url: 'http://127.0.0.1:9/v1'}
 defaults: {openai_target: hosted, anthropic_target: claude}
 aliases:
-  - {target: hosted, alias: fast, model: gpt-4o-mini}
+  - {target: hosted, alias: quick, model: gpt-4o-mini}
   - {target: spare, alias: other, model: llama3:8b}
 origins:
   - id: docs-bot
@@ -59,7 +59,7 @@ func TestDependentsListEverythingThatUsesAConnection(t *testing.T) {
 	for _, d := range Dependents(live.Config(), "hosted") {
 		got = append(got, d.ID)
 	}
-	want := []string{"default:openai", "binding:docs-bot", "alias:fast", "application_alias:docs-bot:summarize", "explain", "evaluation"}
+	want := []string{"default:openai", "binding:docs-bot", "alias:quick", "application_alias:docs-bot:summarize", "explain", "evaluation"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("dependents of hosted: %v, want %v", got, want)
 	}
@@ -77,7 +77,7 @@ func TestDependentsListEverythingThatUsesAConnection(t *testing.T) {
 
 func TestRemovalWithAPlanRePointsEverythingAndRemovesTheConnection(t *testing.T) {
 	live, path := removalLive(t)
-	plan := map[string]string{"default:openai": "spare", "binding:docs-bot": "spare", "alias:fast": "spare", "application_alias:docs-bot:summarize": "spare", "explain": "spare", "evaluation": "spare"}
+	plan := map[string]string{"default:openai": "spare", "binding:docs-bot": "spare", "alias:quick": "spare", "application_alias:docs-bot:summarize": "spare", "explain": "spare", "evaluation": "spare"}
 	edit, err := RemoveTargetWith(live.Config(), "hosted", plan)
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestRemovalWithAPlanRePointsEverythingAndRemovesTheConnection(t *testing.T)
 	if c.Defaults.OpenAITarget != "spare" || docs.Target != "spare" || docs.Aliases[0] != (OriginAlias{Alias: "summarize", Target: "spare", Model: "gpt-4o"}) {
 		t.Fatalf("not re-pointed: defaults %+v, docs-bot %+v", c.Defaults, docs)
 	}
-	if c.Aliases[0] != (Alias{Target: "spare", Alias: "fast", Model: "gpt-4o-mini"}) || len(c.Aliases) != 2 {
+	if c.Aliases[0] != (Alias{Target: "spare", Alias: "quick", Model: "gpt-4o-mini"}) || len(c.Aliases) != 2 {
 		t.Fatalf("shared Alias not re-pointed: %+v", c.Aliases)
 	}
 	if c.Adapting.Explain != (Explainer{Connection: "spare", Model: "gpt-4o"}) || c.Evaluation != (Evaluation{Connection: "spare", Model: "gpt-4o-mini"}) {
@@ -112,7 +112,7 @@ func TestRemovalWithAPlanRePointsEverythingAndRemovesTheConnection(t *testing.T)
 
 func TestNoneLeavesEachItemWithoutAConnection(t *testing.T) {
 	live, _ := removalLive(t)
-	plan := map[string]string{"default:openai": "", "binding:docs-bot": "", "alias:fast": "", "application_alias:docs-bot:summarize": "", "explain": "", "evaluation": ""}
+	plan := map[string]string{"default:openai": "", "binding:docs-bot": "", "alias:quick": "", "application_alias:docs-bot:summarize": "", "explain": "", "evaluation": ""}
 	edit, err := RemoveTargetWith(live.Config(), "hosted", plan)
 	if err != nil {
 		t.Fatal(err)
@@ -147,16 +147,16 @@ func TestNoneLeavesEachItemWithoutAConnection(t *testing.T) {
 func TestAPlanMustAnswerEveryDependentWithAnotherConnection(t *testing.T) {
 	live, _ := removalLive(t)
 	full := func() map[string]string {
-		return map[string]string{"default:openai": "", "binding:docs-bot": "", "alias:fast": "", "application_alias:docs-bot:summarize": "", "explain": "", "evaluation": ""}
+		return map[string]string{"default:openai": "", "binding:docs-bot": "", "alias:quick": "", "application_alias:docs-bot:summarize": "", "explain": "", "evaluation": ""}
 	}
 	missing := full()
 	delete(missing, "explain")
 	unknown := full()
 	unknown["binding:review-code"] = "spare"
 	itself := full()
-	itself["alias:fast"] = "hosted"
+	itself["alias:quick"] = "hosted"
 	absent := full()
-	absent["alias:fast"] = "nowhere"
+	absent["alias:quick"] = "nowhere"
 	for name, plan := range map[string]map[string]string{"missing": missing, "unknown": unknown, "itself": itself, "absent": absent} {
 		if _, err := RemoveTargetWith(live.Config(), "hosted", plan); err == nil {
 			t.Errorf("%s: plan accepted", name)

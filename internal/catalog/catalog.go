@@ -30,6 +30,11 @@ type TaskName struct {
 	Model      string `json:"model"`
 	// Shared is true for a shared Alias, false for the Application's own.
 	Shared bool `json:"shared"`
+	// Level is true for a Level (fast, balanced, best) mapping; Protocol is
+	// the protocol it serves. A Level is listed once per protocol it is
+	// mapped on, and only there.
+	Level    bool   `json:"level,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
 }
 
 // Model is a model a reached Connection listed.
@@ -47,7 +52,9 @@ type Catalog struct {
 	Version string `json:"version"`
 	// TaskNames are the Application's own Aliases, then the shared Aliases
 	// of the Connections it reaches, each list sorted by name. An own Alias
-	// hides a shared one of the same name.
+	// hides a shared one of the same name. Then the mapped Levels, in Level
+	// order and per protocol (OpenAI first), each the Application's own
+	// mapping or else the shared one (config.Config.Level).
 	TaskNames []TaskName `json:"task_names"`
 	// Binding is the Connection the Application is bound to; "" when it
 	// follows the protocol defaults.
@@ -91,14 +98,14 @@ func For(c config.Config, application string, models Models) Catalog {
 	seen := map[string]bool{}
 	own := []TaskName{}
 	for _, a := range app.Aliases {
-		if !seen[a.Alias] {
+		if !seen[a.Alias] && !config.IsLevel(a.Alias) {
 			seen[a.Alias] = true
 			own = append(own, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model})
 		}
 	}
 	shared := []TaskName{}
 	for _, a := range c.Aliases {
-		if !seen[a.Alias] && contains(cat.Connections, a.Target) {
+		if !seen[a.Alias] && !config.IsLevel(a.Alias) && contains(cat.Connections, a.Target) {
 			seen[a.Alias] = true
 			shared = append(shared, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model, Shared: true})
 		}
@@ -107,6 +114,14 @@ func For(c config.Config, application string, models Models) Catalog {
 	byName(own)
 	byName(shared)
 	cat.TaskNames = append(append(cat.TaskNames, own...), shared...)
+	for _, l := range config.Levels {
+		for _, p := range config.Protocols {
+			if m, ok := c.Level(application, p, l); ok {
+				seen[l] = true
+				cat.TaskNames = append(cat.TaskNames, TaskName{Name: l, Connection: m.Connection, Model: m.Model, Shared: m.Shared, Level: true, Protocol: p})
+			}
+		}
+	}
 
 	for _, id := range cat.Connections {
 		for _, m := range models[id] {
@@ -134,6 +149,10 @@ func version(cat Catalog) string {
 	field("binding", cat.Binding)
 	field("openai", cat.Defaults["openai"], "anthropic", cat.Defaults["anthropic"])
 	for _, t := range cat.TaskNames {
+		if t.Level {
+			field("level", t.Name, t.Protocol, t.Connection, t.Model, strconv.FormatBool(t.Shared))
+			continue
+		}
 		field("task", t.Name, t.Connection, t.Model, strconv.FormatBool(t.Shared))
 	}
 	return hex.EncodeToString(h.Sum(nil))[:12]
