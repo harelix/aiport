@@ -1,0 +1,13 @@
+# gitleaks configuration for aiport: the default rules, minus third-party code.
+# Run: gitleaks git --config .gitleaks.toml  (or `make leaks`)
+title = "aiport"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Vendored dependencies and the generated dashboard bundle are not ours."
+paths = [
+  '''^vendor/''',
+  '''^internal/dashboard/dist/''',
+]

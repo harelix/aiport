@@ -1,4 +1,4 @@
-.PHONY: build web-build test check release check-offline dev
+.PHONY: build web-build test check release check-offline dev leaks hooks
 
 VERSION ?= 0.0.0-dev
 # Pure-Go build: no C toolchain or system libraries needed, on any platform.
@@ -47,3 +47,12 @@ release: check-offline
 		rm -rf $$dir; \
 	done
 	cd dist-release && shasum -a 256 aiport-* > SHA256SUMS && cat SHA256SUMS
+
+# Scan the whole history of every branch for secrets (needs gitleaks: brew install gitleaks).
+leaks:
+	gitleaks git --config .gitleaks.toml --log-opts="--all" --redact --no-banner .
+
+# Use the repository's git hooks (pre-commit: secrets and your private words).
+hooks:
+	git config core.hooksPath scripts/hooks
+	@echo "hooks installed; add private words (one regex per line) to .git/info/private-patterns"
