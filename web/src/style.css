@@ -994,3 +994,21 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .agent-prompt{border-left-color:transparent;background:linear-gradient(var(--panel2),var(--panel2)) padding-box,var(--grad-v) border-box}
 /* 4. Separators */
 .panel.decisions>.decision{border-top:0;background:var(--grad-h) bottom/100% 2px no-repeat}
+
+/* Levels: aligned rows, what each Level is for, a clear Map action. */
+.levels-table th[scope="row"],.levels-table td{vertical-align:middle}
+.level-name{display:grid;gap:2px}
+.level-name code{font-size:13px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+.level-name small{font-size:12px;font-weight:400;letter-spacing:0;text-transform:none}
+.level-cell{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
+.level-mapping{display:grid;gap:2px;min-width:0}
+.level-model{display:inline-flex;align-items:center;gap:8px}
+.level-model code{font-size:13px;color:var(--text)}
+.level-efforts-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.effort-chip{font-size:11px;padding:1px 8px;border-radius:999px;background:var(--panel2);color:var(--text-2)}
+.effort-chip code{font-size:11px}
+.level-unmapped{display:grid;gap:2px}
+.level-unmapped .badge{justify-self:start}
+.row-action.level-map{color:var(--text);border-color:var(--text-2)}
+.model-picker{display:grid;gap:6px}
+.model-picker select+input{margin-top:2px}

@@ -16,6 +16,12 @@ type EndpointSpec = {id: string; name: string; urls: Record<string, string>; not
 export type ProviderSpec = {id: string; name: string; protocol: string; api_key_env?: string; location: Location; regional: boolean; endpoints: EndpointSpec[]; note?: string};
 /* The host:port aiport hands out: the first configured hostname on the
    listen port, otherwise the listen address (as config.Address in Go). */
+/** The address Applications are given: the numeric listen address (127.0.0.1 for a wildcard), never a hostname. */
+export function appAddress(config?: {listen: string} | null): string | undefined {
+  if (!config) return undefined;
+  const port = config.listen.slice(config.listen.lastIndexOf(':') + 1), host = config.listen.slice(0, config.listen.lastIndexOf(':'));
+  return (!host || host === '0.0.0.0' || host === '[::]' ? '127.0.0.1' : host) + ':' + port;
+}
 export function gatewayAddress(config?: {listen: string; hostnames?: string[]} | null): string | undefined {
   if (!config) return undefined;
   const name = config.hostnames?.[0];
@@ -480,13 +486,13 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
       <div className="panel-heading"><h2>Protocol defaults<HelpLink section="Routing and protocol defaults"/></h2><span>Where requests go when an app doesn't pick a connection</span></div>
       <DefaultsForm key={JSON.stringify(config?.defaults) + targets.length} config={config} providers={providers} onChange={onChange}/>
     </section>
-    <LevelsPanel refresh={config} onChange={onChange}/>
+    <LevelsPanel refresh={config} defaults={config?.defaults} onChange={onChange}/>
     <RoutingMapPanel targets={targets} providers={providers} reload={JSON.stringify(config)} onChange={onChange}/>
     <section className="panel">
       <div className="panel-heading"><h2>Connect an application</h2><span>Point any OpenAI or Anthropic SDK here</span></div>
       <dl>
-        <dt>OpenAI-protocol base URL</dt><dd><code>http://{gatewayAddress(config)}/v1</code></dd>
-        <dt>Anthropic-protocol base URL</dt><dd><code>http://{gatewayAddress(config)}</code></dd>
+        <dt>OpenAI-protocol base URL</dt><dd><code>http://{appAddress(config)}/v1</code></dd>
+        <dt>Anthropic-protocol base URL</dt><dd><code>http://{appAddress(config)}</code></dd>
         <dt>Protocol description</dt><dd><a href="/_connect?format=markdown" target="_blank" rel="noreferrer"><code>/_connect</code></a></dd>
         <dt>Telemetry queue</dt><dd>{queueDepth ?? 0} pending</dd>
       </dl>

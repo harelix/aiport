@@ -1,5 +1,5 @@
 import React, {FormEvent, useEffect, useState} from 'react';
-import {Layers, Pencil, X} from 'lucide-react';
+import {Layers, Pencil, Plus, X} from 'lucide-react';
 import {HelpLink} from './help';
 import {ProviderLogo} from './ProviderLogo';
 
@@ -15,6 +15,44 @@ type Connection = {id: string; provider: string; protocol: string; location?: st
 export type LevelsDoc = {levels: string[]; protocols: string[]; efforts: string[]; shared: LevelMapping[]; applications: Record<string, LevelMapping[]>; connections: Connection[]};
 
 const PROTOCOL: Record<string, string> = {openai: 'OpenAI', anthropic: 'Anthropic'};
+/** What each Level is for, in a few words, next to its name. */
+const LEVEL_HINT: Record<string, string> = {fast: 'Quick, low-cost calls', balanced: 'Everyday work', best: 'The hardest work'};
+/** Protocol default Connections (defaults.openai_target / anthropic_target), so the editor starts on the one calls already reach. */
+export type ProtocolDefaults = {openai_target?: string; anthropic_target?: string};
+const OTHER = '\u0000other';
+
+/** The models a Connection lists (GET /api/v1/targets/{id}/models), loaded when the Connection is chosen. */
+function useConnectionModels(connection: string): {models: string[]; state: 'loading' | 'ok' | 'unlisted'} {
+  const [result, setResult] = useState<{models: string[]; state: 'loading' | 'ok' | 'unlisted'}>({models: [], state: 'loading'});
+  useEffect(() => {
+    if (!connection) { setResult({models: [], state: 'unlisted'}); return; }
+    const controller = new AbortController();
+    setResult({models: [], state: 'loading'});
+    fetch('/api/v1/targets/' + encodeURIComponent(connection) + '/models', {credentials: 'same-origin', headers: {'X-Aiport-CSRF': '1'}, signal: controller.signal})
+      .then(r => r.ok ? r.json() : {}).then((d: {models?: string[]}) => setResult(d.models?.length ? {models: [...d.models].sort(), state: 'ok'} : {models: [], state: 'unlisted'}))
+      .catch(() => { if (!controller.signal.aborted) setResult({models: [], state: 'unlisted'}); });
+    return () => controller.abort();
+  }, [connection]);
+  return result;
+}
+
+/* A model choice: the Connection's listed models, or Other for an id it does
+   not list. empty, when set, is the first option's label (an empty value). */
+function ModelPicker({id, label, value, onChange, models, state, empty, required}: {id: string; label: string; value: string; onChange: (v: string) => void; models: string[]; state: string; empty?: string; required?: boolean}) {
+  const listed = models.includes(value);
+  const [other, setOther] = useState(!!value && !listed && state === 'ok');
+  useEffect(() => { if (state === 'ok' && value && !models.includes(value)) setOther(true); }, [state]);
+  const typing = state !== 'ok' || other;
+  return <label className="model-picker" htmlFor={id}>{label}
+    {state === 'ok' && <select id={typing ? undefined : id} value={typing ? OTHER : value} onChange={e => { if (e.target.value === OTHER) { setOther(true); onChange(listed ? '' : value); } else { setOther(false); onChange(e.target.value); } }}>
+      {empty !== undefined ? <option value="">{empty}</option> : !value && <option value="" disabled>Choose a model</option>}
+      {models.map(m => <option key={m} value={m}>{m}</option>)}
+      <option value={OTHER}>Other model id…</option>
+    </select>}
+    {typing && <input id={id} value={value} onChange={e => onChange(e.target.value)} required={required} maxLength={256} spellCheck={false} autoComplete="off"
+      placeholder={state === 'loading' ? 'Loading the models…' : empty !== undefined ? empty : 'The model id the provider expects'}/>}
+  </label>;
+}
 const EFFORTS: (keyof EffortModels)[] = ['low', 'medium', 'high'];
 
 /** GET /api/v1/levels, again whenever refresh changes and after reload. */
@@ -42,19 +80,22 @@ function Mapping({m, doc}: {m: LevelMapping; doc: LevelsDoc}) {
   const c = doc.connections.find(x => x.id === m.connection);
   const efforts = EFFORTS.filter(e => m.effort?.[e]);
   return <span className="level-mapping">
-    <span className="with-logo">{c && <ProviderLogo provider={c.provider} location={c.location} size={14}/>}<code>{m.model}</code></span>
-    <small className="muted">on {m.connection}{efforts.length > 0 && <> · {efforts.map(e => e + ' ' + m.effort[e]).join(', ')}</>}</small>
+    <span className="level-model">{c && <ProviderLogo provider={c.provider} location={c.location} size={16}/>}<code>{m.model}</code></span>
+    <small className="muted">on {m.connection}</small>
+    {efforts.length > 0 && <span className="level-efforts-chips">{efforts.map(e => <span key={e} className="effort-chip" title={'Calls at ' + e + ' effort get ' + m.effort[e]}>{e}: <code>{m.effort[e]}</code></span>)}</span>}
   </span>;
 }
 
 /* The form for one Level on one protocol: a Connection of that protocol, a
    model, and optional per-effort models. Clear removes the mapping (for an
    Application: back to the shared one). */
-function LevelEditor({doc, level, protocol, application, current, onDone, onCancel}: {
-  doc: LevelsDoc; level: string; protocol: string; application: string; current?: LevelMapping; onDone: (message: string) => void; onCancel: () => void;
+function LevelEditor({doc, level, protocol, application, current, defaults, onDone, onCancel}: {
+  doc: LevelsDoc; level: string; protocol: string; application: string; current?: LevelMapping; defaults?: ProtocolDefaults; onDone: (message: string) => void; onCancel: () => void;
 }) {
   const connections = doc.connections.filter(c => c.protocol === protocol && (!c.disabled || c.id === current?.connection));
-  const [connection, setConnection] = useState(current?.connection || connections[0]?.id || '');
+  const preferred = protocol === 'anthropic' ? defaults?.anthropic_target : defaults?.openai_target;
+  const [connection, setConnection] = useState(current?.connection || connections.find(c => c.id === preferred)?.id || connections[0]?.id || '');
+  const listed = useConnectionModels(connection);
   const [model, setModel] = useState(current?.model || '');
   const [effort, setEffort] = useState<EffortModels>(current?.effort || {});
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -78,15 +119,17 @@ function LevelEditor({doc, level, protocol, application, current, onDone, onCanc
     <h3>{application ? application + '\'s own ' : 'Shared '}<code>{level}</code> on {PROTOCOL[protocol]}</h3>
     {connections.length === 0 ? <p className="muted">No {PROTOCOL[protocol]} Connection yet. Add one on Providers first.</p> : <>
       <div className="form-row">
-        <label>Connection<select value={connection} onChange={e => setConnection(e.target.value)}>
-          {connections.map(c => <option key={c.id} value={c.id}>{c.id} · {c.provider}</option>)}
+        <label>Connection<select value={connection} onChange={e => { setConnection(e.target.value); setModel(''); setEffort({}); }}>
+          {connections.map(c => <option key={c.id} value={c.id}>{c.id} · {c.provider}{c.id === preferred ? ' (protocol default)' : ''}</option>)}
         </select></label>
-        <label>Model<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} placeholder={chosen?.location === 'local' ? 'llama3:8b' : 'model id'} spellCheck={false} autoComplete="off"/></label>
+        <ModelPicker key={'model-' + connection} id={'level-model-' + level + protocol} label="Model" value={model} onChange={setModel} models={listed.models} state={listed.state} required/>
       </div>
+      {listed.state === 'unlisted' && <small className="muted">{chosen?.id} does not list its models; type the id the provider expects.</small>}
       <fieldset>
-        <legend>Per-effort models (optional)</legend>
-        <div className="level-efforts">{EFFORTS.map(e => <label key={e}>{e[0].toUpperCase() + e.slice(1)}<input value={effort[e] || ''} onChange={x => setEffort(v => ({...v, [e]: x.target.value}))} maxLength={256} placeholder={model.trim() || 'the model above'} spellCheck={false} autoComplete="off"/></label>)}</div>
-        <small>A call that says how hard it is (<code>X-Aiport-Effort</code> or its provider's own effort field) gets the model of its effort; an empty one uses the model above. Models of the same Connection.</small>
+        <legend>Per-effort models <span className="muted">(optional)</span></legend>
+        <div className="level-efforts">{EFFORTS.map(e => <ModelPicker key={e + connection} id={'level-' + e + level + protocol} label={e[0].toUpperCase() + e.slice(1) + ' effort'} value={effort[e] || ''}
+          onChange={v => setEffort(x => ({...x, [e]: v}))} models={listed.models} state={listed.state} empty={'Same as the model' + (model.trim() ? ' (' + model.trim() + ')' : '')}/>)}</div>
+        <small className="muted">A call that says how hard it is (<code>X-Aiport-Effort</code>, or its provider's own effort field) gets the model of its effort.</small>
       </fieldset>
     </>}
     {error && <p className="auth-error" role="alert">{error}</p>}
@@ -100,7 +143,7 @@ function LevelEditor({doc, level, protocol, application, current, onDone, onCanc
 
 /* The Level × protocol grid, shared (application "") or for one
    Application, with the editor for the cell being edited under it. */
-function LevelsGrid({doc, application, onChange}: {doc: LevelsDoc; application: string; onChange: () => void}) {
+function LevelsGrid({doc, application, defaults, onChange}: {doc: LevelsDoc; application: string; defaults?: ProtocolDefaults; onChange: () => void}) {
   const [editing, setEditing] = useState<{level: string; protocol: string} | null>(null), [message, setMessage] = useState('');
   const own = application ? doc.applications[application] || [] : doc.shared;
   const overrides = (level: string, protocol: string) => Object.values(doc.applications).filter(l => find(l, level, protocol)).length;
@@ -108,7 +151,7 @@ function LevelsGrid({doc, application, onChange}: {doc: LevelsDoc; application: 
     <div className="levels-table"><table aria-label={application ? 'Levels of ' + application : 'Shared Levels'}>
       <thead><tr><th>Level</th>{doc.protocols.map(p => <th key={p}>{PROTOCOL[p] || p}</th>)}</tr></thead>
       <tbody>{doc.levels.map(level => <tr key={level}>
-        <th scope="row"><code>{level}</code></th>
+        <th scope="row"><span className="level-name"><code>{level}</code><small className="muted">{LEVEL_HINT[level] || ''}</small></span></th>
         {doc.protocols.map(protocol => {
           const m = find(own, level, protocol), shared = application ? find(doc.shared, level, protocol) : undefined;
           const on = editing?.level === level && editing.protocol === protocol, n = application ? 0 : overrides(level, protocol);
@@ -116,11 +159,11 @@ function LevelsGrid({doc, application, onChange}: {doc: LevelsDoc; application: 
             <div className="level-cell">
               {m ? <>{application && <span className="badge info">Own</span>}<Mapping m={m} doc={doc}/></>
                 : shared ? <span className="level-shared"><small className="muted">Shared</small><Mapping m={shared} doc={doc}/></span>
-                : <span className="muted">Not mapped</span>}
-              <button type="button" className="icon-button" aria-pressed={on} onClick={() => { setMessage(''); setEditing(on ? null : {level, protocol}); }}
-                title={on ? 'Close' : application && !m ? 'Give ' + application + ' its own ' + level : 'Edit ' + level + ' on ' + PROTOCOL[protocol]}
-                aria-label={(on ? 'Close the editor of ' : application && !m ? 'Override ' : 'Edit ') + level + ' on ' + PROTOCOL[protocol]}>
-                {on ? <X size={14} aria-hidden/> : <Pencil size={14} aria-hidden/>}
+                : <span className="level-unmapped"><span className="badge warn">Not mapped</span><small className="muted">Calls sending <code>{level}</code> are refused</small></span>}
+              <button type="button" className={'row-action' + (!m && !shared && !on ? ' level-map' : '')} aria-pressed={on} onClick={() => { setMessage(''); setEditing(on ? null : {level, protocol}); }}
+                title={on ? 'Close' : application && !m ? 'Give ' + application + ' its own ' + level : (m ? 'Edit ' : 'Map ') + level + ' on ' + PROTOCOL[protocol]}
+                aria-label={(on ? 'Close the editor of ' : application && !m ? 'Override ' : m ? 'Edit ' : 'Map ') + level + ' on ' + PROTOCOL[protocol]}>
+                {on ? <><X size={14} aria-hidden/> Close</> : m ? <><Pencil size={14} aria-hidden/> Edit</> : application && shared ? <><Pencil size={14} aria-hidden/> Override</> : <><Plus size={14} aria-hidden/> Map</>}
               </button>
             </div>
             {n > 0 && <small className="muted">{n === 1 ? '1 Application has its own' : n + ' Applications have their own'}</small>}
@@ -128,7 +171,7 @@ function LevelsGrid({doc, application, onChange}: {doc: LevelsDoc; application: 
         })}
       </tr>)}</tbody>
     </table></div>
-    {editing && <LevelEditor key={editing.level + editing.protocol} doc={doc} level={editing.level} protocol={editing.protocol} application={application}
+    {editing && <LevelEditor key={editing.level + editing.protocol} doc={doc} level={editing.level} protocol={editing.protocol} application={application} defaults={defaults}
       current={find(own, editing.level, editing.protocol)} onCancel={() => setEditing(null)}
       onDone={text => { setEditing(null); setMessage(text); onChange(); }}/>}
     {message && <p className="auth-success" role="status">{message}</p>}
@@ -136,12 +179,12 @@ function LevelsGrid({doc, application, onChange}: {doc: LevelsDoc; application: 
 }
 
 /** The Levels panel on Routing: the shared mapping of each Level per protocol. */
-export function LevelsPanel({refresh, onChange}: {refresh: unknown; onChange: () => void}) {
+export function LevelsPanel({refresh, defaults, onChange}: {refresh: unknown; defaults?: ProtocolDefaults; onChange: () => void}) {
   const [doc, reload] = useLevels(refresh);
   return <section className="panel levels-panel">
     <div className="panel-heading"><h2><Layers size={16} aria-hidden/> Levels<HelpLink section="Levels"/></h2><span>What <code>fast</code>, <code>balanced</code> and <code>best</code> mean on this aiport</span></div>
     <p className="muted">Applications send a Level as their model instead of naming a provider. Map each one per protocol; an Application can have its own mapping on Integrate, which comes before this one.</p>
-    {doc ? <LevelsGrid doc={doc} application="" onChange={() => { reload(); onChange(); }}/> : <p className="quiet-empty">Loading Levels…</p>}
+    {doc ? <LevelsGrid doc={doc} application="" defaults={defaults} onChange={() => { reload(); onChange(); }}/> : <p className="quiet-empty">Loading Levels…</p>}
   </section>;
 }
 
