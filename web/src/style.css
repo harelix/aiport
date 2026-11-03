@@ -859,6 +859,23 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .removal-actions{display:flex;align-items:center;gap:16px;margin-top:16px}
 @media (max-width:560px){.removal-list li{grid-template-columns:1fr}}
 
+/* ---------- Levels (harelix/aiport#38): the Levels panel on Routing, an Application's own on Integrate ---------- */
+.levels-table{overflow-x:auto;margin:8px 0 12px}
+.levels-table table{width:100%;border-collapse:collapse;font-size:13px}
+.levels-table th,.levels-table td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.levels-table thead th{font-size:12px;font-weight:500;color:var(--text-2)}
+.levels-table td.editing{background:var(--inset)}
+.level-cell{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.level-mapping,.level-shared{display:grid;gap:2px;min-width:0;overflow-wrap:anywhere}
+.level-cell .badge{align-self:center}
+.level-editor{margin:4px 0 12px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel)}
+.level-editor h3{margin:0;font-size:13px;font-weight:600;color:var(--text)}
+.level-efforts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.level-editor .form-actions{display:flex;align-items:center;gap:12px}
+.app-levels{display:grid;gap:4px}
+.app-levels>p{margin:0;display:flex;align-items:center;gap:4px}
+@media (max-width:560px){.level-efforts{grid-template-columns:1fr}}
+
 /* ============================================================================================
    Gradient system. The accent gradient (yellow -> pink-violet -> periwinkle) means one thing
    wherever it appears, in five roles only:

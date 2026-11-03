@@ -6,6 +6,7 @@ import {ProviderLogo} from './ProviderLogo';
 import type {Reason} from './Reason';
 import {ApplicationsPanel} from './Applications';
 import {DefaultAgentPanel} from './CodingAgents';
+import {LevelsPanel} from './Levels';
 import KeyField, {KeySource, keyBadge} from './KeyField';
 
 export type Location = 'local' | 'remote';
@@ -487,6 +488,7 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
         <dt>Telemetry queue</dt><dd>{queueDepth ?? 0} pending</dd>
       </dl>
     </section>
+    <LevelsPanel refresh={config} onChange={onChange}/>
     <ApplicationsPanel origins={config?.origins || []} targets={targets} onChange={onChange}/>
     <section className="panel">
       <div className="panel-heading"><h2>Instructions for coding agents</h2>{onIntegrate && <button type="button" className="secondary" onClick={onIntegrate}>Open Integrate</button>}</div>
@@ -494,7 +496,7 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
     </section>
     <section className="panel planned">
       <div className="panel-heading"><h2>Per-application limits</h2><span className="badge">Planned</span></div>
-      <p className="muted">Model allowlists per application and routing by reasoning effort are not built yet. Today an application's calls go to its bound connection or the protocol default; per-application model aliases are set in the YAML file (<code>origins[].aliases</code>).</p>
+      <p className="muted">Model allowlists per application are not built yet. Today an application's calls go to its bound connection or the protocol default, or where a Level sends them; per-application task names (model aliases) are set in the YAML file (<code>origins[].aliases</code>).</p>
     </section>
   </>;
 }
