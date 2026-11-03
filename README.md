@@ -88,6 +88,7 @@ Provider presets: `openai`, `anthropic`, `bedrock`, `meta`, `ollama`, `llamacpp`
 - Calls go only to the providers you configured, with that provider's key. aiport stores request metadata (time, application, model, status, latency), never prompts or responses.
 - **Agent runs** start a coding agent you installed (Claude Code, Codex or Gemini CLI) in a separate git worktree, only when you click. Commands ask you first, and aiport never commits to your branch, merges or pushes. An agent's own settings can allow more than aiport sees: read [what aiport cannot see](docs/manual.md#explain-by-a-coding-agent) first.
 - [Extensions](docs/extensions.md) you add take part in decisions about Change requests.
+- Found a vulnerability? Report it privately as [SECURITY.md](SECURITY.md) describes, not in a public issue.
 
 ## Limitations
 

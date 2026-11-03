@@ -1,0 +1,21 @@
+name: Feature or change
+description: Something aiport should do
+labels: [needs-triage]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you need, and why
+      description: The situation you are in, not only the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: I read aiport_DESIGN.md; this fits a small, local, single-binary gateway

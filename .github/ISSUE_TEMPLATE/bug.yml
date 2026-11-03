@@ -1,0 +1,37 @@
+name: Bug
+description: aiport did something wrong
+labels: [needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "Security problem? Do not file it here: see [SECURITY.md](https://github.com/harelix/aiport/blob/main/SECURITY.md). Never paste a real key or token."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The command, request or dashboard steps. Redact keys, tokens and private names.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `aiport version`, or the commit you built
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+  - type: textarea
+    id: log
+    attributes:
+      label: Log or error
+      description: The relevant lines of the serve output or the error the application got.
+      render: text
