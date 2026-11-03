@@ -424,6 +424,9 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .add-application label{display:block;font-size:13px}
 .add-application input{padding:6px 10px;font-size:13px;width:100%;max-width:36ch;margin-top:6px}
 .app-toggles .lucide{vertical-align:-2px}
+.app-actions{display:grid;gap:10px;padding:12px 14px;margin:6px 0}
+.app-actions p{margin:0}
+button.danger.with-icon{display:inline-flex;align-items:center;gap:6px}
 .app-issues{list-style:none;margin:0;padding:4px 0;display:grid;gap:12px}
 .app-issue-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;margin-bottom:6px}
 .explanation{display:grid;gap:6px;margin:8px 0}

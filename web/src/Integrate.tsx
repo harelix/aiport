@@ -193,6 +193,9 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
   origins: Origin[]; targets: Target[]; providers: ProviderSpec[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; guidance: Guidance | null; explain: ExplainStatus | null; onExplained: () => void; agents: CodingAgents; levels: LevelsDoc | null; onLevels: () => void; app: string; onAgent: (id: string) => void;
   onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void; onIssue: (i: Issue) => void; missing: string[];
 }) {
+  // The Application whose actions are open under its row (clicking a row opens them here, not the wizard).
+  const [expanded, setExpanded] = useState('');
+  const pickRow = (id: string) => { setExpanded(x => x === id ? '' : id); onSelect(id); };
   const [adding, setAdding] = useState(false), [removing, setRemoving] = useState(''), [replacing, setReplacing] = useState('');
   // A token just issued or created, shown once under its row (or under the form for a new one).
   const [issued, setIssued] = useState<(IssuedToken & {name: string; replaced: boolean}) | null>(null);
@@ -233,8 +236,8 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
       <tbody>{origins.map(o => {
         const done = progress(o, {handed: true, waiting: false, seen: calls.at[o.id], adapting, mcp: mcpCopied(o.id), agents}).filter(Boolean).length;
         const selected = app === o.id, own = issues[o.id] || [], open = !!shown[o.id] && own.length > 0, catalogOpen = !!catalogShown[o.id], levelsOpen = !!levelsShown[o.id] && !!levels;
-        return <React.Fragment key={o.id}><tr className={'app-row' + (selected ? ' selected' : '')} onClick={e => { if (!(e.target as HTMLElement).closest('input,button,a,label')) onSelect(o.id); }}>
-          <td><button type="button" className="row-select" aria-pressed={selected} onClick={() => onSelect(o.id)} title="Follow this application in the onboarding wizard">{o.name}</button><small><code>{o.id}</code></small>
+        return <React.Fragment key={o.id}><tr className={'app-row' + (selected ? ' selected' : '')} onClick={e => { if (!(e.target as HTMLElement).closest('input,button,a,label')) pickRow(o.id); }}>
+          <td><button type="button" className="row-select" aria-expanded={expanded === o.id} onClick={() => pickRow(o.id)} title={'Open ' + o.name + '\'s token and removal actions'}>{o.name}</button><small><code>{o.id}</code></small>
             <span className="app-toggles"><button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={catalogOpen} aria-controls={'app-catalog-' + o.id} onClick={() => setCatalogShown(x => ({...x, [o.id]: !x[o.id]}))}
               title={'What ' + o.name + ' can send, what serves it, and its recent Catalog changes'}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Catalog</button>
             <button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={levelsOpen} aria-controls={'app-levels-' + o.id} disabled={!levels} onClick={() => setLevelsShown(x => ({...x, [o.id]: !x[o.id]}))}
@@ -256,7 +259,15 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
             return <button type="button" className="text-button" onClick={() => onAgent(o.id)} aria-label={(connected ? 'Change the coding agent of ' : 'Connect a coding agent to ') + o.name}
               title={connected ? agentName(id, agents) + (o.agent ? '' : ' (default)') + ' in ' + o.repository : 'Connect a coding agent (onboarding step 6)'}>{connected ? agentName(id, agents) : 'Connect'}</button>; })()}</td>
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
-        </tr>{issued?.id === o.id && <tr className="app-issues-row"><td colSpan={8}><TokenReveal name={o.name} issued={issued} replaced={issued.replaced} onClose={() => setIssued(null)}/></td></tr>}
+        </tr>{expanded === o.id && <tr className="app-issues-row"><td colSpan={8}><div className="app-actions" role="region" aria-label={o.name + ' actions'}>
+            <p><strong>{o.name}</strong> <code>{o.id}</code>{missing.includes(o.id) ? <> · <span className="badge warn">No token</span> its calls are refused until you issue one.</> : <> · its application sends its token as <code>AIPORT_APP_TOKEN</code> from its <code>.env</code>.</>}</p>
+            <div className="pairing-actions">
+              <button type="button" className="secondary with-icon" disabled={tokenBusy === o.id} onClick={() => missing.includes(o.id) ? reissue(o) : setReplacing(o.id)}><KeyRound size={14} aria-hidden/> {missing.includes(o.id) ? 'Issue token' : 'Issue new token'}</button>
+              <button type="button" className="danger with-icon" onClick={() => setRemoving(o.id)}><Trash2 size={14} aria-hidden/> Remove application</button>
+              <button type="button" className="text-button" onClick={() => setExpanded('')}>Close</button>
+            </div>
+          </div></td></tr>}
+          {issued?.id === o.id && <tr className="app-issues-row"><td colSpan={8}><TokenReveal name={o.name} issued={issued} replaced={issued.replaced} onClose={() => setIssued(null)}/></td></tr>}
           {replacing === o.id && <tr className="app-issues-row"><td colSpan={8}><div className="token-reveal" role="region" aria-label={'New token for ' + o.name}>
             <p><strong>Issue a new token for {o.name}?</strong> Its current token stops working at once; put the new one in its <code>.env</code>.</p>
             <div className="pairing-actions"><button type="button" className="primary" disabled={tokenBusy === o.id} onClick={() => reissue(o)}>Issue new token</button><button type="button" className="text-button" onClick={() => setReplacing('')}>Cancel</button></div>
@@ -426,7 +437,7 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
   return <div className="integrate-layout">
     <div className="integrate-main">
       <ApplicationsList origins={origins} targets={targets} providers={providers} pairings={pairings} rejected={rejected} calls={calls} issues={issues} guidance={guidance} explain={explain} onExplained={reloadIssues} agents={agents} levels={levels} onLevels={() => { reloadLevels(); onChange(); }} app={app} adapting={doc.adapting}
-        onSelect={follow} onAgent={followAgent} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue} missing={missing}/>
+        onSelect={setApp} onAgent={followAgent} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue} missing={missing}/>
       <div ref={wizardRef}>
         <Wizard origins={origins} app={app} setApp={setApp} pairings={pairings} seen={app ? calls.at[app] : null} off={calls.off} adapting={doc.adapting} agents={agents}
           prompt={doc.agent_prompt} docs={doc.docs} mcp={mcp} setMcp={setMcp} open={open} setOpen={setWizardOpen} onDone={done} onAgentBrief={openAgentBrief}/>
