@@ -23,7 +23,7 @@ import (
 // in that run, until the agent changes a file), or Deny. The agent runs an allowed command
 // itself, in its own process and its worktree's directory: aiport only
 // answers the permission. Anything outside the worktree is denied without
-// asking (fixRules). A request left unanswered for ApprovalWait stops the
+// asking (agentrun.FixRules). A request left unanswered for ApprovalWait stops the
 // run; what the run changed so far stays in its worktree for the Owner to
 // review (decide.BranchStoppedWaiting).
 
@@ -192,7 +192,7 @@ func (a *allowances) clear() {
 }
 
 // commandRule asks the Owner about each command a Fix it run of Application
-// app for Issue issue wants to run inside its worktree (fixRules has denied
+// app for Issue issue wants to run inside its worktree (agentrun.FixRules has denied
 // anything outside it). It blocks until the Owner answers, the run ends, or
 // ApprovalWait passes; then it stops the run (by the id the request
 // carries). "Allow until the next edit" is remembered in allowed, made for

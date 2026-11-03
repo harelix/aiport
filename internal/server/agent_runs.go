@@ -240,7 +240,7 @@ func (a *agentWriter) start(is decide.Issue) (*explainRun, error) {
 	run, err := h.runner().Start(context.Background(), agentrun.Spec{
 		Application: a.app, Issue: is.ID, Mode: agentrun.Explain, Agent: a.agent.ID, AgentName: a.agent.Name,
 		Program: agentrun.Program{Path: a.agent.ACP.Path, Args: a.agent.ACP.Args}, Dir: t.Dir,
-		Prompt: explainPrompt(is), Env: env, Secret: token, ModelCalls: a.calls, Limit: a.limit, Policy: readOnly(t.Dir), Warnings: agents.SettingsWarnings(t.Dir),
+		Prompt: explainPrompt(is), Env: env, Secret: token, ModelCalls: a.calls, Limit: a.limit, Policy: agentrun.ReadOnly(t.Dir), Warnings: agents.SettingsWarnings(t.Dir),
 		OnEnd: func(run *agentrun.Run) {
 			revoke()
 			h.removeTree(t)

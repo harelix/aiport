@@ -1,4 +1,4 @@
-package server
+package agentrun
 
 import (
 	"context"
@@ -6,83 +6,81 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/harelix/aiport/internal/agentrun"
 )
 
 // The permission rules of Agent runs. aiport only sees the permission
 // requests an agent sends; it answers each from the paths the request names
-// (confine) and its kind. Explain (readOnly) allows reading inside the run's
-// directory; Fix it (fixRules) also allows changing files there, except the
+// (confine) and its kind. Explain (ReadOnly) allows reading inside the run's
+// directory; Fix it (FixRules) also allows changing files there, except the
 // agent's and git's own configuration (protected), and sends commands to the
 // Owner.
 
-// readOnly is Explain's permission rule: reading and searching inside root
+// ReadOnly is Explain's permission rule: reading and searching inside root
 // are allowed; every edit, command and anything outside root is denied.
-func readOnly(root string) agentrun.Policy {
-	return func(_ context.Context, p agentrun.Permission) agentrun.Verdict {
+func ReadOnly(root string) Policy {
+	return func(_ context.Context, p Permission) Verdict {
 		switch p.Kind {
-		case agentrun.ToolThink:
-			return agentrun.Verdict{Allow: true, Reason: "thinking"}
-		case agentrun.ToolRead, agentrun.ToolSearch:
+		case ToolThink:
+			return Verdict{Allow: true, Reason: "thinking"}
+		case ToolRead, ToolSearch:
 			return reading(root, p, "the run's copy of the repository")
 		}
-		return agentrun.Verdict{Reason: "Explain is read-only: aiport denies every edit and command"}
+		return Verdict{Reason: "Explain is read-only: aiport denies every edit and command"}
 	}
 }
 
-// fixRules is Fix it's permission rule inside the worktree root: reading
+// FixRules is Fix it's permission rule inside the worktree root: reading
 // and searching inside it, and editing, deleting or moving files inside it
 // (never agent or git configuration), are allowed; a command inside it goes
 // to command; everything else, and any path outside root, is denied.
-func fixRules(root string, command agentrun.Policy) agentrun.Policy {
-	return func(ctx context.Context, p agentrun.Permission) agentrun.Verdict {
+func FixRules(root string, command Policy) Policy {
+	return func(ctx context.Context, p Permission) Verdict {
 		switch p.Kind {
-		case agentrun.ToolThink:
-			return agentrun.Verdict{Allow: true, Reason: "thinking"}
-		case agentrun.ToolRead, agentrun.ToolSearch:
+		case ToolThink:
+			return Verdict{Allow: true, Reason: "thinking"}
+		case ToolRead, ToolSearch:
 			return reading(root, p, "the run's worktree")
-		case agentrun.ToolEdit, agentrun.ToolDelete, agentrun.ToolMove:
+		case ToolEdit, ToolDelete, ToolMove:
 			rels, reason := confine(root, p)
 			switch {
 			case reason != "":
-				return agentrun.Verdict{Reason: reason + " the run's worktree"}
+				return Verdict{Reason: reason + " the run's worktree"}
 			case len(rels) == 0:
-				return agentrun.Verdict{Reason: "the agent did not say which file it changes"}
+				return Verdict{Reason: "the agent did not say which file it changes"}
 			}
 			for _, rel := range rels {
 				if what := protected(rel); what != "" {
-					return agentrun.Verdict{Reason: what + " is not the agent's to change"}
+					return Verdict{Reason: what + " is not the agent's to change"}
 				}
 			}
-			return agentrun.Verdict{Allow: true, Reason: "editing inside the run's worktree"}
-		case agentrun.ToolExecute:
+			return Verdict{Allow: true, Reason: "editing inside the run's worktree"}
+		case ToolExecute:
 			if _, reason := confine(root, p); reason != "" {
-				return agentrun.Verdict{Reason: "a command " + reason + " the run's worktree"}
+				return Verdict{Reason: "a command " + reason + " the run's worktree"}
 			}
 			return command(ctx, p)
 		}
-		return agentrun.Verdict{Reason: "Fix it allows only reading and editing files inside the run's worktree"}
+		return Verdict{Reason: "Fix it allows only reading and editing files inside the run's worktree"}
 	}
 }
 
 // reading answers a read or search: allowed when it names at least one
 // path and every path it names is inside root (where).
-func reading(root string, p agentrun.Permission, where string) agentrun.Verdict {
+func reading(root string, p Permission, where string) Verdict {
 	rels, reason := confine(root, p)
 	switch {
 	case reason != "":
-		return agentrun.Verdict{Reason: reason + " " + where}
+		return Verdict{Reason: reason + " " + where}
 	case len(rels) == 0:
-		return agentrun.Verdict{Reason: "the agent did not say where it reads"}
+		return Verdict{Reason: "the agent did not say where it reads"}
 	}
-	return agentrun.Verdict{Allow: true, Reason: "reading inside " + where}
+	return Verdict{Allow: true, Reason: "reading inside " + where}
 }
 
 // confine is the one path check of Agent runs: every path permission p
 // names (pathsOf), relative to root, with reason "" when all are inside
 // root; otherwise reason is "outside" (to be followed by where).
-func confine(root string, p agentrun.Permission) (rels []string, reason string) {
+func confine(root string, p Permission) (rels []string, reason string) {
 	paths, ok := pathsOf(p)
 	if !ok {
 		return nil, "outside"
@@ -115,7 +113,7 @@ var patternKeys = map[string]bool{"pattern": true, "glob": true, "include": true
 // its raw input (pathKeys, the files of a "changes" patch, the base of a
 // pattern), at any depth. ok is false when one is in the home directory
 // ("~"), which is never inside a run's directory.
-func pathsOf(p agentrun.Permission) (paths []string, ok bool) {
+func pathsOf(p Permission) (paths []string, ok bool) {
 	paths = append(paths, p.Paths...)
 	var in any
 	if len(p.Input) > 0 && json.Unmarshal(p.Input, &in) != nil {
@@ -201,13 +199,6 @@ func protected(rel string) string {
 		}
 	}
 	return ""
-}
-
-// inside reports whether path is root or below it, with symbolic links
-// resolved (within).
-func inside(root, path string) bool {
-	_, ok := within(root, path)
-	return ok
 }
 
 // within is path relative to root, and whether it is root or below it. A
