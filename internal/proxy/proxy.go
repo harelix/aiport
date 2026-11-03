@@ -175,8 +175,10 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 	}
 	// Refuse early on the client's own binding, before admitting the body,
 	// unless a model name (its own Alias or a Level) could still route it.
+	// With no Connection at all the model is read first: a Level must be
+	// refused as level_unmapped, naming it, not as a missing Connection.
 	route, ref := rt.resolve(origin, protocol, "")
-	if ref == nil || !rt.named(origin, protocol) {
+	if ref == nil || !rt.named(origin, protocol) && ref.Code != refusal.TargetUnconfigured.Code {
 		if refuse(route, ref) {
 			return
 		}

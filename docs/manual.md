@@ -27,7 +27,7 @@ Build from source (Go is the only prerequisite) and start it:
 
 ```sh
 make build                 # -> bin/aiport, dashboard included
-./bin/aiport init          # first run: choose providers and coding agents
+./bin/aiport init          # first run: choose providers, coding agents and Levels
 ./bin/aiport check         # validate the configuration
 ./bin/aiport serve         # start the gateway
 ```
@@ -35,7 +35,20 @@ make build                 # -> bin/aiport, dashboard included
 `init` writes `aiport.yaml` and a private credential file next to it
 (`aiport.yaml.env`, mode 0600) and never overwrites existing files. Provider
 keys are never asked for in the terminal: set them in the dashboard, or in
-your shell. `serve` prints the dashboard address and the management token
+your shell.
+
+`init` also proposes a Level mapping from the providers you chose, per
+protocol: a local Connection for `fast` when you chose one, hosted ones for
+`balanced` and `best` (whatever you chose when there is no other kind). The
+presets know no model ids, so it asks you for each Level's model; an empty
+answer leaves that Level unmapped, and nothing is mapped unless you confirm.
+Without a terminal, map them with
+`--levels fast=local-connection/llama3:8b,best=hosted-connection/some-model`
+(`LEVEL=CONNECTION/MODEL`, the Connection being one of the chosen provider
+ids; the protocol is that Connection's) or skip them with `--no-levels`; with
+neither flag and no input, no Level is mapped and `init` says so.
+
+`serve` prints the dashboard address and the management token
 when started in a terminal; `./bin/aiport auth token` prints the token again
 later.
 
@@ -472,6 +485,9 @@ for a replacement Connection of the same protocol.
 If your configuration already had an Alias called `fast`, `balanced` or
 `best`, it is now that Level's mapping on its Connection's protocol.
 
+When an Application keeps asking for a Level that is not mapped, aiport
+opens an Issue for it (see [An unmapped Level](#an-unmapped-level)).
+
 ## The Catalog
 
 An Application's **Catalog** is what it can use through aiport: its task
@@ -685,6 +701,32 @@ It resolves itself when the Application's calls succeed again, on that
 Connection or on the one you bound it to (`aiport_fix` or `stopped`), and
 reopens if the failures stick again. Reverting the binding opens it again
 with the fix offered again.
+
+#### An unmapped Level
+
+aiport opens an Issue when one Application's calls for one Level keep being
+refused with `level_unmapped` (`adapting.level_unmapped`, default 5 times
+in 60 minutes). For example, docs-bot sends `best` on the OpenAI protocol
+and no `best` is mapped there, neither for docs-bot nor shared. There is one
+Issue per Application and Level.
+
+- **Evidence**: how many calls were refused, the time window and a few
+  request ids; the summary names the protocol.
+- **Fix in aiport**: map the Level for that Application only, on the
+  protocol its calls were refused on. aiport proposes the Connection its
+  other calls on that protocol go to (its binding, else the protocol
+  default) and leaves the model to you: it never makes up a model id.
+  **Approve** applies it as an ordinary Change you can revert (and a Catalog
+  change); a Connection of the other protocol is refused. It is never
+  applied automatically.
+- **Fix in the Application**: ask for the mapping with a Change request of
+  kind `application_alias` whose alias is the Level, or send another Level
+  or task name the gateway maps.
+
+It resolves itself when the Application's calls for that Level succeed, and
+reopens if the refusals stick again; reverting the mapping opens it again
+with the fix offered again. With the adapting loop off, nothing is counted
+and no Issue opens.
 
 #### A Catalog change
 

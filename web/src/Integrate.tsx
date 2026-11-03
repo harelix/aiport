@@ -90,7 +90,7 @@ function useIssues(tick: number): {issues: Record<string, Issue[]>; explain: Exp
 }
 
 /** A short cause for an Issue, for the Applications list. */
-const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : isCatalogChange(i) ? 'Catalog change ' + i.subject : i.summary;
+const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : i.cause === 'level_unmapped' ? 'Unmapped Level ' + i.subject : isCatalogChange(i) ? 'Catalog change ' + i.subject : i.summary;
 
 /* An Application's Issues, under its row: each with its short cause, a link
    to the Issue on the Changes page, Explain and "Copy fix for the Coding agent". */

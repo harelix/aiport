@@ -28,15 +28,20 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 	region := fs.String("region", "", "")
 	agent := fs.String("agent", "", "")
 	listen := fs.String("listen", "127.0.0.1:8787", "")
+	levelFlag := fs.String("levels", "", "")
+	noLevels := fs.Bool("no-levels", false, "")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(out, "aiport init [--config PATH] [--provider "+config.ProviderIDs()+"] [--agent codex|claude|none] [--region REGION] [--base-url URL]")
+			fmt.Fprintln(out, "aiport init [--config PATH] [--provider "+config.ProviderIDs()+"] [--agent codex|claude|none] [--region REGION] [--base-url URL] [--levels LEVEL=CONNECTION/MODEL,... | --no-levels]")
 			return nil
 		}
 		return errors.New("invalid init arguments")
 	}
 	if fs.NArg() != 0 {
 		return errors.New("unexpected init arguments")
+	}
+	if *levelFlag != "" && *noLevels {
+		return errors.New("choose either --levels or --no-levels")
 	}
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 4096), 4096)
@@ -51,7 +56,7 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 		}
 		return v, nil
 	}
-	terminal.Frost(out, "\n  aiport · Set up your local gateway\n\n  1  Choose providers\n  2  Connect coding agents\n  3  Start the gateway\n\n")
+	terminal.Frost(out, "\n  aiport · Set up your local gateway\n\n  1  Choose providers\n  2  Connect coding agents\n  3  Map Levels\n  4  Start the gateway\n\n")
 	if *provider == "" {
 		fmt.Fprintln(out, "  "+strings.ReplaceAll(config.ProviderIDs(), "|", " · "))
 		v, err := prompt("Providers (comma-separated)", "ollama")
@@ -155,6 +160,15 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 		agentNames = append(agentNames, name)
 		c.Origins = append(c.Origins, config.Origin{ID: name, Name: name, TokenEnv: "AIPORT_" + strings.ToUpper(name) + "_TOKEN", Target: target})
 	}
+	switch {
+	case *levelFlag != "":
+		c.Aliases, err = parseLevels(*levelFlag, c.Targets)
+	case !*noLevels:
+		c.Aliases, err = askLevels(c.Targets, scanner, out)
+	}
+	if err != nil {
+		return err
+	}
 	local, err := token()
 	if err != nil {
 		return err
@@ -195,6 +209,15 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 		if spec.KeyEnv != "" {
 			fmt.Fprintf(out, "    Add the API key in the dashboard (Settings), or set %s in your shell.\n", spec.KeyEnv)
 		}
+	}
+	if len(c.Aliases) > 0 {
+		fmt.Fprintln(out, "\n  Levels:")
+		for _, a := range c.Aliases {
+			t, _ := c.Connection(a.Target)
+			fmt.Fprintf(out, "    %s → %s/%s (%s protocol)\n", a.Alias, a.Target, a.Model, protocolName(protocolOf(t)))
+		}
+	} else {
+		fmt.Fprintln(out, "\n  Levels are not mapped: a call for fast, balanced or best is refused until you map it\n  on the dashboard's Routing page or under aliases in the configuration.")
 	}
 	fmt.Fprintln(out, "\n  Upstream keys are never written to YAML or printed.")
 	fmt.Fprintf(out, "\n  Next:\n    source %s\n    aiport check --config %s\n    aiport serve --config %s\n", quote(envPath), quote(*path), quote(*path))
