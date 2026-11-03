@@ -214,7 +214,7 @@ func Init(args []string, in io.Reader, out io.Writer) error {
 		fmt.Fprintln(out, "\n  Levels:")
 		for _, a := range c.Aliases {
 			t, _ := c.Connection(a.Target)
-			fmt.Fprintf(out, "    %s → %s/%s (%s protocol)\n", a.Alias, a.Target, a.Model, protocolName(protocolOf(t)))
+			fmt.Fprintf(out, "    %s → %s/%s (%s protocol)\n", a.Alias, a.Target, a.Model, config.ProtocolName(protocolOf(t)))
 		}
 	} else {
 		fmt.Fprintln(out, "\n  Levels are not mapped: a call for fast, balanced or best is refused until you map it\n  on the dashboard's Routing page or under aliases in the configuration.")

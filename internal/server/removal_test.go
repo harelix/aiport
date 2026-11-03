@@ -209,6 +209,38 @@ func TestRemovalWithAPlanIsOneChangeAndOneRevertRestoresEverything(t *testing.T)
 	}
 }
 
+// Per-effort models name models of their Connection: an Alias or Level
+// mapping re-pointed to another Connection loses them, as when the Level
+// is mapped to another Connection.
+func TestRePointingDropsPerEffortModels(t *testing.T) {
+	h, path := removalServer(t)
+	for _, e := range [][2]string{
+		{"/api/v1/levels/openai/best", `{"connection":"hosted","model":"gpt-4o","effort":{"high":"gpt-4o-2"}}`},
+		{"/api/v1/aliases/effort", `{"application":"docs-bot","alias":"summarize","effort":{"low":"gpt-4o-mini"}}`},
+	} {
+		if w, _ := call(h, "PUT", e[0], e[1], remManagement, true); w.Code != 200 {
+			t.Fatalf("%s: %d %s", e[0], w.Code, w.Body)
+		}
+	}
+	_, out := call(h, "GET", "/api/v1/targets/hosted/dependents", "", remManagement, false)
+	plan := suggestions(t, out)
+	if plan["level:best:openai"] != "spare" || plan["application_alias:docs-bot:summarize"] != "spare" {
+		t.Fatalf("suggested plan: %v", plan)
+	}
+	if w, _ := call(h, "DELETE", "/api/v1/targets/hosted", planBody(plan), remManagement, true); w.Code != 200 {
+		t.Fatalf("removal: %d %s", w.Code, w.Body)
+	}
+	c := readConfig(t, path)
+	best, ok := c.Level("docs-bot", "openai", "best")
+	if !ok || best.Connection != "spare" || best.Model != "gpt-4o" || !best.Effort.IsZero() {
+		t.Fatalf("best after re-pointing: %+v", best)
+	}
+	docs, _ := c.Application("docs-bot")
+	if a := docs.Aliases[0]; a.Target != "spare" || a.Model != "gpt-4o" || !a.Effort.IsZero() {
+		t.Fatalf("summarize after re-pointing: %+v", a)
+	}
+}
+
 func TestRemovalWithoutAPlanIsRefusedAsBefore(t *testing.T) {
 	h, path := removalServer(t)
 	before, _ := os.ReadFile(path)

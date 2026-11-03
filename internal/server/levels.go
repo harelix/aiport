@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"aiport/internal/config"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // levelMapping is one Level mapping as the dashboard reads it.
@@ -23,7 +21,7 @@ type levelMapping struct {
 //	GET    /api/v1/levels                          the shared and per-Application mappings, and the Connections
 //	PUT    /api/v1/levels/{protocol}/{level}       {application?, connection, model, effort?}
 //	DELETE /api/v1/levels/{protocol}/{level}       {application?} (body optional)
-//	PUT    /api/v1/aliases/effort                  {application?, alias, connection?, effort}
+//	PUT    /api/v1/aliases/effort                  {application?, alias, connection?, effort} (serveAliasEffort)
 //
 // application "" (or left out) is the shared mapping, otherwise that
 // Application's own, which comes before the shared one. PUT on a Level sets
@@ -34,7 +32,6 @@ type levelMapping struct {
 // Change, whose id is returned; the Catalog changes it causes are recorded
 // like any other. The caller has already verified management access.
 func (h *Handler) levelsRoute(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) bool {
-	var protocol, level string
 	switch {
 	case r.URL.Path == "/api/v1/levels":
 		if r.Method != http.MethodGet {
@@ -45,128 +42,147 @@ func (h *Handler) levelsRoute(w http.ResponseWriter, r *http.Request, fail func(
 		writeJSON(w, 200, levelsOf(h.snapshot()))
 		return true
 	case r.URL.Path == "/api/v1/aliases/effort":
-		if r.Method != http.MethodPut {
-			w.Header().Set("Allow", "PUT")
-			fail(405, "method_not_allowed", "Use PUT")
-			return true
-		}
-	default:
-		rest, ok := strings.CutPrefix(r.URL.Path, "/api/v1/levels/")
-		if !ok {
-			return false
-		}
-		var found bool
-		protocol, level, found = strings.Cut(rest, "/")
-		if !found || strings.Contains(level, "/") {
-			return false
-		}
-		if r.Method != http.MethodPut && r.Method != http.MethodDelete {
-			w.Header().Set("Allow", "PUT, DELETE")
-			fail(405, "method_not_allowed", "Use PUT or DELETE")
-			return true
-		}
-	}
-	if r.Header.Get("X-Aiport-CSRF") != "1" {
-		fail(403, "csrf_required", "Use the same-origin dashboard to change Levels")
+		h.serveAliasEffort(w, r, fail)
 		return true
 	}
-	if !h.live.Writable() {
-		fail(503, "config_readonly", "This server cannot edit its configuration")
+	rest, ok := strings.CutPrefix(r.URL.Path, "/api/v1/levels/")
+	if !ok {
+		return false
+	}
+	protocol, level, found := strings.Cut(rest, "/")
+	if !found || strings.Contains(level, "/") {
+		return false
+	}
+	if r.Method != http.MethodPut && r.Method != http.MethodDelete {
+		w.Header().Set("Allow", "PUT, DELETE")
+		fail(405, "method_not_allowed", "Use PUT or DELETE")
 		return true
 	}
-	var in struct {
-		Application string               `json:"application"`
-		Alias       string               `json:"alias"`
-		Connection  string               `json:"connection"`
-		Model       string               `json:"model"`
-		Effort      *config.EffortModels `json:"effort"`
-	}
-	if r.ContentLength != 0 || r.Method != http.MethodDelete {
-		if decodeJSON(w, r, &in) != nil {
-			fail(400, "invalid_request", "Send a JSON body with application, connection, model and effort")
-			return true
-		}
-	}
-	in.Application, in.Alias, in.Connection, in.Model = strings.TrimSpace(in.Application), strings.TrimSpace(in.Alias), strings.TrimSpace(in.Connection), strings.TrimSpace(in.Model)
-	current := h.snapshot()
-	if _, ok := current.Application(in.Application); in.Application != "" && !ok {
-		fail(404, "origin_not_found", "No Application with this id")
+	in, ok := h.levelEditInput(w, r, fail)
+	if !ok {
 		return true
 	}
-	who := "shared"
-	if in.Application != "" {
-		who = in.Application + ":"
+	if r.Method == http.MethodDelete {
+		in.Connection, in.Model, in.Effort = "", "", nil
+	} else if in.Connection == "" || in.Model == "" {
+		fail(400, "invalid_request", "Send connection and model (DELETE clears a mapping)")
+		return true
 	}
-	var (
-		edits []config.Edit
-		what  string
-	)
-	if level == "" { // aliases/effort
-		if in.Effort == nil {
-			fail(400, "invalid_request", "Send effort with low, medium and high (empty clears them)")
-			return true
-		}
-		edit, err := config.SetEffort(current, in.Application, in.Alias, in.Connection, *in.Effort)
-		if err != nil {
-			fail(400, "invalid_alias", err.Error())
-			return true
-		}
-		edits, what = append(edits, edit), who+" per-effort models of "+in.Alias+effortWhat(*in.Effort)
-	} else {
-		if r.Method == http.MethodDelete {
-			in.Connection, in.Model, in.Effort = "", "", nil
-		} else if in.Connection == "" || in.Model == "" {
-			fail(400, "invalid_request", "Send connection and model (DELETE clears a mapping)")
-			return true
-		}
-		edit, err := config.SetLevel(current, in.Application, protocol, level, in.Connection, in.Model)
-		if err != nil {
-			fail(400, "invalid_level", err.Error())
-			return true
-		}
-		edits = append(edits, edit)
-		if in.Connection == "" {
-			what = who + " clear Level " + level + " on " + protocol
-		} else {
-			what = who + " map Level " + level + " on " + protocol + " to " + in.Model + " on " + in.Connection
-		}
-		if in.Effort != nil {
-			// The mapping is in place once the first edit ran; the
-			// per-effort models go on it in the same Change.
-			effort := *in.Effort
-			edits = append(edits, config.EffortEdit(in.Application, level, in.Connection, effort))
-			what += effortWhat(effort)
-		}
-	}
-	what = strings.Replace(what, "shared ", "", 1)
-	_, change, err := h.live.Change(what, func(root *yaml.Node) error {
-		for _, e := range edits {
-			if err := e(root); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	edit, err := config.SetLevel(h.snapshot(), config.LevelEdit{Application: in.Application, Protocol: protocol, Level: level, Connection: in.Connection, Model: in.Model, Effort: in.Effort})
 	if err != nil {
 		fail(400, "invalid_level", err.Error())
 		return true
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "change_id": change.ID})
+	what := "clear Level " + level + " on " + config.ProtocolName(protocol) + " for " + forWhom(in.Application)
+	if in.Connection != "" {
+		what = "map Level " + level + " on " + config.ProtocolName(protocol) + " to " + in.Model + " on " + in.Connection + " for " + forWhom(in.Application)
+		if in.Effort != nil {
+			if e := effortList(*in.Effort); e != "" {
+				what += " (" + e + ")"
+			} else {
+				what += ", no per-effort models"
+			}
+		}
+	}
+	h.changeLevels(w, what, edit, fail)
 	return true
 }
 
-// effortWhat describes per-effort models for the Changes list.
-func effortWhat(e config.EffortModels) string {
-	if e.IsZero() {
-		return ", no per-effort models"
+// serveAliasEffort handles PUT /api/v1/aliases/effort: the per-effort
+// models of one Alias, Level mapping or task name, the Application's own or
+// shared (connection names which entry; required for shared Aliases and
+// Levels). An empty effort clears them.
+func (h *Handler) serveAliasEffort(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) {
+	if r.Method != http.MethodPut {
+		w.Header().Set("Allow", "PUT")
+		fail(405, "method_not_allowed", "Use PUT")
+		return
 	}
-	var parts []string
-	for _, p := range [][2]string{{"low", e.Low}, {"medium", e.Medium}, {"high", e.High}} {
-		if p[1] != "" {
-			parts = append(parts, p[0]+" "+p[1])
+	in, ok := h.levelEditInput(w, r, fail)
+	if !ok {
+		return
+	}
+	if in.Effort == nil {
+		fail(400, "invalid_request", "Send effort with low, medium and high (empty clears them)")
+		return
+	}
+	edit, err := config.SetEffort(h.snapshot(), in.Application, in.Alias, in.Connection, *in.Effort)
+	if err != nil {
+		fail(400, "invalid_alias", err.Error())
+		return
+	}
+	what := "per-effort models of " + in.Alias
+	if in.Connection != "" {
+		what += " on " + in.Connection
+	}
+	e := effortList(*in.Effort)
+	if e == "" {
+		e = "none"
+	}
+	h.changeLevels(w, what+" for "+forWhom(in.Application)+": "+e, edit, fail)
+}
+
+// levelEditInput is the body of a Level or per-effort edit, after the
+// dashboard and writability checks; ok is false once refused.
+func (h *Handler) levelEditInput(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) (in levelEditBody, ok bool) {
+	if r.Header.Get("X-Aiport-CSRF") != "1" {
+		fail(403, "csrf_required", "Use the same-origin dashboard to change Levels")
+		return in, false
+	}
+	if !h.live.Writable() {
+		fail(503, "config_readonly", "This server cannot edit its configuration")
+		return in, false
+	}
+	if r.ContentLength != 0 || r.Method != http.MethodDelete {
+		if decodeJSON(w, r, &in) != nil {
+			fail(400, "invalid_request", "Send a JSON body with application, connection, model and effort")
+			return in, false
 		}
 	}
-	return " (" + strings.Join(parts, ", ") + ")"
+	in.Application, in.Alias, in.Connection, in.Model = strings.TrimSpace(in.Application), strings.TrimSpace(in.Alias), strings.TrimSpace(in.Connection), strings.TrimSpace(in.Model)
+	if _, found := h.snapshot().Application(in.Application); in.Application != "" && !found {
+		fail(404, "origin_not_found", "No Application with this id")
+		return in, false
+	}
+	return in, true
+}
+
+type levelEditBody struct {
+	Application string               `json:"application"`
+	Alias       string               `json:"alias"`
+	Connection  string               `json:"connection"`
+	Model       string               `json:"model"`
+	Effort      *config.EffortModels `json:"effort"`
+}
+
+// changeLevels makes edit as one Change described by what and answers its id.
+func (h *Handler) changeLevels(w http.ResponseWriter, what string, edit config.Edit, fail func(int, string, string)) {
+	_, change, err := h.live.Change(what, edit)
+	if err != nil {
+		fail(400, "invalid_level", err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "change_id": change.ID})
+}
+
+// forWhom names who a mapping is for in a Change: one Application, or
+// every Application for a shared one.
+func forWhom(application string) string {
+	if application == "" {
+		return "every Application"
+	}
+	return application
+}
+
+// effortList lists per-effort models for the Changes list ("" when none).
+func effortList(e config.EffortModels) string {
+	var parts []string
+	for _, p := range [][2]string{{"low", e.Low}, {"medium", e.Medium}, {"high", e.High}} {
+		if v := strings.TrimSpace(p[1]); v != "" {
+			parts = append(parts, p[0]+" "+v)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // levelsOf lists every Level mapping, the shared ones and each

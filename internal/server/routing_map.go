@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"slices"
 
 	"aiport/internal/catalog"
 	"aiport/internal/config"
@@ -11,14 +12,14 @@ import (
 // each name it can send and the Connection and model serving it.
 const RoutingMapPath = "/api/v1/routing"
 
-// Route is one row of the Routing map: a name an Application can send on a
+// RoutingRow is one row of the Routing map: a name an Application can send on a
 // protocol and the Connection and model serving it. Kind is "task_name" (an
 // Alias, the Application's own or shared), "level" (fast, balanced, best)
 // or "default" (any other model name, sent unchanged to the binding or the
 // protocol default; Name and Model are empty). The Catalog's task name is
 // embedded, so whatever a task name carries (such as per-effort models)
 // reaches the map unchanged.
-type Route struct {
+type RoutingRow struct {
 	catalog.TaskName
 	Kind     string `json:"kind"`
 	Protocol string `json:"protocol"`
@@ -30,15 +31,15 @@ type Route struct {
 type RoutingEntry struct {
 	catalog.Catalog
 	Name    string           `json:"name"`
-	Routes  []Route          `json:"routes"`
+	Routes  []RoutingRow     `json:"routes"`
 	Changes []catalog.Record `json:"changes,omitempty"`
 }
 
 // routesOf are cat's routes in /v1/models order: each task name and Level
 // on the protocol its Connection speaks (the rule listedOn uses), then the
 // Connection any other name goes to on each protocol it can be served on.
-func routesOf(c config.Config, cat catalog.Catalog) []Route {
-	routes := []Route{}
+func routesOf(c config.Config, cat catalog.Catalog) []RoutingRow {
+	routes := []RoutingRow{}
 	for _, t := range cat.TaskNames {
 		for _, p := range config.Protocols {
 			if !speaks(c, t.Connection, p) {
@@ -48,7 +49,7 @@ func routesOf(c config.Config, cat catalog.Catalog) []Route {
 			if t.Level {
 				kind = "level"
 			}
-			routes = append(routes, Route{TaskName: t, Kind: kind, Protocol: p})
+			routes = append(routes, RoutingRow{TaskName: t, Kind: kind, Protocol: p})
 		}
 	}
 	for _, p := range config.Protocols {
@@ -57,7 +58,7 @@ func routesOf(c config.Config, cat catalog.Catalog) []Route {
 			id = cat.Defaults[p]
 		}
 		if id != "" && speaks(c, id, p) {
-			routes = append(routes, Route{TaskName: catalog.TaskName{Connection: id}, Kind: "default", Protocol: p})
+			routes = append(routes, RoutingRow{TaskName: catalog.TaskName{Connection: id}, Kind: "default", Protocol: p})
 		}
 	}
 	return routes
@@ -90,7 +91,7 @@ func (h *Handler) serveRoutingMap(w http.ResponseWriter, r *http.Request, fail f
 	reached := []string{}
 	for _, o := range origins {
 		for _, id := range catalog.For(c, o.ID, nil).Connections {
-			if !contains(reached, id) {
+			if !slices.Contains(reached, id) {
 				reached = append(reached, id)
 			}
 		}
@@ -106,13 +107,4 @@ func (h *Handler) serveRoutingMap(w http.ResponseWriter, r *http.Request, fail f
 		out = append(out, e)
 	}
 	writeJSON(w, 200, map[string]any{"applications": out})
-}
-
-func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }

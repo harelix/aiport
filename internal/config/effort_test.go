@@ -48,7 +48,7 @@ func TestDependentsNameThePerEffortModelsTheyAskTheConnectionFor(t *testing.T) {
 
 func TestAnAliasWithoutPerEffortModelsGainsNoEffortKey(t *testing.T) {
 	live, path := levelsLive(t, levelsYAML)
-	edit, err := SetLevel(live.Config(), "", "openai", "fast", "local", "llama3:8b")
+	edit, err := SetLevel(live.Config(), LevelEdit{Protocol: "openai", Level: "fast", Connection: "local", Model: "llama3:8b"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestSetLevelKeepsPerEffortModelsOnTheSameConnectionOnly(t *testing.T) {
 	yaml := strings.Replace(levelsYAML, "{target: hosted, alias: best, model: gpt-4o}", "{target: hosted, alias: best, model: gpt-4o, effort: {high: gpt-4.1}}", 1)
 	yaml = strings.Replace(yaml, "  - {id: claude,", "  - {id: hosted2, provider: acme4, protocol: openai, base_url: 'http://127.0.0.1:9/v1'}\n  - {id: claude,", 1)
 	live, _ := levelsLive(t, yaml)
-	edit, err := SetLevel(live.Config(), "", "openai", "best", "hosted", "gpt-4o-2")
+	edit, err := SetLevel(live.Config(), LevelEdit{Protocol: "openai", Level: "best", Connection: "hosted", Model: "gpt-4o-2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestSetLevelKeepsPerEffortModelsOnTheSameConnectionOnly(t *testing.T) {
 	}
 	// Its per-effort models name models of that Connection: another one
 	// starts without them.
-	edit, err = SetLevel(c, "", "openai", "best", "hosted2", "other")
+	edit, err = SetLevel(c, LevelEdit{Protocol: "openai", Level: "best", Connection: "hosted2", Model: "other"})
 	if err != nil {
 		t.Fatal(err)
 	}

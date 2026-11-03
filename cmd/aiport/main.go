@@ -102,6 +102,9 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	for _, id := range secrets.MissingKeys {
 		fmt.Fprintf(errOut, "aiport: connection %q has no API key yet; add it in the dashboard (Settings → Providers). Requests to it return 503 until then.\n", id)
 	}
+	for _, n := range config.LevelNotices(c) {
+		fmt.Fprintln(errOut, n)
+	}
 	if args[0] == "check" {
 		fmt.Fprintln(out, "Configuration and environment references are valid.")
 		return nil

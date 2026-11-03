@@ -86,7 +86,7 @@ func askLevels(targets []config.Target, scanner *bufio.Scanner, out io.Writer) (
 			}
 		}
 		if len(parts) > 0 {
-			fmt.Fprintf(out, "    %s protocol: %s\n", protocolName(protocol), strings.Join(parts, " · "))
+			fmt.Fprintf(out, "    %s protocol: %s\n", config.ProtocolName(protocol), strings.Join(parts, " · "))
 		}
 	}
 	fmt.Fprint(out, "  Map these Levels now? (y/n) [y]: ")
@@ -99,7 +99,7 @@ func askLevels(targets []config.Target, scanner *bufio.Scanner, out io.Writer) (
 	}
 	var aliases []config.Alias
 	for _, p := range proposal {
-		fmt.Fprintf(out, "  %s on %s (%s): model id, empty leaves it unmapped: ", p.level, p.connection, protocolName(p.protocol))
+		fmt.Fprintf(out, "  %s on %s (%s): model id, empty leaves it unmapped: ", p.level, p.connection, config.ProtocolName(p.protocol))
 		if !scanner.Scan() {
 			fmt.Fprintln(out)
 			break
@@ -144,7 +144,7 @@ func parseLevels(s string, targets []config.Target) ([]config.Alias, error) {
 		}
 		key := [2]string{level, protocolOf(t)}
 		if seen[key] {
-			return nil, fmt.Errorf("--levels: %s is mapped twice on the %s protocol", level, protocolName(key[1]))
+			return nil, fmt.Errorf("--levels: %s is mapped twice on the %s protocol", level, config.ProtocolName(key[1]))
 		}
 		seen[key] = true
 		aliases = append(aliases, config.Alias{Alias: level, Target: connection, Model: model})
@@ -154,11 +154,4 @@ func parseLevels(s string, targets []config.Target) ([]config.Alias, error) {
 
 func validModel(m string) bool {
 	return len(m) >= 1 && len(m) <= 256 && !strings.ContainsFunc(m, func(r rune) bool { return r < 0x20 || r == 0x7f })
-}
-
-func protocolName(protocol string) string {
-	if protocol == "anthropic" {
-		return "Anthropic"
-	}
-	return "OpenAI"
 }

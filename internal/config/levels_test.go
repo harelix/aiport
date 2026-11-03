@@ -92,7 +92,7 @@ func TestSetLevelReplacesAddsAndClearsOneMapping(t *testing.T) {
 	live, _ := levelsLive(t, levelsYAML)
 	apply := func(app, protocol, level, connection, model string) Config {
 		t.Helper()
-		edit, err := SetLevel(live.Config(), app, protocol, level, connection, model)
+		edit, err := SetLevel(live.Config(), LevelEdit{Application: app, Protocol: protocol, Level: level, Connection: connection, Model: model})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +121,7 @@ func TestSetLevelReplacesAddsAndClearsOneMapping(t *testing.T) {
 		t.Fatalf("docs-bot's aliases = %+v", c.Origins[0].Aliases)
 	}
 	// Clearing what is not mapped changes nothing.
-	edit, err := SetLevel(live.Config(), "", "anthropic", "balanced", "", "")
+	edit, err := SetLevel(live.Config(), LevelEdit{Protocol: "anthropic", Level: "balanced"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestSetLevelRefusesAMappingThatCannotServeIt(t *testing.T) {
 		"unknown Application":              {"nobody", "openai", "best", "hosted", "gpt-4o"},
 		"no model":                         {"", "openai", "best", "hosted", ""},
 	} {
-		if _, err := SetLevel(c, args[0], args[1], args[2], args[3], args[4]); err == nil {
+		if _, err := SetLevel(c, LevelEdit{Application: args[0], Protocol: args[1], Level: args[2], Connection: args[3], Model: args[4]}); err == nil {
 			t.Fatalf("%s: accepted", name)
 		}
 	}

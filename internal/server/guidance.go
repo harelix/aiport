@@ -79,11 +79,18 @@ func (h *Handler) guidanceReminder(application string) string {
 
 func (h *Handler) guidanceState(application string) capability.GuidanceState {
 	s := capability.GuidanceState{Current: connect.GuidanceVersion}
-	if c, ok := h.guidance.confirmed(application); ok {
-		v := c.Version
-		s.Confirmed = &v
-	}
+	s.Confirmed, _ = confirmedFields(h.guidance.confirmed(application))
 	return s
+}
+
+// confirmedFields are a confirmation's version and time as the JSON
+// answers carry them: null when the Application never confirmed.
+func confirmedFields(c store.Confirmation, ok bool) (version *int, at *int64) {
+	if !ok {
+		return nil, nil
+	}
+	v, t := c.Version, c.At
+	return &v, &t
 }
 
 // guidanceAnswer is what GuidancePath answers an Application.
@@ -100,10 +107,7 @@ type guidanceAnswer struct {
 func (h *Handler) guidanceAnswer(application string) guidanceAnswer {
 	a := guidanceAnswer{Current: connect.GuidanceVersion, Changes: []connect.GuidanceChange{}, Steps: []string{}}
 	c, ok := h.guidance.confirmed(application)
-	if ok {
-		v, at := c.Version, c.At
-		a.Confirmed, a.ConfirmedAt = &v, &at
-	}
+	a.Confirmed, a.ConfirmedAt = confirmedFields(c, ok)
 	if c.Version < connect.GuidanceVersion {
 		a.Behind = true
 		a.Changes = connect.GuidanceSince(c.Version)
@@ -163,21 +167,23 @@ func (h *Handler) guidanceRoute(w http.ResponseWriter, r *http.Request, fail fun
 		SendsLevels bool `json:"sends_levels"`
 	}
 	c := h.snapshot()
-	apps, behind := map[string]app{}, 0
+	// behind counts every Application whose coding agent has not
+	// confirmed the current version, never_confirmed those of them that
+	// never confirmed any (integrated before guidance versions, say).
+	apps, behind, never := map[string]app{}, 0, 0
 	for _, o := range c.Origins {
 		if o.ID == config.BuiltinApplication {
 			continue
 		}
 		var a app
-		if k, ok := h.guidance.confirmed(o.ID); ok {
-			v, at := k.Version, k.At
-			a.Confirmed, a.ConfirmedAt = &v, &at
-			a.Behind = v < connect.GuidanceVersion
-		} else {
-			a.Behind = true
-		}
+		k, ok := h.guidance.confirmed(o.ID)
+		a.Confirmed, a.ConfirmedAt = confirmedFields(k, ok)
+		a.Behind = !ok || k.Version < connect.GuidanceVersion
 		if a.Behind {
 			behind++
+		}
+		if !ok {
+			never++
 		}
 		apps[o.ID] = a
 	}
@@ -190,11 +196,12 @@ func (h *Handler) guidanceRoute(w http.ResponseWriter, r *http.Request, fail fun
 		}
 	}
 	writeJSON(w, 200, map[string]any{
-		"current":      connect.GuidanceVersion,
-		"behind":       behind,
-		"applications": apps,
-		"instruction":  connect.RefreshInstruction("http://" + c.Address()),
-		"versions":     connect.GuidanceSince(0),
+		"current":         connect.GuidanceVersion,
+		"behind":          behind,
+		"never_confirmed": never,
+		"applications":    apps,
+		"instruction":     connect.RefreshInstruction("http://" + c.Address()),
+		"versions":        connect.GuidanceSince(0),
 	})
 	return true
 }

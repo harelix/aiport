@@ -175,6 +175,9 @@ func TestOwnerSeesWhoIsBehind(t *testing.T) {
 	if out["behind"] != float64(2) { // nightly and writer have not confirmed
 		t.Fatalf("behind count: %v", out["behind"])
 	}
+	if out["never_confirmed"] != float64(2) { // neither ever confirmed any version
+		t.Fatalf("never confirmed count: %v", out["never_confirmed"])
+	}
 	// An Application token never reaches it.
 	if w, _ := call(h, "GET", "/api/v1/guidance", "", reqHelper, false); w.Code != 401 && w.Code != 403 {
 		t.Fatalf("Application token read the Owner's view: %d", w.Code)

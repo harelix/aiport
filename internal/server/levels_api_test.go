@@ -62,6 +62,37 @@ func levelEdit(f *levelsFixture, method, path, body string) (int, map[string]any
 	return w.Code, out
 }
 
+// Each edit's Change says what it did, in words, for whom.
+func TestLevelAndEffortChangesDescribeTheEdit(t *testing.T) {
+	f := levelsServer(t)
+	edits := []struct{ method, path, body, want string }{
+		{"PUT", "/api/v1/levels/openai/best", `{"connection":"local","model":"llama3:70b"}`, "map Level best on OpenAI to llama3:70b on local for every Application"},
+		{"PUT", "/api/v1/levels/anthropic/fast", `{"application":"docs-bot","connection":"claude","model":"claude-haiku","effort":{"high":"claude-sonnet"}}`, "map Level fast on Anthropic to claude-haiku on claude for docs-bot (high claude-sonnet)"},
+		{"PUT", "/api/v1/aliases/effort", `{"alias":"best","connection":"local","effort":{"low":"llama3:8b"}}`, "per-effort models of best on local for every Application: low llama3:8b"},
+		{"PUT", "/api/v1/aliases/effort", `{"application":"docs-bot","alias":"fast","connection":"claude","effort":{}}`, "per-effort models of fast on claude for docs-bot: none"},
+		{"DELETE", "/api/v1/levels/anthropic/fast", `{"application":"docs-bot"}`, "clear Level fast on Anthropic for docs-bot"},
+		{"DELETE", "/api/v1/levels/openai/best", ``, "clear Level best on OpenAI for every Application"},
+	}
+	for _, e := range edits {
+		code, out := levelEdit(f, e.method, e.path, e.body)
+		if code != 200 {
+			t.Fatalf("%s %s %s: %d %v", e.method, e.path, e.body, code, out)
+		}
+		var what string
+		for _, c := range f.h.live.Changes() {
+			if c.ID == out["change_id"] {
+				what = c.What
+			}
+		}
+		if what != e.want {
+			t.Fatalf("%s %s: Change %q, want %q", e.method, e.path, what, e.want)
+		}
+	}
+	if code, _ := levelEdit(f, "DELETE", "/api/v1/aliases/effort", ``); code != 405 {
+		t.Fatalf("DELETE on aliases/effort: %d", code)
+	}
+}
+
 func TestTheOwnerMapsASharedLevelAndRevertRestoresThePreviousMapping(t *testing.T) {
 	f := levelsServer(t)
 	code, out := levelEdit(f, "PUT", "/api/v1/levels/openai/best", `{"connection":"local","model":"llama3:70b"}`)

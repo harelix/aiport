@@ -102,7 +102,7 @@ func levelChange(c config.Config, it Item, p Proposal, scope Scope) (config.Edit
 	}
 	edits := make([]config.Edit, len(apps))
 	for i, app := range apps {
-		e, err := config.SetLevel(c, app, t.Protocol, p.Alias, p.Target, p.Model)
+		e, err := config.SetLevel(c, config.LevelEdit{Application: app, Protocol: t.Protocol, Level: p.Alias, Connection: p.Target, Model: p.Model})
 		if err != nil {
 			return nil, "", Invalid{err.Error()}
 		}

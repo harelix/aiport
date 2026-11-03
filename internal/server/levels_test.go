@@ -221,7 +221,7 @@ func TestALevelOnAProtocolWithNothingIsUnmappedNotUnconfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, l := range []string{"best", "fast"} {
-		e, err := config.SetLevel(f.h.live.Config(), "", "openai", l, "", "")
+		e, err := config.SetLevel(f.h.live.Config(), config.LevelEdit{Protocol: "openai", Level: l})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -256,7 +256,7 @@ func TestMappedLevelsAreListedInModelsOnTheirProtocol(t *testing.T) {
 
 func TestMappingALevelIsARevertableChangeAndACatalogChange(t *testing.T) {
 	f := levelsServer(t)
-	edit, err := config.SetLevel(f.h.snapshot(), "", "anthropic", "best", "claude", "claude-opus")
+	edit, err := config.SetLevel(f.h.snapshot(), config.LevelEdit{Protocol: "anthropic", Level: "best", Connection: "claude", Model: "claude-opus"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,13 +295,13 @@ func TestMappingALevelIsARevertableChangeAndACatalogChange(t *testing.T) {
 
 func TestALevelMappingMustSpeakItsProtocol(t *testing.T) {
 	f := levelsServer(t)
-	if _, err := config.SetLevel(f.h.snapshot(), "", "anthropic", "best", "hosted", "gpt-4o"); err == nil {
+	if _, err := config.SetLevel(f.h.snapshot(), config.LevelEdit{Protocol: "anthropic", Level: "best", Connection: "hosted", Model: "gpt-4o"}); err == nil {
 		t.Fatal("mapped the Anthropic best to an OpenAI Connection")
 	}
-	if _, err := config.SetLevel(f.h.snapshot(), "", "openai", "best", "nowhere", "gpt-4o"); err == nil {
+	if _, err := config.SetLevel(f.h.snapshot(), config.LevelEdit{Protocol: "openai", Level: "best", Connection: "nowhere", Model: "gpt-4o"}); err == nil {
 		t.Fatal("mapped best to a missing Connection")
 	}
-	if _, err := config.SetLevel(f.h.snapshot(), "", "openai", "strongest", "hosted", "gpt-4o"); err == nil {
+	if _, err := config.SetLevel(f.h.snapshot(), config.LevelEdit{Protocol: "openai", Level: "strongest", Connection: "hosted", Model: "gpt-4o"}); err == nil {
 		t.Fatal("mapped a name that is not a Level")
 	}
 }

@@ -292,7 +292,7 @@ function RemoveDialog({t, targets, onClose, onRemoved}: {t: Target; targets: Tar
       {data && (data.dependents.length === 0
         ? <p>Nothing uses {t.id}. Removing it changes no routing.</p>
         : <>
-          <p>These use {t.id}. Choose where each goes instead, or none. Each starts with the best match: a Connection that serves the same model, else the protocol default.</p>
+          <p>These use {t.id}. Choose where each goes instead, or none. Each starts with the best match: a Connection that serves the same model, else the protocol default. An Alias or Level moved to another Connection keeps its model but loses its per-effort models, which name models of {t.id}; set them again on its new Connection.</p>
           <ul className="removal-list">{data.dependents.map(d => <li key={d.id}>
             <label htmlFor={'dep-' + d.id}>{dependentLabel(d)}</label>
             <select id={'dep-' + d.id} value={plan[d.id] ?? ''} disabled={busy} onChange={e => void choose(d.id, e.target.value)}>

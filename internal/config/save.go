@@ -369,8 +369,9 @@ func repointOriginAlias(app, from, name, to string) Edit {
 }
 
 // repointIn sets the target of the first item of list (parent[key]) that
-// match accepts, or removes that item when to is "" (and the key with it
-// when the list ends up empty).
+// match accepts, dropping its per-effort models (they name models of the
+// Connection it leaves, as SetLevel does), or removes that item when to is
+// "" (and the key with it when the list ends up empty).
 func repointIn(list, parent *yaml.Node, key string, match func(*yaml.Node) bool, to string) error {
 	if list == nil || list.Kind != yaml.SequenceNode {
 		return errors.New("alias not found in configuration")
@@ -380,6 +381,14 @@ func repointIn(list, parent *yaml.Node, key string, match func(*yaml.Node) bool,
 			continue
 		}
 		if to != "" {
+			if scalarValue(item, "target") != to {
+				for j := 0; j+1 < len(item.Content); j += 2 {
+					if item.Content[j].Value == "effort" {
+						item.Content = append(item.Content[:j], item.Content[j+2:]...)
+						break
+					}
+				}
+			}
 			setScalar(item, "target", to)
 			return nil
 		}
