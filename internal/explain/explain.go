@@ -251,14 +251,18 @@ func read(resp *http.Response, emit func(string)) (string, error) {
 		if s == "" {
 			return true
 		}
+		cut := false
 		if room := decide.MaxExplanation - all.Len(); len(s) > room {
-			s = strings.ToValidUTF8(s[:max(room, 0)], "")
+			// Cut at the limit, never inside a character. Once a piece is cut,
+			// the explanation is full: a later piece must not fill the bytes
+			// the cut character left.
+			s, cut = strings.ToValidUTF8(s[:max(room, 0)], ""), true
 		}
 		if s != "" {
 			all.WriteString(s)
 			emit(s)
 		}
-		return all.Len() < decide.MaxExplanation
+		return !cut && all.Len() < decide.MaxExplanation
 	}
 	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 		data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

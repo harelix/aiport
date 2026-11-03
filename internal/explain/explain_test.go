@@ -427,9 +427,6 @@ func TestExplanationCutKeepsValidUTF8(t *testing.T) {
 	if !utf8.ValidString(got.Text) || len(got.Text) > decide.MaxExplanation {
 		t.Fatalf("text is %d bytes, valid UTF-8 %v", len(got.Text), utf8.ValidString(got.Text))
 	}
-	if got.Text == long+"t" {
-		t.Skip("BUG: when the cut leaves nothing of a piece (it would split a multi-byte rune), read does not stop and keeps adding later pieces, so the explanation ends \"...a\" + \"t\" (from the next piece \"tail\") with \"éé\" skipped")
-	}
 	if got.Text != long {
 		t.Errorf("text ends %q", got.Text[len(got.Text)-5:])
 	}
