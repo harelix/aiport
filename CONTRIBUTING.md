@@ -11,6 +11,9 @@ anything that changes the product scope.
   macOS, Linux and Windows with SHA-256 checksums into `dist-release/`.
 - Dashboard changes also need Node.js and pnpm: `pnpm --dir web install`, then
   `make web-build`, and commit the rebuilt `internal/dashboard/dist`.
+- CI (`.github/workflows/ci.yml`) runs gofmt, `go vet`, `go test` and the offline
+  build, and rebuilds the dashboard from `web/pnpm-lock.yaml`: a commit whose
+  `internal/dashboard/dist` differs from that build fails.
 - Go dependencies are vendored. Adding one requires a reason in the PR, `go mod vendor`,
   and an entry in `THIRD_PARTY.md` with its license (compatible with Apache-2.0).
 

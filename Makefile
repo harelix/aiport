@@ -25,6 +25,7 @@ test:
 	go test ./...
 
 check:
+	@unformatted=$$(gofmt -l cmd internal); if [ -n "$$unformatted" ]; then echo "gofmt -w needed:"; echo "$$unformatted"; exit 1; fi
 	go vet ./...
 
 # Proves a fresh clone builds with no network: vendored Go deps + committed UI.

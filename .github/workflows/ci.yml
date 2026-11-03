@@ -1,0 +1,55 @@
+# Builds and tests every push and pull request: the Go gateway (formatting, vet,
+# tests, an offline build from vendor/) and the dashboard (a clean install from
+# the lockfile must rebuild the committed internal/dashboard/dist exactly).
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=vendor
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l cmd internal)
+          if [ -n "$unformatted" ]; then echo "Run gofmt -w on:"; echo "$unformatted"; exit 1; fi
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test ./...
+      - name: offline build
+        run: make check-offline
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        run: pnpm --dir web install --frozen-lockfile
+      - name: build
+        run: pnpm --dir web run build
+      - name: committed dashboard is up to date
+        run: |
+          if ! git diff --quiet -- internal/dashboard/dist || [ -n "$(git status --porcelain -- internal/dashboard/dist)" ]; then
+            echo "internal/dashboard/dist differs from a fresh build: run make web-build and commit it."
+            git status --short -- internal/dashboard/dist
+            exit 1
+          fi
