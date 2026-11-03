@@ -85,7 +85,7 @@ type Auth struct {
 
 // Describe builds the protocol document for the given configuration.
 func Describe(c config.Config) Document {
-	base := "http://" + c.Address()
+	base := "http://" + c.AppAddress() // what Applications and agents are given; hostnames are for the browser
 	on := !c.Adapting.Disabled
 	has := func(id string) bool {
 		for _, t := range c.Targets {

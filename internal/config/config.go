@@ -268,6 +268,22 @@ func (c Config) Address() string {
 	return net.JoinHostPort(c.Hostnames[0], port)
 }
 
+// AppAddress is the address Applications and coding agents are given: the
+// numeric listen address, 127.0.0.1 for a wildcard one. Unlike a hostname such
+// as aiport.localhost it needs no name lookup, does not resolve to ::1 first
+// (aiport listens on IPv4), and is exempt from sandbox proxies, which pass
+// loopback addresses straight through. Hostnames stay for the Owner's browser.
+func (c Config) AppAddress() string {
+	host, port, err := net.SplitHostPort(c.Listen)
+	if err != nil {
+		return c.Listen
+	}
+	if ip := net.ParseIP(host); host == "" || ip != nil && ip.IsUnspecified() {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
+}
+
 // Authorities are the Host values aiport answers to: the listen address and
 // each hostname on the listen port.
 func (c Config) Authorities() []string {

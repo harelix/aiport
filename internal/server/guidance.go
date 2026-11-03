@@ -111,7 +111,7 @@ func (h *Handler) guidanceAnswer(application string) guidanceAnswer {
 	if c.Version < connect.GuidanceVersion {
 		a.Behind = true
 		a.Changes = connect.GuidanceSince(c.Version)
-		a.Steps = connect.GuidanceSteps("http://" + h.snapshot().Address())
+		a.Steps = connect.GuidanceSteps("http://" + h.snapshot().AppAddress())
 	}
 	a.AgentsLine = connect.AgentsLine
 	return a
@@ -132,7 +132,7 @@ func (h *Handler) serveGuidance(w http.ResponseWriter, r *http.Request, applicat
 		return
 	}
 	if !h.isApplication(application) {
-		fail(403, "application_token_required", "Guidance is confirmed per Application: send that Application's own token")
+		fail(403, "application_token_required", "Guidance is confirmed per Application: no Application token was recognized. Start the agent with AIPORT_APP_TOKEN set to this Application's token")
 		return
 	}
 	if done {
@@ -200,7 +200,7 @@ func (h *Handler) guidanceRoute(w http.ResponseWriter, r *http.Request, fail fun
 		"behind":          behind,
 		"never_confirmed": never,
 		"applications":    apps,
-		"instruction":     connect.RefreshInstruction("http://" + c.Address()),
+		"instruction":     connect.RefreshInstruction("http://" + c.AppAddress()),
 		"versions":        connect.GuidanceSince(0),
 	})
 	return true

@@ -111,16 +111,21 @@ export const issueToken = (id: string): Promise<{client_id: string; token: strin
 /** Remove an Application and delete its token. */
 export const removeApplication = (id: string) => post('origins/' + encodeURIComponent(id), undefined, 'DELETE');
 
-/** Applications that have no token (one brought back by reverting its removal), from GET /api/v1/config. */
+/** Applications that have no token (one brought back by reverting its removal), and the address
+    Applications are given (app_url, the numeric listen address), from GET /api/v1/config. */
 export function useMissingTokens(tick: number): string[] {
   const [list, setList] = useState<string[]>([]);
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/v1/config', {credentials: 'same-origin', signal: controller.signal}).then(r => r.ok ? r.json() : {}).then((d: {missing_tokens?: string[]}) => setList(d.missing_tokens || [])).catch(() => {});
+    fetch('/api/v1/config', {credentials: 'same-origin', signal: controller.signal}).then(r => r.ok ? r.json() : {}).then((d: {missing_tokens?: string[]; app_url?: string}) => { setList(d.missing_tokens || []); if (d.app_url) appURL = d.app_url; }).catch(() => {});
     return () => controller.abort();
   }, [tick]);
   return list;
 }
+
+/** The address Applications are given (http://127.0.0.1:8787): no name lookup, no sandbox proxy. Falls back to this page's origin. */
+let appURL = '';
+const applicationURL = () => appURL || location.origin;
 
 /** The .aiport lines for a just-issued token, shown once with a Copy button. */
 /** Copies text: the Clipboard API, or a hidden textarea where it is unavailable. */
@@ -147,7 +152,7 @@ function CopyAction({text, label, primary}: {text: string; label: string; primar
 /** A just-issued token, shown once: the token and the .aiport lines, each with Copy. */
 export function TokenReveal({name, issued, replaced, repository, onClose}: {name: string; issued: IssuedToken; replaced: boolean; repository?: string; onClose: () => void}) {
   const file = repository ? repository.replace(/\/+$/, '') + '/.aiport' : '.aiport';
-  const env = 'AIPORT_BASE_URL=' + location.origin + '\nAIPORT_APP_TOKEN=' + issued.token + '\n';
+  const env = 'AIPORT_BASE_URL=' + applicationURL() + '\nAIPORT_APP_TOKEN=' + issued.token + '\n';
   return <section className="token-card" role="region" aria-label={'New token for ' + name}>
     <header className="token-card-head">
       <span className="token-card-icon" aria-hidden><KeyRound size={16}/></span>

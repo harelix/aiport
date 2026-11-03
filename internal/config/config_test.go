@@ -115,3 +115,17 @@ func TestExampleConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Applications are given the numeric listen address, never a hostname, and a
+// wildcard listen address becomes loopback.
+func TestAppAddress(t *testing.T) {
+	for listen, want := range map[string]string{"127.0.0.1:8787": "127.0.0.1:8787", "0.0.0.0:9000": "127.0.0.1:9000", "[::]:8787": "127.0.0.1:8787", ":8787": "127.0.0.1:8787"} {
+		c := Config{Listen: listen, Hostnames: []string{"aiport.localhost"}}
+		if got := c.AppAddress(); got != want {
+			t.Errorf("listen %s: app address %s, want %s", listen, got, want)
+		}
+	}
+	if got := (Config{Listen: "127.0.0.1:8787", Hostnames: []string{"aiport.localhost"}}).Address(); got != "aiport.localhost:8787" {
+		t.Errorf("the Owner's address changed: %s", got)
+	}
+}

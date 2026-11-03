@@ -107,12 +107,14 @@ func TestHostnamesAreValidated(t *testing.T) {
 	}
 }
 
-// With hostnames set, /_connect hands out the first one instead of the IP,
-// in JSON, markdown and the handover briefs.
-func TestConnectAdvertisesHostname(t *testing.T) {
+// With hostnames set, /_connect still hands Applications and agents the
+// numeric address (no name lookup, not sent through a sandbox proxy), in JSON,
+// markdown and the handover briefs; the hostname is for the Owner's browser.
+func TestConnectHandsApplicationsTheIP(t *testing.T) {
 	h := hostnameGateway(t, "version: 1\nauth: {disabled: true, token_env: HOSTNAME_MGMT_TOKEN}\nhostnames: [aiport.localhost, gw.localhost]\n")
 	get := func(path string) string {
-		r := httptest.NewRequest("GET", "http://127.0.0.1:8787"+path, nil)
+		r := httptest.NewRequest("GET", "http://aiport.localhost:8787"+path, nil)
+		r.Host = "aiport.localhost:8787"
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		if w.Code != 200 {
@@ -124,16 +126,12 @@ func TestConnectAdvertisesHostname(t *testing.T) {
 	if err := json.Unmarshal([]byte(get("/_connect")), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.BaseURL != "http://aiport.localhost:8787/v1" || doc.Docs != "http://aiport.localhost:8787/_connect?format=markdown" || !strings.Contains(doc.AgentPrompt, "http://aiport.localhost:8787/_connect") {
+	if doc.BaseURL != "http://127.0.0.1:8787/v1" || doc.Docs != "http://127.0.0.1:8787/_connect?format=markdown" || !strings.Contains(doc.AgentPrompt, "http://127.0.0.1:8787/_connect") {
 		t.Fatalf("document addresses: %q %q %q", doc.BaseURL, doc.Docs, doc.AgentPrompt)
 	}
 	for _, path := range []string{"/_connect", "/_connect?format=markdown", "/_connect?format=handover"} {
-		body := get(path)
-		if strings.Contains(body, "127.0.0.1") {
-			t.Errorf("%s still hands out the IP", path)
-		}
-		if !strings.Contains(body, "aiport.localhost:8787") {
-			t.Errorf("%s does not hand out the hostname", path)
+		if body := get(path); strings.Contains(body, "aiport.localhost:8787") {
+			t.Errorf("%s hands Applications the hostname", path)
 		}
 	}
 }
@@ -151,9 +149,6 @@ func TestHostnameChangesLive(t *testing.T) {
 	}
 	if hostStatus(h, "aiport.localhost:8787", "http://aiport.localhost:8787", "/_connect") != 200 {
 		t.Fatal("new hostname not live")
-	}
-	if !strings.Contains(hostBody(h, "/_connect"), "http://aiport.localhost:8787/v1") {
-		t.Fatal("new hostname not advertised")
 	}
 	if _, _, err := h.live.Revert(ch.ID); err != nil {
 		t.Fatal(err)

@@ -67,21 +67,18 @@ hostnames: [aiport.localhost]
 ```
 
 Browsers resolve any `*.localhost` name to this machine on their own, so the
-dashboard works at the name at once. SDKs, scripts and command-line tools
-use the system resolver, which may not: add this line to `/etc/hosts` (it
-needs `sudo`, so you do it yourself):
+dashboard works at the name at once, and each page has its address there
+(`http://aiport.localhost:8787/integrate`).
 
-```text
-127.0.0.1  aiport.localhost
-```
-
-aiport still listens on `127.0.0.1` and still refuses every name it was not
-given. Applications paired earlier keep working on the IP. Instructions
-handed out from now on (the agent instruction, both briefs, `/_connect`, the
-base URLs on Routing) use the name, so add the `/etc/hosts` line before
-handing them to a coding agent. Names must be lowercase and end in
-`.localhost`; the first one listed is the one aiport hands out.
-Coding agents started with `aiport agent` keep using the IP.
+The name is for your browser. Applications and coding agents are always
+given the numeric address (`http://127.0.0.1:8787`): the agent instruction,
+both briefs, `/_connect`, the `.aiport` lines on a token card and the MCP
+entry all use it, even when hostnames are set. A name needs a lookup the
+system resolver may not do, resolves to `::1` first (aiport listens on IPv4),
+and a coding agent's sandbox sends it through its network proxy, which
+refuses it; `127.0.0.1` has none of these problems. aiport still listens on
+`127.0.0.1` and still refuses every name it was not given. Names must be
+lowercase and end in `.localhost`.
 
 Other commands: `aiport agent codex|claude --model MODEL` launches a coding
 agent through aiport with its own token, `aiport task` manages the task
