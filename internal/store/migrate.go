@@ -238,6 +238,23 @@ var migrations = []string{
 	ALTER TABLE requests ADD COLUMN effort_source TEXT NOT NULL DEFAULT '';
 	ALTER TABLE requests ADD COLUMN resolved_model TEXT NOT NULL DEFAULT '';
 	CREATE INDEX requests_model ON requests(requested_model, started_at_ms);`,
+	// 11: pairing requests, so a restart drops neither a waiting request nor
+	// an approved one whose token was not collected yet. The SHA-256 hashes
+	// of the poll secrets only (space-separated), never a secret or a token:
+	// an approved request's token is read from the credential file when it
+	// is collected. Additive.
+	`CREATE TABLE pairings (
+		code            TEXT PRIMARY KEY,
+		name            TEXT NOT NULL,
+		description     TEXT NOT NULL DEFAULT '',
+		repository      TEXT NOT NULL DEFAULT '',
+		requested_at_ms INTEGER NOT NULL,
+		expires_at_ms   INTEGER NOT NULL,
+		status          TEXT NOT NULL,
+		origin_id       TEXT NOT NULL DEFAULT '',
+		secret_hashes   TEXT NOT NULL,
+		done_at_ms      INTEGER NOT NULL DEFAULT 0
+	);`,
 }
 
 // preRelease maps the schema version of a database written by a pre-release

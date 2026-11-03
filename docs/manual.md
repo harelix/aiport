@@ -291,17 +291,20 @@ An Application gets its token by **pairing**:
    configuration without a restart; the token is stored in the private
    credential file.
 
-**One request per application.** A pairing request from an application
-that already has one waiting (the same repository, or the same name, ignoring
-case and punctuation) replaces the waiting one: the older request polls as
-`superseded` and only the newest code is listed. A request that matches an
-Application you already have is marked **Already connected as …**; its main
-button, **Give … a new token**, approves it as that Application (it receives
-a new token and its old one stops working) instead of adding a duplicate
-such as `docs-bot-2`. **Add as separate** still adds a new Application. Over
-the API, approve with `{"replace": "<id>"}`.
+**One request per application.** An application that asks again while its
+request waits (the same repository, or the same name, ignoring case and
+punctuation) gets that same request back, with the same code, so the code
+you see stays valid; its earlier and newer poll paths both work. A request
+that matches an Application you already have is marked **Already connected
+as …**; its main button, **Give … a new token**, approves it as that
+Application (it receives a new token and its old one stops working) instead
+of adding a duplicate such as `docs-bot-2`. **Add as separate** still adds a
+new Application. Over the API, approve with `{"replace": "<id>"}`.
 
-Unapproved requests expire after 10 minutes. The Applications table on
+Requests wait 30 minutes for you, and survive an aiport restart: a waiting
+request can still be approved by its code, and an approved application can
+still collect its token (for 24 hours) after a restart. A poll on a request
+that ran out answers `expired`, so the application knows to ask again. The Applications table on
 Routing lists every Application with its client id, Connection, own Aliases,
 and the **May request changes** toggle.
 
@@ -483,8 +486,8 @@ itself from live state:
 2. **Approve the pairing.** The agent asks aiport to pair; the request shows
    up at the top of Applications within seconds with a short code. Check it
    matches the code the agent shows you, then **Approve** (optionally
-   binding a Connection and allowing change requests). Requests expire after
-   10 minutes. Once approved, the wizard follows that application.
+   binding a Connection and allowing change requests). Requests wait 30
+   minutes. Once approved, the wizard follows that application.
 3. **First call arrives.** The agent makes one real call; the step ticks
    when Activity has a call from the application (in the last 7 days).
 4. **Allow change requests** (optional), with the toggle in place. You still

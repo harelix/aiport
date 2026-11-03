@@ -2,13 +2,16 @@ package server
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"log"
 	"math/big"
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -23,7 +26,14 @@ import (
 // application identifies itself, shows the owner a short code, and waits;
 // the owner approves the code in the dashboard, which adds the application
 // as a client (live, no restart); the application then collects its token,
-// exactly once. Requests that nobody approves expire.
+// exactly once. Requests that nobody approves expire after 30 minutes.
+//
+// Resilience: requests are kept in the database, so a restart drops neither
+// a waiting request nor an approved one not yet collected (its token is read
+// from the credential file when collected; only hashes of poll secrets are
+// stored). An application that asks again while its request waits, or was
+// approved and not collected, gets the same request (same code) with a new
+// poll path; both poll paths work. A poll on an expired request says so.
 //
 //	POST /v1/aiport/pair            {name, description?, repository?}  public on loopback
 //	GET  /v1/aiport/pair/{secret}   status; the token once approved
@@ -32,21 +42,22 @@ import (
 //	DELETE /api/v1/pairings/rejected/{id}  forget one              management
 //	POST /api/v1/pairings/{code}/approve  {id?, target?, may_request_changes?, agent?, repository?, replace?}  management
 //
-// Dedup: a new request replaces a waiting one from the same application
-// (same repository or name; the old one polls as "superseded"), and the
-// Owner's list names the configured Application a request matches
-// ("existing"), which approve with replace gives a new token instead of
-// adding a duplicate.
+// Dedup: a request from an application that already has one open (same
+// repository or name) returns that request, and the Owner's list names the
+// configured Application a request matches ("existing"), which approve with
+// replace gives a new token instead of adding a duplicate.
 //
 //	POST /api/v1/pairings/{code}/reject                          management
 const (
-	PairPath       = "/v1/aiport/pair"
-	pairTTL        = 10 * time.Minute
-	pairPending    = 20 // at most this many waiting requests
-	pairPerMinute  = 30 // new requests per minute, all applications together
-	pairPollEvery  = 3  // seconds a client should wait between polls
-	pairDoneRetain = 10 * time.Minute
-	pairRejectKeep = 100 // rejected applications remembered
+	PairPath        = "/v1/aiport/pair"
+	pairTTL         = 30 * time.Minute
+	pairPending     = 20             // at most this many waiting requests
+	pairPerMinute   = 30             // new requests per minute, all applications together
+	pairPollEvery   = 3              // seconds a client should wait between polls
+	pairDoneRetain  = time.Hour      // rejected or expired requests answer polls this long
+	pairCollectFor  = 24 * time.Hour // an approved token can be collected this long
+	pairSecretsKeep = 10             // poll paths kept per request when an application asks again
+	pairRejectKeep  = 100            // rejected applications remembered
 )
 
 // rejectedPairing is a rejected Application as the Owner lists it: what it
@@ -66,7 +77,7 @@ type pairing struct {
 	Description string `json:"description,omitempty"`
 	RequestedAt int64  `json:"requested_at_ms"`
 	ExpiresAt   int64  `json:"expires_at_ms"`
-	Status      string `json:"status"` // pending, approved, rejected
+	Status      string `json:"status"` // pending, approved, rejected, expired
 	// Repository is the repository path the Application reported, shown to
 	// the Owner; unconfirmed, so never stored or used unless the Owner sends
 	// it back when approving.
@@ -79,9 +90,70 @@ type pairing struct {
 	// with the same repository or name. Set on the Owner's list, where the
 	// Owner can give it a new token instead of adding a duplicate.
 	Existing *existingApplication `json:"existing,omitempty"`
-	secret   string
-	token    string // held between approval and collection only
+	secrets  []string             // SHA-256 hashes of the poll secrets that may read it
 	doneAt   int64
+}
+
+// hashSecret is how poll secrets are kept and compared.
+func hashSecret(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
+}
+
+func (x *pairing) record() store.Pairing {
+	return store.Pairing{Code: x.Code, Name: x.Name, Description: x.Description, Repository: x.Repository, RequestedAt: x.RequestedAt, ExpiresAt: x.ExpiresAt, Status: x.Status, OriginID: x.OriginID, SecretHashes: x.secrets, DoneAt: x.doneAt}
+}
+
+// savePairing keeps x across restarts. Called with h.pair.mu held.
+func (h *Handler) savePairing(x *pairing) {
+	if h.changesDB == nil {
+		return
+	}
+	if err := (store.Pairings{DB: h.changesDB}).Save(x.record()); err != nil {
+		log.Printf("aiport: %v; pairing request %s is kept for this session only", err, x.Code)
+	}
+}
+
+// dropPairing forgets a request. Called with h.pair.mu held.
+func (h *Handler) dropPairing(code string) {
+	delete(h.pair.byCode, code)
+	if h.changesDB != nil {
+		_ = (store.Pairings{DB: h.changesDB}).Delete(code)
+	}
+}
+
+// pairingsReady loads the kept requests once, then marks waiting ones past
+// their time as expired and forgets finished ones past their retention.
+// Called with h.pair.mu held.
+func (h *Handler) pairingsReady(now int64) {
+	h.pair.init()
+	if !h.pair.loaded {
+		h.pair.loaded = true
+		if h.changesDB != nil {
+			if kept, err := (store.Pairings{DB: h.changesDB}).List(); err == nil {
+				for _, p := range kept {
+					h.pair.byCode[p.Code] = &pairing{Code: p.Code, Name: p.Name, Description: p.Description, Repository: p.Repository, RequestedAt: p.RequestedAt, ExpiresAt: p.ExpiresAt, Status: p.Status, OriginID: p.OriginID, secrets: p.SecretHashes, doneAt: p.DoneAt}
+				}
+			}
+		}
+	}
+	for code, x := range h.pair.byCode {
+		switch {
+		case x.Status == "pending" && now > x.ExpiresAt:
+			x.Status, x.doneAt = "expired", now
+			h.savePairing(x)
+		case x.Status == "approved" && now-x.doneAt > pairCollectFor.Milliseconds(),
+			x.Status != "pending" && x.Status != "approved" && now-x.doneAt > pairDoneRetain.Milliseconds():
+			h.dropPairing(code)
+		}
+	}
+	kept := h.pair.recent[:0]
+	for _, t := range h.pair.recent {
+		if now-t < time.Minute.Milliseconds() {
+			kept = append(kept, t)
+		}
+	}
+	h.pair.recent = kept
 }
 
 // existingApplication is a configured Application a pairing request matches,
@@ -141,6 +213,7 @@ func matchApplication(c config.Config, x *pairing) *existingApplication {
 
 type pairings struct {
 	mu     sync.Mutex
+	loaded bool // the kept requests were read from the database
 	byCode map[string]*pairing
 	recent []int64 // request times, for the rate limit
 	// rejected is where rejections are kept without a database (this
@@ -201,22 +274,6 @@ func (p *pairings) init() {
 	if p.byCode == nil {
 		p.byCode = map[string]*pairing{}
 	}
-}
-
-// expire drops requests past their time and finished ones nobody collected.
-func (p *pairings) expire(now int64) {
-	for code, x := range p.byCode {
-		if x.Status == "pending" && now > x.ExpiresAt || x.Status != "pending" && now-x.doneAt > pairDoneRetain.Milliseconds() {
-			delete(p.byCode, code)
-		}
-	}
-	kept := p.recent[:0]
-	for _, t := range p.recent {
-		if now-t < time.Minute.Milliseconds() {
-			kept = append(kept, t)
-		}
-	}
-	p.recent = kept
 }
 
 func randomString(n int) string {
@@ -314,36 +371,47 @@ func (h *Handler) servePair(w http.ResponseWriter, r *http.Request, fail func(in
 	now := h.clock().UnixMilli()
 	h.pair.mu.Lock()
 	defer h.pair.mu.Unlock()
-	h.pair.init()
-	h.pair.expire(now)
+	h.pairingsReady(now)
 	if secret, ok := strings.CutPrefix(r.URL.Path, PairPath+"/"); ok {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", "GET")
 			fail(405, "method_not_allowed", "Use GET")
 			return
 		}
+		hash := hashSecret(secret)
 		for code, x := range h.pair.byCode {
-			if x.secret != secret {
+			if !slices.Contains(x.secrets, hash) {
 				continue
 			}
 			out := map[string]any{"status": x.Status, "code": x.Code, "expires_at_ms": x.ExpiresAt, "poll_interval_s": pairPollEvery}
-			if x.Status == "approved" {
+			switch x.Status {
+			case "approved":
 				out["client_id"] = x.OriginID
-				out["token"] = x.token
-				out["note"] = "Store this token in the application's private configuration as AIPORT_APP_TOKEN. It is shown only once."
-				delete(h.pair.byCode, code)
-			}
-			if x.Status == "rejected" {
-				delete(h.pair.byCode, code)
-			}
-			if x.Status == "superseded" {
-				out["message"] = "A newer pairing request from this application replaced this one. Poll the newer request, or request pairing again."
-				delete(h.pair.byCode, code)
+				c := h.snapshot()
+				if app, ok := c.Application(x.OriginID); ok {
+					if token := h.keys.Lookup(c)(app.TokenEnv); token != "" {
+						out["token"] = token
+						out["note"] = "Store this token in the application's private configuration as AIPORT_APP_TOKEN. It is shown only once."
+						h.dropPairing(code)
+						break
+					}
+				}
+				if out["token"] == nil {
+					out["status"] = "approved_without_token"
+					out["message"] = "The owner approved this request, but its Application no longer has a token (it was removed or its token deleted). Ask the owner to issue one on the Integrate page, or request pairing again."
+					h.dropPairing(code)
+				}
+			case "rejected":
+				out["message"] = "The owner rejected this request."
+				h.dropPairing(code)
+			case "expired":
+				out["message"] = "This request expired before the owner approved it (requests wait 30 minutes). Request pairing again and show the owner the new code."
+				h.dropPairing(code)
 			}
 			writeJSON(w, 200, out)
 			return
 		}
-		fail(404, "pairing_not_found", "No such pairing request; it may have expired or been collected. Request pairing again.")
+		fail(404, "pairing_not_found", "No pairing request answers this poll path: its token was already collected, or it ended more than an hour ago. Request pairing again.")
 		return
 	}
 	if r.URL.Path != PairPath {
@@ -380,32 +448,46 @@ func (h *Handler) servePair(w http.ResponseWriter, r *http.Request, fail func(in
 		fail(429, "pairing_busy", "Too many pairing requests are waiting; try again in a minute")
 		return
 	}
+	asked := &pairing{Name: in.Name, Repository: in.Repository}
+	secret := randomString(32)
+	// Dedup and resilience: the same application asking again while its
+	// request waits (or was approved and not collected) gets that request,
+	// same code, with a new poll path; its earlier poll path keeps working.
+	for _, open := range h.pair.byCode {
+		if (open.Status == "pending" || open.Status == "approved") && sameRequest(open, asked) {
+			open.secrets = append(open.secrets, hashSecret(secret))
+			if n := len(open.secrets) - pairSecretsKeep; n > 0 {
+				open.secrets = open.secrets[n:] // the newest poll paths keep working
+			}
+			h.savePairing(open)
+			h.pair.recent = append(h.pair.recent, now)
+			msg := "This application already has a pairing request with this code, still waiting for the owner. Show the owner this code, then keep polling. Do not request again: you would get this same code."
+			if open.Status == "approved" {
+				msg = "The owner already approved this application's request. Poll now to collect the token."
+			}
+			writeJSON(w, 202, map[string]any{"code": open.Code, "poll": PairPath + "/" + secret, "poll_interval_s": pairPollEvery, "expires_at_ms": open.ExpiresAt, "status": open.Status, "message": msg})
+			return
+		}
+	}
 	code := pairCode()
 	for h.pair.byCode[code] != nil {
 		code = pairCode()
 	}
-	x := &pairing{Code: code, Name: in.Name, Description: in.Description, Repository: in.Repository, RequestedAt: now, ExpiresAt: now + pairTTL.Milliseconds(), Status: "pending", secret: randomString(32)}
+	x := &pairing{Code: code, Name: in.Name, Description: in.Description, Repository: in.Repository, RequestedAt: now, ExpiresAt: now + pairTTL.Milliseconds(), Status: "pending", secrets: []string{hashSecret(secret)}}
 	if in.Repository != "" {
 		if _, err := agents.Repository(in.Repository); err != nil {
 			x.RepositoryProblem = err.Error()
 		}
 	}
-	// Dedup: an earlier request from the same application (same repository
-	// or name) that still waits is replaced by this one, so the Owner sees
-	// one request per application.
-	for _, old := range h.pair.byCode {
-		if old.Status == "pending" && sameRequest(old, x) {
-			old.Status, old.doneAt = "superseded", now
-		}
-	}
 	h.pair.byCode[code] = x
+	h.savePairing(x)
 	h.pair.recent = append(h.pair.recent, now)
 	writeJSON(w, 202, map[string]any{
 		"code":            code,
-		"poll":            PairPath + "/" + x.secret,
+		"poll":            PairPath + "/" + secret,
 		"poll_interval_s": pairPollEvery,
 		"expires_at_ms":   x.ExpiresAt,
-		"message":         "Show this code to the aiport owner. They approve it on the Integrate page of the aiport dashboard. Then GET the poll path to collect your token. Do not request pairing again while this request waits: keep polling it (a new request replaces this one and shows the owner a new code).",
+		"message":         "Show this code to the aiport owner. They approve it on the Integrate page of the aiport dashboard. Then GET the poll path to collect your token. The request waits 30 minutes and survives aiport restarts; keep polling it instead of requesting again (a new request would return this same code).",
 	})
 }
 
@@ -444,8 +526,7 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 			return true
 		}
 		h.pair.mu.Lock()
-		h.pair.init()
-		h.pair.expire(now)
+		h.pairingsReady(now)
 		list := []pairing{}
 		current := h.snapshot()
 		for _, x := range h.pair.byCode {
@@ -517,8 +598,7 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 	}
 	h.pair.mu.Lock()
 	defer h.pair.mu.Unlock()
-	h.pair.init()
-	h.pair.expire(now)
+	h.pairingsReady(now)
 	x := h.pair.byCode[strings.ToUpper(code)]
 	if x == nil || x.Status != "pending" {
 		fail(404, "pairing_not_found", "No pending request with this code; it may have expired")
@@ -526,6 +606,7 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 	}
 	if action == "reject" {
 		x.Status, x.doneAt = "rejected", now
+		h.savePairing(x)
 		h.rememberRejection(store.Rejection{ID: randomString(9), Code: x.Code, Name: x.Name, Description: x.Description, RejectedAt: now})
 		writeJSON(w, 200, map[string]any{"status": "rejected"})
 		return true
@@ -550,7 +631,8 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 			return true
 		}
 		h.resolveTokens(h.snapshot(), true)
-		x.Status, x.OriginID, x.token, x.doneAt = "approved", app.ID, token, now
+		x.Status, x.OriginID, x.doneAt = "approved", app.ID, now
+		h.savePairing(x)
 		writeJSON(w, 200, map[string]any{"status": "approved", "client_id": app.ID, "replaced": true})
 		return true
 	}
@@ -565,7 +647,9 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 		fail(status, code, msg)
 		return true
 	}
-	x.Status, x.OriginID, x.token, x.doneAt = "approved", id, token, now
+	_ = token // collected from the credential file, so it survives a restart
+	x.Status, x.OriginID, x.doneAt = "approved", id, now
+	h.savePairing(x)
 	writeJSON(w, 200, map[string]any{"status": "approved", "client_id": id})
 	return true
 }

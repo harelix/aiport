@@ -118,9 +118,12 @@ func TestPairingRejectExpireAndLimit(t *testing.T) {
 		t.Fatalf("reject: %v", st)
 	}
 	_, b := call(h, "POST", PairPath, `{"name":"B"}`, "", false)
-	*now = now.Add(11 * time.Minute)
+	*now = now.Add(31 * time.Minute)
+	if w, st := call(h, "GET", b["poll"].(string), "", "", false); w.Code != 200 || st["status"] != "expired" || st["token"] != nil {
+		t.Fatalf("expired request not reported as expired: %d %v", w.Code, st)
+	}
 	if w, _ := call(h, "GET", b["poll"].(string), "", "", false); w.Code != 404 {
-		t.Fatal("expired request still pollable")
+		t.Fatal("expired request still pollable after it said so")
 	}
 	if w, _ := call(h, "POST", "/api/v1/pairings/"+b["code"].(string)+"/approve", "", management, true); w.Code != 404 {
 		t.Fatal("expired request approved")

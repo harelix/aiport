@@ -327,7 +327,7 @@ function Wizard({origins, app, setApp, pairings, seen, off, adapting, agents, pr
         <Step n={2} done={steps[1]} current={current === 1} title="Approve the pairing">
           {o ? <>Connected as <code>{o.id}</code>{o.target ? <>, bound to <code>{o.target}</code></> : ', using the protocol defaults'}.</>
             : pairings.length > 0 ? <>The agent asked to pair: the request waits at the top of <strong>Applications</strong> above, with code{pairings.length > 1 ? 's' : ''} {pairings.map(p => <span key={p.code} className="pair-code small">{p.code}</span>)}. Check it matches the code the agent shows you, then approve it there; you can bind a Connection and allow change requests.</>
-            : <>Waiting for the agent to ask. Its request appears at the top of Applications within a few seconds, with a short code; requests expire after 10 minutes.</>}
+            : <>Waiting for the agent to ask. Its request appears at the top of Applications within a few seconds, with a short code; requests wait 30 minutes and survive restarts.</>}
         </Step>
         <Step n={3} done={steps[2]} current={current === 2} title="First call arrives">
           {!o ? 'After pairing, the agent makes one real call through aiport.'

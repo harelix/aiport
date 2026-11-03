@@ -3,6 +3,9 @@ package server
 import (
 	"strings"
 	"testing"
+
+	"aiport/internal/config"
+	"aiport/internal/telemetry"
 )
 
 // Issuing, adding and removing Applications from the dashboard, over HTTP:
@@ -132,18 +135,19 @@ func TestRemoveApplicationAndRevert(t *testing.T) {
 	}
 }
 
-// Pairing dedup: a second request from the same application replaces the
-// waiting one, and a request from an Application that is already configured
-// is approved as that Application (a new token) instead of a duplicate.
+// Pairing dedup: the same application asking again while its request waits
+// gets that request (same code, a new poll path, both working), and a
+// request from an Application that is already configured is approved as that
+// Application (a new token) instead of a duplicate.
 func TestPairingDedup(t *testing.T) {
 	h, management, _ := pairingServer(t)
 	_, first := call(h, "POST", PairPath, `{"name":"Docs Bot"}`, "", false)
-	_, second := call(h, "POST", PairPath, `{"name":"docs bot!"}`, "", false)
-	if _, st := call(h, "GET", first["poll"].(string), "", "", false); st["status"] != "superseded" || st["token"] != nil {
-		t.Fatalf("first request not superseded: %v", st)
+	w, second := call(h, "POST", PairPath, `{"name":"docs bot!"}`, "", false)
+	if w.Code != 202 || second["code"] != first["code"] || second["poll"] == first["poll"] {
+		t.Fatalf("a repeat request did not return the same code: %v then %v", first, second)
 	}
 	_, list := call(h, "GET", "/api/v1/pairings", "", management, false)
-	if waiting := list["pairings"].([]any); len(waiting) != 1 || waiting[0].(map[string]any)["code"] != second["code"] {
+	if waiting := list["pairings"].([]any); len(waiting) != 1 {
 		t.Fatalf("waiting after a repeat request: %v", list)
 	}
 	_, other := call(h, "POST", PairPath, `{"name":"Nightly"}`, "", false)
@@ -152,10 +156,19 @@ func TestPairingDedup(t *testing.T) {
 	}
 	call(h, "POST", "/api/v1/pairings/"+other["code"].(string)+"/reject", "", management, true)
 
-	// Approve the first; the same application asks again later.
-	call(h, "POST", "/api/v1/pairings/"+second["code"].(string)+"/approve", `{}`, management, true)
-	_, got := call(h, "GET", second["poll"].(string), "", "", false)
-	old := got["token"].(string)
+	// Approve; the first poll path collects the token, and only once.
+	call(h, "POST", "/api/v1/pairings/"+first["code"].(string)+"/approve", `{}`, management, true)
+	_, got := call(h, "GET", first["poll"].(string), "", "", false)
+	old, _ := got["token"].(string)
+	if old == "" || catalogStatus(h, old) != 200 {
+		t.Fatalf("first poll path did not collect a working token: %v", got)
+	}
+	if w, _ := call(h, "GET", second["poll"].(string), "", "", false); w.Code != 404 {
+		t.Fatalf("token collected twice: %d", w.Code)
+	}
+
+	// The same application asks again later: the Owner gives the existing
+	// Application a new token.
 	_, again := call(h, "POST", PairPath, `{"name":"Docs Bot"}`, "", false)
 	_, list = call(h, "GET", "/api/v1/pairings", "", management, false)
 	existing, _ := list["pairings"].([]any)[0].(map[string]any)["existing"].(map[string]any)
@@ -176,5 +189,51 @@ func TestPairingDedup(t *testing.T) {
 	}
 	if catalogStatus(h, old) != 401 || catalogStatus(h, fresh) != 200 {
 		t.Fatal("replace did not swap the token")
+	}
+}
+
+// restarted is the gateway started again on h's configuration file, as after
+// a restart: a new Handler reading the same configuration and database.
+func restarted(t *testing.T, h *Handler) *Handler {
+	t.Helper()
+	path := strings.TrimSuffix(h.keys.File, ".env") // the configuration next to its credential file
+	h.Close()
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := c.Resolve(config.EnvKeys(path).Lookup(c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := NewConfigured(c, s, telemetry.New(true, 16), path).(*Handler)
+	next.now = h.now
+	t.Cleanup(next.Close)
+	return next
+}
+
+// A restart drops neither a waiting request (it can still be approved by its
+// code) nor an approved one whose token was not collected yet.
+func TestPairingSurvivesRestart(t *testing.T) {
+	h, management, _ := pairingServer(t)
+	_, waiting := call(h, "POST", PairPath, `{"name":"Docs Bot"}`, "", false)
+	_, approved := call(h, "POST", PairPath, `{"name":"Nightly"}`, "", false)
+	call(h, "POST", "/api/v1/pairings/"+approved["code"].(string)+"/approve", `{}`, management, true)
+
+	h = restarted(t, h)
+	_, list := call(h, "GET", "/api/v1/pairings", "", management, false)
+	if l := list["pairings"].([]any); len(l) != 1 || l[0].(map[string]any)["code"] != waiting["code"] {
+		t.Fatalf("waiting request lost in the restart: %v", list)
+	}
+	_, got := call(h, "GET", approved["poll"].(string), "", "", false)
+	if token, _ := got["token"].(string); got["client_id"] != "nightly" || catalogStatus(h, token) != 200 {
+		t.Fatalf("approved token not collectable after the restart: %v", got)
+	}
+	if w, _ := call(h, "POST", "/api/v1/pairings/"+waiting["code"].(string)+"/approve", `{}`, management, true); w.Code != 200 {
+		t.Fatalf("approving a request kept across the restart: %d %s", w.Code, w.Body)
+	}
+	_, got = call(h, "GET", waiting["poll"].(string), "", "", false)
+	if token, _ := got["token"].(string); catalogStatus(h, token) != 200 {
+		t.Fatalf("token of a request approved after the restart: %v", got)
 	}
 }
