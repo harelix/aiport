@@ -168,7 +168,7 @@ func (h *Handler) tokenAccess(w http.ResponseWriter, r *http.Request, method str
 
 // addOrigin adds an Application the Owner names, with its token, without
 // pairing: for an application whose coding agent is not running, or when the
-// Owner would rather paste the token into its .env.
+// Owner would rather paste the token into its .aiport file.
 func (h *Handler) addOrigin(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) {
 	if !h.tokenAccess(w, r, http.MethodPost, fail) {
 		return
@@ -200,7 +200,7 @@ func (h *Handler) addOrigin(w http.ResponseWriter, r *http.Request, fail func(in
 		fail(status, code, msg)
 		return
 	}
-	writeJSON(w, 201, map[string]any{"client_id": id, "token": token, "note": "Put this token in the application's private configuration as AIPORT_APP_TOKEN. It is shown only once."})
+	writeJSON(w, 201, map[string]any{"client_id": id, "token": token, "note": "Save it as AIPORT_APP_TOKEN in .aiport at the application's repository root (in .gitignore, never committed). It is shown only once."})
 }
 
 // issueToken gives an Application a new token under its existing reference;
@@ -225,7 +225,7 @@ func (h *Handler) issueToken(w http.ResponseWriter, r *http.Request, id string, 
 		return
 	}
 	h.resolveTokens(h.snapshot(), true)
-	writeJSON(w, 200, map[string]any{"client_id": id, "token": token, "note": "Put this token in the application's private configuration as AIPORT_APP_TOKEN. It is shown only once; the previous token no longer works."})
+	writeJSON(w, 200, map[string]any{"client_id": id, "token": token, "note": "Save it as AIPORT_APP_TOKEN in .aiport at the application's repository root (in .gitignore, never committed). It is shown only once; the previous token no longer works."})
 }
 
 // removeOrigin takes an Application out of the configuration (one Change,

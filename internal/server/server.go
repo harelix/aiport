@@ -237,7 +237,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.servePair(w, r, fail)
 		return
 	}
-	if (r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/assets/")) && (r.Method == "GET" || r.Method == "HEAD") {
+	if (r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/assets/") || dashboard.IsPage(r.URL.Path)) && (r.Method == "GET" || r.Method == "HEAD") {
+		if dashboard.IsPage(r.URL.Path) { // a page address serves the dashboard, which opens that page
+			r = r.Clone(r.Context())
+			r.URL.Path = "/"
+		}
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		h.assets.ServeHTTP(w, r)
 		return

@@ -1,6 +1,7 @@
 package connect
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -63,13 +64,36 @@ func briefs(base string) []Brief {
 // AGENTS.md, so future sessions name models the aiport way, check their
 // Catalog, Issues and guidance, and ask aiport instead of working around it.
 // Changing it in a way agents must act on means a new guidance version.
-const AgentsLine = "This app's LLM calls go through aiport. As the model, send a Level (`fast`, `balanced` or `best`) or a task name from `aiport_catalog`, never a provider's model id, and say how hard a call is with the `X-Aiport-Effort` header (`low`, `medium` or `high`). At the start of a session, check `aiport_catalog` for the names it can use and what changed, `aiport_my_issues` for open Issues and `aiport_guidance` for new aiport guidance (after updating to it, call `aiport_guidance_done`); if aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it."
+const AgentsLine = "This app's LLM calls go through aiport; its token is in `.aiport` at the repository root (gitignored; never commit it, and if aiport answers 401 ask the Owner for a New token from the Integrate page into `.aiport`). As the model, send a Level (`fast`, `balanced` or `best`) or a task name from `aiport_catalog`, never a provider's model id, and say how hard a call is with the `X-Aiport-Effort` header (`low`, `medium` or `high`). At the start of a session, check `aiport_catalog` for the names it can use and what changed, `aiport_my_issues` for open Issues and `aiport_guidance` for new aiport guidance (after updating to it, call `aiport_guidance_done`); if aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it."
 
-// mcpEntry is the project-level MCP server entry for this gateway. It names
-// the environment variable holding the token, never the token.
+// TokenFile is where an Application keeps its aiport settings: a file at the
+// root of its repository, never committed (it is in .gitignore), holding
+// AIPORT_BASE_URL and AIPORT_APP_TOKEN lines. The application and its coding
+// agents read it; environment variables of the same name win over it.
+const TokenFile = ".aiport"
+
+// headersHelper is the command Claude Code runs for the MCP entry's headers:
+// the token from AIPORT_APP_TOKEN when it is set, else from .aiport at the
+// repository root. It prints the header, never logs the token. No ${...}:
+// Claude Code expands those in .mcp.json itself.
+const headersHelper = `sh -c 't="$AIPORT_APP_TOKEN"; [ -n "$t" ] || t=$(sed -n "s/^AIPORT_APP_TOKEN=//p" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.aiport" 2>/dev/null | head -n 1); printf "{\"Authorization\":\"Bearer %s\"}" "$t"'`
+
+// mcpEntry is the project-level MCP server entry for this gateway. Its
+// headersHelper reads the token from AIPORT_APP_TOKEN or .aiport; the entry
+// never holds the token.
 func mcpEntry(root string) string {
-	return `{"mcpServers":{"aiport":{"type":"http","url":"` + root + `/mcp","headers":{"Authorization":"Bearer ${AIPORT_APP_TOKEN}"}}}}`
+	entry := map[string]any{"mcpServers": map[string]any{"aiport": map[string]any{"type": "http", "url": root + "/mcp", "headersHelper": headersHelper}}}
+	b, _ := json.Marshal(entry)
+	return string(b)
 }
+
+// tokenFileLines is what an Application's .aiport holds.
+func tokenFileLines(root string) string {
+	return "AIPORT_BASE_URL=" + root + "\nAIPORT_APP_TOKEN=<the token; never commit it>\n"
+}
+
+// lostToken is what an agent does when the Application's token stops working.
+const lostToken = "**If the token is lost or revoked** (aiport answers `401`, or `.aiport` is missing): ask the Owner to open the Integrate page of the aiport dashboard, click **New token** on this Application's row (**Issue token** when it has none) and paste the copied lines into `.aiport` at the repository root. The old token stops working at once. Do not pair again unless the Owner asks, and never look for a token anywhere else."
 
 func protocolState(d Document) (string, map[string]bool) {
 	parts, on := []string{}, map[string]bool{}
@@ -91,8 +115,10 @@ func applicationBrief(d Document, root string) Integration {
 		Title: "Integrate this application with aiport",
 		Intro: "You are changing an application so its LLM calls go through the aiport gateway on this machine (" + root + "). aiport is a pass-through: keep the provider's native SDK and request format, change only where calls go and which key is sent.",
 		Steps: []string{
-			"**Get the application its own token by pairing.** If the application has no `AIPORT_APP_TOKEN` yet: `POST " + root + "/v1/aiport/pair` with `{\"name\":\"<application name>\",\"description\":\"<what it uses LLMs for>\",\"repository\":\"<absolute path of the repository's top directory>\"}` (no token needed; see the `pair` snippet). Send `repository` as the absolute path of the top directory of the git repository you are working in (where `.git` is): the Owner sees it when approving, confirms or edits it, and aiport uses it only after that, to let a Coding agent the Owner chooses explain or fix this Application's Issues. Show the returned `code` to the user and tell them to approve it on the Integrate page of the aiport dashboard. Then `GET` the returned `poll` path every `poll_interval_s` seconds until `status` is `approved` (the reply then contains `token`, shown only once), `rejected` or `expired`; requests wait 30 minutes and survive aiport restarts. Keep polling the same request: asking again while it waits returns the same code, so never request a new one to retry. Store the token in the application's private, uncommitted configuration as `AIPORT_APP_TOKEN`. Pair once per application, not per run; pair again only if aiport answers `401`.",
-			"**Configuration, not code.** Read `AIPORT_BASE_URL` (on this machine `" + root + "`) and `AIPORT_APP_TOKEN` from the application's environment or config (see the `env` snippet). Never hard-code either, and never commit the token.",
+			"**Get the application its own token by pairing.** If the application has no `AIPORT_APP_TOKEN` yet: `POST " + root + "/v1/aiport/pair` with `{\"name\":\"<application name>\",\"description\":\"<what it uses LLMs for>\",\"repository\":\"<absolute path of the repository's top directory>\"}` (no token needed; see the `pair` snippet). Send `repository` as the absolute path of the top directory of the git repository you are working in (where `.git` is): the Owner sees it when approving, confirms or edits it, and aiport uses it only after that, to let a Coding agent the Owner chooses explain or fix this Application's Issues. Show the returned `code` to the user and tell them to approve it on the Integrate page of the aiport dashboard. Then `GET` the returned `poll` path every `poll_interval_s` seconds until `status` is `approved` (the reply then contains `token`, shown only once), `rejected` or `expired`; requests wait 30 minutes and survive aiport restarts. Keep polling the same request: asking again while it waits returns the same code, so never request a new one to retry. Pair once per application, not per run.",
+			"**Keep the token in `.aiport`.** Write the two lines of the `aiport-file` snippet to `.aiport` at the repository root (`chmod 600 .aiport`) and add `.aiport` to `.gitignore` before anything else, so the token is never committed. Move any `AIPORT_*` lines out of `.env` or other files into it. The application reads `.aiport` at startup (see the `load` snippet; environment variables of the same name win), and coding agents read it through the MCP entry.",
+			lostToken,
+			"**Configuration, not code.** Read `AIPORT_BASE_URL` (on this machine `" + root + "`) and `AIPORT_APP_TOKEN` from the environment, filled from `.aiport` at startup. Never hard-code either, and never commit the token.",
 			"**Point the SDK at aiport.** OpenAI SDK: `base_url = AIPORT_BASE_URL + \"/v1\"`, `api_key = AIPORT_APP_TOKEN`. Anthropic SDK: `base_url = AIPORT_BASE_URL` (no `/v1`), `api_key = AIPORT_APP_TOKEN`. Plain HTTP: `POST /v1/chat/completions`, `/v1/responses` or `/v1/messages` with `Authorization: Bearer <token>` (Anthropic also accepts `x-api-key`). The snippets below show each SDK in Python and TypeScript, and curl.",
 			"**Remove provider keys from the application.** aiport adds the real key upstream. The application must not need `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` for calls routed through aiport; remove them from its configuration and code paths.",
 			"**Use a protocol the gateway has configured.** On this gateway: " + state + ". A protocol that is not configured returns `503 target_unconfigured`; aiport does not translate between protocols, so keep the SDK that matches a configured protocol or ask the Owner to configure the other one.",
@@ -138,7 +164,9 @@ func applicationSnippets(root string, on map[string]bool) []Snippet {
 		return Snippet{ID: id, Title: title, Language: lang, SDK: sdk, Protocol: protocol, Available: on[protocol], Code: code}
 	}
 	return []Snippet{
-		{ID: "env", Title: "Environment", Language: "sh", Available: true, Code: "# The application's private, uncommitted configuration (.env, secrets store, ...)\nAIPORT_BASE_URL=" + root + "\nAIPORT_APP_TOKEN=<the token from pairing; never commit it>\n"},
+		{ID: "aiport-file", Title: ".aiport (repository root, in .gitignore)", Language: "sh", Available: true, Code: "# .aiport at the repository root: chmod 600 .aiport; echo .aiport >> .gitignore\n" + tokenFileLines(root)},
+		{ID: "load", Title: "Load .aiport at startup", Language: "python", Available: true, Code: "import os, pathlib\n\n# Fill AIPORT_BASE_URL and AIPORT_APP_TOKEN from .aiport; the environment wins.\nfor line in pathlib.Path(\".aiport\").read_text().splitlines():\n    key, _, value = line.partition(\"=\")\n    if key.startswith(\"AIPORT_\") and value:\n        os.environ.setdefault(key.strip(), value.strip())\n"},
+		{ID: "load-node", Title: "Load .aiport at startup (Node 20.12+)", Language: "typescript", Available: true, Code: "// Fills AIPORT_BASE_URL and AIPORT_APP_TOKEN from .aiport; variables already set win.\nprocess.loadEnvFile(\".aiport\");\n"},
 		{ID: "pair", Title: "Pair (once per application)", Language: "curl", Available: true, Code: "curl -s -X POST " + root + "/v1/aiport/pair \\\n  -H 'content-type: application/json' \\\n  -d '{\"name\":\"<application name>\",\"description\":\"<what it uses LLMs for>\",\"repository\":\"<absolute path of the repository's top directory>\"}'\n# Show the returned code to the Owner, then poll until approved:\ncurl -s " + root + "<poll path from the reply>\n"},
 		{ID: "models", Title: "Model names this Application can use", Language: "curl", Available: true, Code: "curl -si " + root + "/v1/models \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\"\n# Add -H 'anthropic-version: 2023-06-01' for the Anthropic list shape.\n# The X-Aiport-Catalog response header is this Application's Catalog version.\n"},
 		levelSnippet(root, on),
@@ -215,8 +243,9 @@ func agentBrief(d Document, root string) Integration {
 		steps = append(steps, "**Change requests are off on this gateway right now.** The Owner has turned adapting off (`adapting.disabled`): `aiport_request_change`, `aiport_my_requests` and `/v1/aiport/requests` answer `409 adapting_off`, there are no Issues (`aiport_my_issues` is not offered and `/v1/aiport/issues` answers `409 adapting_off`), and aiport sends no hints. Set up the MCP entry and the AGENTS.md line anyway; `aiport_capabilities` and `aiport_catalog` work (as do `/v1/models` and the `X-Aiport-Catalog` header), and change requests work again once the Owner turns adapting back on. Until then, tell the user what the Application needs instead of filing a request.")
 	}
 	steps = append(steps,
-		"**Where you are.** This repository's Application sends its LLM calls through aiport at `"+root+"`, with its own Application token in the `AIPORT_APP_TOKEN` environment variable (never in a file). If aiport lacks something the Application needs (a model name, another Connection), ask the Owner through aiport. Do not work around it: no provider API keys, no direct provider URLs, never a provider's model id where a Level or task name will do.",
-		"**Add the project MCP entry** so coding agents here can reach aiport (Claude Code: `.mcp.json` at the repository root; other agents: their project MCP config; see the `mcp` snippet): `"+mcpEntry(root)+"`. It reads the token from `${AIPORT_APP_TOKEN}`; never write the token's value into the file or commit it.",
+		"**Where you are.** This repository's Application sends its LLM calls through aiport at `"+root+"`, with its own Application token in `.aiport` at the repository root (in `.gitignore`, never committed; `AIPORT_APP_TOKEN` in the environment wins over it). If aiport lacks something the Application needs (a model name, another Connection), ask the Owner through aiport. Do not work around it: no provider API keys, no direct provider URLs, never a provider's model id where a Level or task name will do.",
+		"**Add the project MCP entry** so coding agents here can reach aiport (Claude Code: `.mcp.json` at the repository root; other agents: their project MCP config; see the `mcp` snippet): `"+mcpEntry(root)+"`. Its `headersHelper` reads the token from `AIPORT_APP_TOKEN` or else from `.aiport` at the repository root, so the agent needs nothing exported; never write the token's value into the MCP file. Agents whose MCP config has no headers helper: start them with `set -a; . ./.aiport; set +a` and use `\"headers\":{\"Authorization\":\"Bearer ${AIPORT_APP_TOKEN}\"}`.",
+		lostToken,
 		"**Add this line to the repository's `AGENTS.md`** (see the `agents-line` snippet): \""+AgentsLine+"\"",
 		"**Keep this guidance current.** aiport numbers this guidance (now version "+fmt.Sprint(GuidanceVersion)+") and remembers the version this repository last confirmed. After adding the MCP entry and the AGENTS.md line, call `aiport_guidance_done` (`POST "+root+"/v1/aiport/guidance/done`). When aiport's guidance changes later, the MCP instructions start with a one-line reminder and every aiport tool answer ends with it, and `aiport_capabilities` shows `guidance: {current, confirmed}`: then call `aiport_guidance` (`GET "+root+"/v1/aiport/guidance`) for what changed, the current AGENTS.md line and the steps, do them, and call `aiport_guidance_done` again.",
 		"**The tools and their HTTP equivalents.** Each MCP tool answers exactly as its HTTP endpoint does; both use "+auth+". `aiport_capabilities` = `GET "+root+"/v1/aiport/capabilities`: the protocols this Application can reach and their Connection, its own aliases, its binding, `may_request_changes` and the `change_kinds` it may request. `aiport_catalog` = `GET "+root+"/v1/aiport/catalog`: this Application's Catalog (its task names and where each goes, its binding or the protocol defaults it follows, the models of the Connections it reaches, the version) and its recent Catalog changes, newest first. `aiport_guidance` = `GET "+root+"/v1/aiport/guidance`: what changed in aiport's guidance since this repository last confirmed it, the current AGENTS.md line and the steps. `aiport_guidance_done` = `POST "+root+"/v1/aiport/guidance/done`: confirm the current version. `aiport_request_change` = `POST "+root+"/v1/aiport/requests`: file a Change request. `aiport_my_requests` = `GET "+root+"/v1/aiport/requests` (all of this Application's own requests) or `GET "+root+"/v1/aiport/requests/{id}` (one). `aiport_my_issues` = `GET "+root+"/v1/aiport/issues` (this Application's Issues) or `GET "+root+"/v1/aiport/issues/{id}` (one). `aiport_issue_fixed` = `POST "+root+"/v1/aiport/issues/{id}/fixed`.",
@@ -243,7 +272,7 @@ func agentBrief(d Document, root string) Integration {
 			{ID: "my-issues", Title: "This Application's Issues", Language: "curl", Available: d.Adapting, Code: "curl -s " + root + "/v1/aiport/issues \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\"\n"},
 			{ID: "my-requests", Title: "Read the Owner's answers", Language: "curl", Available: d.Adapting, Code: "curl -s " + root + "/v1/aiport/requests \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\"\n"},
 		},
-		Note: "Never put the Application token's value in a file you commit; the MCP entry and every example read it from AIPORT_APP_TOKEN. Full protocol reference: " + root + Path + "?format=markdown",
+		Note: "Never put the Application token's value in a file you commit: it lives in .aiport (in .gitignore), and the MCP entry and every example read it from there or from AIPORT_APP_TOKEN. Full protocol reference: " + root + Path + "?format=markdown",
 	}
 }
 

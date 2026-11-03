@@ -418,6 +418,21 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .issue-count[aria-expanded="true"] .chevron{transform:rotate(90deg)}
 .app-issues-row td{background:var(--inset)}
 .token-reveal{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--inset);margin:10px 0}
+.token-card{display:grid;gap:16px;margin:12px 0;padding:18px 20px;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:var(--radius);background:var(--panel);box-shadow:var(--shadow);max-width:760px}
+.token-card-head{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start}
+.token-card-icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;background:var(--panel2);color:var(--text)}
+.token-card-head h3{margin:0;font-size:15px;font-weight:600;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.token-card-head h3 code{font-size:12px;font-weight:400;color:var(--muted)}
+.token-card-head p{margin:4px 0 0;font-size:13px;color:var(--text-2)}
+.token-card-field{display:grid;gap:6px}
+.token-card-field>label,.token-card-label>span{font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--eyebrow)}
+.token-card-label{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.token-card-row{display:flex;gap:8px;align-items:stretch}
+.token-value{flex:1;min-width:0;font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--inset);color:var(--text)}
+.token-env{margin:0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--inset);font-size:13px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.token-card-field small{color:var(--muted);font-size:12px}
+.token-card-foot{display:flex;justify-content:flex-end}
+.copy-action{white-space:nowrap}
 .token-reveal p{margin:0;line-height:1.5}
 .token-reveal .snippet-code{border:1px solid var(--line);border-radius:var(--radius-sm)}
 .add-application{margin:10px 0}

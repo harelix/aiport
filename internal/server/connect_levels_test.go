@@ -32,7 +32,12 @@ func TestGuidanceVersion2SaysWhatToChange(t *testing.T) {
 	h, _ := requestsServer(t)
 	_, out := call(h, "GET", GuidancePath, "", reqHelper, false)
 	changes, _ := out["changes"].([]any)
-	v2 := changes[len(changes)-1].(map[string]any)
+	var v2 map[string]any
+	for _, c := range changes {
+		if c.(map[string]any)["version"] == float64(2) {
+			v2 = c.(map[string]any)
+		}
+	}
 	actions := ""
 	for _, a := range v2["actions"].([]any) {
 		actions += a.(string) + "\n"
@@ -40,6 +45,23 @@ func TestGuidanceVersion2SaysWhatToChange(t *testing.T) {
 	mustContain(t, "version 2 actions", actions, levelWords...)
 	mustContain(t, "version 2 actions", actions,
 		"GET /v1/models", "level_unmapped", "Replace the aiport line in AGENTS.md with agents_line", "aiport_guidance_done")
+}
+
+// Version 3 and both briefs say where the token lives (.aiport, gitignored),
+// how the agent's MCP entry reads it, and what to do when it is lost.
+func TestGuidanceVersion3TeachesTheTokenFile(t *testing.T) {
+	h, _ := requestsServer(t)
+	_, out := call(h, "GET", GuidancePath, "", reqHelper, false)
+	changes, _ := out["changes"].([]any)
+	v3 := changes[len(changes)-1].(map[string]any)
+	actions := ""
+	for _, a := range v3["actions"].([]any) {
+		actions += a.(string) + "\n"
+	}
+	mustContain(t, "version 3 actions", actions, ".aiport", ".gitignore", "headersHelper", "New token", "agents_line", "aiport_guidance_done")
+	mustContain(t, "AGENTS.md line", connect.AgentsLine, ".aiport", "401", "New token")
+	mustContain(t, "application brief", getBrief(t, briefServer(t, ""), "?format=handover&for=application"), ".aiport", ".gitignore", "New token", "process.loadEnvFile")
+	mustContain(t, "coding agent brief", getBrief(t, briefServer(t, ""), "?format=handover&for=agent"), ".aiport", "headersHelper", "New token")
 }
 
 // The three things every surface teaches, in the words a test can find.

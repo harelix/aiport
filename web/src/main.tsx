@@ -26,8 +26,15 @@ type Health={state:string;persisting:boolean;queue_depth?:number;dropped_events?
 type Summary={requests:number;errors:number;rejections:number;cancellations:number;error_rate:number;average_latency_ms:number|null;p95_latency_ms:number|null;priced_calls:number;providers:Record<string,number>;traffic:Record<string,number>};
 const labels:Record<string,string>={openai:'OpenAI',anthropic:'Anthropic',bedrock:'Amazon Bedrock',meta:'Meta Model API',ollama:'Ollama',llamacpp:'llama.cpp'};
 const fmt=(n:number|null|undefined,suffix='')=>n==null?'—':new Intl.NumberFormat(undefined,{maximumFractionDigits:0}).format(n)+suffix;
+/** The dashboard pages, each at its own address (/integrate…). */
+const PAGES=['Overview','Activity','Changes','Integrate','Providers','Routing','Agents','Compression','Tasks','Settings','Manual'];
+const pageFromPath=()=>PAGES.find(p=>p.toLowerCase()===location.pathname.replace(/^\/+|\/+$/g,'').toLowerCase())||'Overview';
+
 function App(){
- const [token,setToken]=useState(''),[page,setPage]=useState('Overview'),[manualAt,setManualAt]=useState('');
+ const [token,setToken]=useState(''),[page,setPageState]=useState(pageFromPath),[manualAt,setManualAt]=useState('');
+ // The page is in the address (/integrate…): reloads and links stay on it, Back and Forward move between pages.
+ const setPage=(p:string)=>{setPageState(p);const path='/'+p.toLowerCase();if(location.pathname!==path)history.pushState(null,'',path+(p==='Changes'?location.hash:''))};
+ useEffect(()=>{const back=()=>setPageState(pageFromPath());addEventListener('popstate',back);return()=>removeEventListener('popstate',back)},[]);
  const openHelp=(section:string)=>{setManualAt(section);setPage('Manual')};
  const [appearance,setAppearance]=useAppearance();
  const [config,setConfig]=useState<Config|null>(null),[secrets,setSecrets]=useState<Record<string,boolean>>({}),[sources,setSources]=useState<Record<string,KeySource>>({}),[providers,setProviders]=useState<ProviderSpec[]>([]),[rows,setRows]=useState<Call[]>([]),[summary,setSummary]=useState<Summary|null>(null),[health,setHealth]=useState<Health|null>(null);

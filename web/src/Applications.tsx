@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {HelpLink} from './help';
-import {AppWindow, Check, Copy, KeyRound} from 'lucide-react';
+import {AppWindow, Check, Copy, KeyRound, X} from 'lucide-react';
 
 /* Applications on this machine that use aiport for LLM calls: approve the
    ones asking to pair and see the ones connected. The integration
@@ -122,19 +122,55 @@ export function useMissingTokens(tick: number): string[] {
   return list;
 }
 
-/** The .env lines for a just-issued token, shown once with a Copy button. */
-export function TokenReveal({name, issued, replaced, onClose}: {name: string; issued: IssuedToken; replaced: boolean; onClose: () => void}) {
+/** The .aiport lines for a just-issued token, shown once with a Copy button. */
+/** Copies text: the Clipboard API, or a hidden textarea where it is unavailable. */
+export async function copyText(text: string): Promise<boolean> {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* fall back below */ }
+  const area = document.createElement('textarea');
+  area.value = text; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.opacity = '0';
+  document.body.appendChild(area); area.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  area.remove();
+  return ok;
+}
+
+/** A Copy button that says Copied (or that copying failed) for a moment. */
+function CopyAction({text, label, primary}: {text: string; label: string; primary?: boolean}) {
+  const [state, setState] = useState<'' | 'copied' | 'failed'>('');
+  const copy = async () => { setState(await copyText(text) ? 'copied' : 'failed'); setTimeout(() => setState(''), 1800); };
+  return <button type="button" className={(primary ? 'primary' : 'secondary') + ' with-icon copy-action'} onClick={copy} aria-label={state === 'copied' ? 'Copied' : label}>
+    {state === 'copied' ? <><Check size={14} aria-hidden/> Copied</> : state === 'failed' ? <>Select and copy</> : <><Copy size={14} aria-hidden/> {label}</>}
+  </button>;
+}
+
+/** A just-issued token, shown once: the token and the .aiport lines, each with Copy. */
+export function TokenReveal({name, issued, replaced, repository, onClose}: {name: string; issued: IssuedToken; replaced: boolean; repository?: string; onClose: () => void}) {
+  const file = repository ? repository.replace(/\/+$/, '') + '/.aiport' : '.aiport';
   const env = 'AIPORT_BASE_URL=' + location.origin + '\nAIPORT_APP_TOKEN=' + issued.token + '\n';
-  const [copied, setCopied] = useState(false);
-  const copy = () => void navigator.clipboard?.writeText(env).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
-  return <div className="token-reveal" role="region" aria-label={'Token for ' + name}>
-    <p><KeyRound size={14} aria-hidden/> <strong>{name}</strong>'s token (<code>{issued.id}</code>). Put these lines in its private <code>.env</code> (never in the repository). Shown only once{replaced ? '; the previous token no longer works' : ''}.</p>
-    <pre className="snippet-code"><code>{env}</code></pre>
-    <div className="pairing-actions">
-      <button type="button" className="primary with-icon" onClick={copy}>{copied ? <><Check size={14} aria-hidden/> Copied</> : <><Copy size={14} aria-hidden/> Copy .env lines</>}</button>
-      <button type="button" className="text-button" onClick={onClose}>Done, hide the token</button>
+  return <section className="token-card" role="region" aria-label={'New token for ' + name}>
+    <header className="token-card-head">
+      <span className="token-card-icon" aria-hidden><KeyRound size={16}/></span>
+      <div>
+        <h3>New token for {name} <code>{issued.id}</code></h3>
+        <p>Copy it now: aiport will not show it again.{replaced ? ' The previous token has stopped working.' : ''}</p>
+      </div>
+      <button type="button" className="icon-button token-card-close" onClick={onClose} aria-label="Close and hide the token"><X size={16} aria-hidden/></button>
+    </header>
+    <div className="token-card-field">
+      <label htmlFor={'token-' + issued.id}>Token</label>
+      <div className="token-card-row">
+        <input id={'token-' + issued.id} className="token-value" readOnly value={issued.token} spellCheck={false} onFocus={e => e.currentTarget.select()}/>
+        <CopyAction text={issued.token} label="Copy"/>
+      </div>
     </div>
-  </div>;
+    <div className="token-card-field">
+      <div className="token-card-label"><span>.aiport</span><CopyAction text={env} label="Copy .aiport lines" primary/></div>
+      <pre className="token-env"><code>{env}</code></pre>
+      <small>Save as <code>{file}</code>, replacing what is there; <code>.aiport</code> is in its <code>.gitignore</code>, never committed. The application and its coding agent both read it.</small>
+    </div>
+    <footer className="token-card-foot"><button type="button" className="secondary" onClick={onClose}>Done</button></footer>
+  </section>;
 }
 
 /** Add an Application by name and get its token at once, without pairing. */
@@ -147,7 +183,7 @@ export function AddApplicationForm({targets, onAdded, onCancel}: {targets: Targe
   }
   return <form className="pairing add-application" onSubmit={add} aria-label="Add an application with a token">
     <div>
-      <label htmlFor="add-app-name"><strong>Add an application with a token</strong> <small className="muted">(no pairing: you paste the token into its .env)</small></label>
+      <label htmlFor="add-app-name"><strong>Add an application with a token</strong> <small className="muted">(no pairing: you paste the token into its .aiport file)</small></label>
       <input id="add-app-name" value={name} maxLength={128} placeholder="Application name" disabled={busy} onChange={e => setName(e.target.value)} autoFocus/>
     </div>
     <div className="pairing-actions">

@@ -229,7 +229,7 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
           {FILTERS.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={filter === value} className={filter === value ? 'on' : ''} onClick={() => setFilter(value)}>{label} <span className="count">{counts[value]}</span></button>)}
         </div>
         <button type="button" className="secondary with-icon" onClick={onNew} aria-pressed={app === NEW}><Plus size={14} aria-hidden/> Onboard a new application</button>
-        <button type="button" className="secondary with-icon" onClick={() => setAdding(x => !x)} aria-expanded={adding} title="Create an application and its token yourself, without pairing, and paste the token into its .env"><KeyRound size={14} aria-hidden/> Add with a token</button>
+        <button type="button" className="secondary with-icon" onClick={() => setAdding(x => !x)} aria-expanded={adding} title="Create an application and its token yourself, without pairing, and paste the token into its .aiport file"><KeyRound size={14} aria-hidden/> Add with a token</button>
       </div>
     </div>
     {pairings.length > 0 && <div className="waiting" role="region" aria-label="Pairing requests waiting">
@@ -265,20 +265,20 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
           <td className="row-actions">
             <button type="button" className="row-action" disabled={tokenBusy === o.id} onClick={() => missing.includes(o.id) ? reissue(o) : setReplacing(x => x === o.id ? '' : o.id)} aria-expanded={missing.includes(o.id) ? undefined : replacing === o.id}
-              aria-label={'Issue a new token for ' + o.name} title={'Issue a new token for ' + o.name + ' to paste into its .env; the current one stops working'}><KeyRound size={14} aria-hidden/> {missing.includes(o.id) ? 'Issue token' : 'New token'}</button>
+              aria-label={'Issue a new token for ' + o.name} title={'Issue a new token for ' + o.name + ' to paste into its .aiport file; the current one stops working'}><KeyRound size={14} aria-hidden/> {missing.includes(o.id) ? 'Issue token' : 'New token'}</button>
             <button type="button" className="row-action icon remove" onClick={() => setRemoving(x => x === o.id ? '' : o.id)} aria-expanded={removing === o.id} aria-label={'Remove ' + o.name} title={'Remove ' + o.name}><Trash2 size={14} aria-hidden/></button>
           </td>
         </tr>{expanded === o.id && <tr className="app-issues-row"><td colSpan={9}><div className="app-actions" role="region" aria-label={o.name + ' actions'}>
-            <p><strong>{o.name}</strong> <code>{o.id}</code>{missing.includes(o.id) ? <> · <span className="badge warn">No token</span> its calls are refused until you issue one.</> : <> · its application sends its token as <code>AIPORT_APP_TOKEN</code> from its <code>.env</code>.</>}</p>
+            <p><strong>{o.name}</strong> <code>{o.id}</code>{missing.includes(o.id) ? <> · <span className="badge warn">No token</span> its calls are refused until you issue one.</> : <> · it reads its token from <code>.aiport</code> at its repository root.</>}</p>
             <div className="pairing-actions">
               <button type="button" className="secondary with-icon" disabled={tokenBusy === o.id} onClick={() => missing.includes(o.id) ? reissue(o) : setReplacing(o.id)}><KeyRound size={14} aria-hidden/> {missing.includes(o.id) ? 'Issue token' : 'Issue new token'}</button>
               <button type="button" className="danger with-icon" onClick={() => setRemoving(o.id)}><Trash2 size={14} aria-hidden/> Remove application</button>
               <button type="button" className="text-button" onClick={() => setExpanded('')}>Close</button>
             </div>
           </div></td></tr>}
-          {issued?.id === o.id && <tr className="app-issues-row"><td colSpan={9}><TokenReveal name={o.name} issued={issued} replaced={issued.replaced} onClose={() => setIssued(null)}/></td></tr>}
+          {issued?.id === o.id && <tr className="app-issues-row"><td colSpan={9}><TokenReveal name={o.name} issued={issued} replaced={issued.replaced} repository={o.repository} onClose={() => setIssued(null)}/></td></tr>}
           {replacing === o.id && <tr className="app-issues-row"><td colSpan={9}><div className="token-reveal" role="region" aria-label={'New token for ' + o.name}>
-            <p><strong>Issue a new token for {o.name}?</strong> Its current token stops working at once; put the new one in its <code>.env</code>.</p>
+            <p><strong>Issue a new token for {o.name}?</strong> Its current token stops working at once; put the new one in its <code>.aiport</code> file.</p>
             <div className="pairing-actions"><button type="button" className="primary" disabled={tokenBusy === o.id} onClick={() => reissue(o)}>Issue new token</button><button type="button" className="text-button" onClick={() => setReplacing('')}>Cancel</button></div>
           </div></td></tr>}
           {removing === o.id && <tr className="app-issues-row"><td colSpan={9}><RemoveApplication o={o} onCancel={() => setRemoving('')} onRemoved={() => { setRemoving(''); if (issued?.id === o.id) setIssued(null); onDone(); }}/></td></tr>}{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={9}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}

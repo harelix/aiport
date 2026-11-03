@@ -237,3 +237,17 @@ func TestPairingSurvivesRestart(t *testing.T) {
 		t.Fatalf("token of a request approved after the restart: %v", got)
 	}
 }
+
+// Each dashboard page has its own address, so a reload stays on it; other
+// paths are not the dashboard.
+func TestDashboardPageAddresses(t *testing.T) {
+	h, _, _ := pairingServer(t)
+	for _, path := range []string{"/", "/integrate", "/changes/", "/manual"} {
+		if w, _ := call(h, "GET", path, "", "", false); w.Code != 200 || !strings.Contains(w.Body.String(), `id="root"`) {
+			t.Errorf("%s: %d, not the dashboard", path, w.Code)
+		}
+	}
+	if w, _ := call(h, "GET", "/integrate/extra", "", "", false); strings.Contains(w.Body.String(), `id="root"`) {
+		t.Error("a path below a page served the dashboard")
+	}
+}

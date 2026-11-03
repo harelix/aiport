@@ -95,6 +95,10 @@ The sidebar has three groups:
 - **Configure**: Integrate, Providers, Routing, Agents and Compression.
 - **Workspace** (at the bottom): Tasks and Settings.
 
+Each page has its own address (`/integrate`, `/changes`, `/manual`…), so
+reloading stays on the page, Back and Forward move between pages, and a
+link opens the page it names.
+
 The toolbar at the top right has the help button (this manual), the
 Light / Dark / System appearance switch and Refresh (on Tasks, also the
 chime). The dashboard refreshes itself every 10 seconds while it is open;
@@ -290,6 +294,24 @@ An Application gets its token by **pairing**:
 3. The application collects its token once. aiport adds it to the
    configuration without a restart; the token is stored in the private
    credential file.
+
+**Where the token lives: `.aiport`.** Each application keeps its aiport
+settings in a file named `.aiport` at the root of its repository, listed in
+its `.gitignore` and never committed:
+
+```
+AIPORT_BASE_URL=http://aiport.localhost:8787
+AIPORT_APP_TOKEN=<its token>
+```
+
+The application fills its environment from it at startup (variables already
+set win), and its coding agents read it too: the project MCP entry's
+`headersHelper` takes the token from `AIPORT_APP_TOKEN` or else `.aiport`, so
+nothing has to be exported before the agent starts. When a token is lost or
+revoked (aiport answers `401`), click **New token** on the application's row
+on Integrate, **Copy .aiport lines** and paste them over its `.aiport`; the
+old token stops working at once. This is guidance version 3: coding agents
+of applications integrated earlier are told to move their token there.
 
 **One request per application.** An application that asks again while its
 request waits (the same repository, or the same name, ignoring case and

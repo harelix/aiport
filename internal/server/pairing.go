@@ -391,7 +391,7 @@ func (h *Handler) servePair(w http.ResponseWriter, r *http.Request, fail func(in
 				if app, ok := c.Application(x.OriginID); ok {
 					if token := h.keys.Lookup(c)(app.TokenEnv); token != "" {
 						out["token"] = token
-						out["note"] = "Store this token in the application's private configuration as AIPORT_APP_TOKEN. It is shown only once."
+						out["note"] = "Save it as AIPORT_APP_TOKEN in .aiport at the application's repository root (in .gitignore, never committed). It is shown only once."
 						h.dropPairing(code)
 						break
 					}

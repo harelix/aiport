@@ -10,7 +10,7 @@ import "fmt"
 // confirmed an older version learns exactly what to do.
 
 // GuidanceVersion is the version of the guidance this build of aiport gives.
-const GuidanceVersion = 2
+const GuidanceVersion = 3
 
 // GuidanceChange is what one guidance version changed: a one-line summary
 // and what an agent in an Application's repository does about it.
@@ -35,6 +35,14 @@ var guidanceLog = []GuidanceChange{
 		"Where calls differ in difficulty, add the X-Aiport-Effort header (low, medium or high) to those calls, through the SDK's extra headers. Leave the provider's own effort field (reasoning_effort, reasoning.effort, output_config.effort) as it is: aiport reads it when the header is missing and never changes it.",
 		"Replace the aiport line in AGENTS.md with agents_line from this answer (it now names Levels, X-Aiport-Effort and aiport_guidance); keep one aiport line only.",
 		"Then call aiport_guidance_done; from now on check aiport_guidance at the start of a session, with aiport_catalog and aiport_my_issues.",
+	}},
+	{3, "The token lives in .aiport at the repository root: the application and its coding agents read it from there, and a lost or revoked token is replaced from the Integrate page into that file.", []string{
+		"Add .aiport to .gitignore first. Then put AIPORT_BASE_URL and AIPORT_APP_TOKEN in .aiport at the repository root (chmod 600), moving them out of .env or any other file; never commit it.",
+		"Make the application fill AIPORT_BASE_URL and AIPORT_APP_TOKEN from .aiport at startup when they are not already set in the environment (see the load snippet in the application brief).",
+		"Replace the project MCP entry with the one in the coding-agent brief: it has a headersHelper that reads the token from AIPORT_APP_TOKEN or .aiport, so nothing needs exporting before the agent starts.",
+		"Replace the aiport line in AGENTS.md with agents_line from this answer (it now says where the token is and what to do on 401); keep one aiport line only.",
+		"If aiport answers 401 or the token is missing, ask the Owner for a New token on the Integrate page and paste the copied lines into .aiport; do not pair again unless the Owner asks.",
+		"Then call aiport_guidance_done.",
 	}},
 }
 
@@ -78,5 +86,7 @@ func GuidanceReminder(confirmed int) string {
 // RefreshInstruction is what the Owner pastes to the coding agent of an
 // Application that is behind (the dashboard's Copy refresh instruction).
 func RefreshInstruction(root string) string {
-	return "aiport's guidance for coding agents has changed. Call the aiport MCP tool aiport_guidance (or GET " + root + "/v1/aiport/guidance with this Application's token in AIPORT_APP_TOKEN), follow its steps to update this repository and its AGENTS.md line, then call aiport_guidance_done (or POST " + root + "/v1/aiport/guidance/done) to confirm."
+	return "aiport's guidance for coding agents has changed. Call the aiport MCP tool aiport_guidance, follow its steps, then call aiport_guidance_done. " +
+		"Without MCP, use GET " + root + "/v1/aiport/guidance and POST " + root + "/v1/aiport/guidance/done with the bearer token in AIPORT_APP_TOKEN. " +
+		"If aiport answers 401 or 403, the token is missing or revoked: it belongs in .aiport at the repository root (or AIPORT_APP_TOKEN); if it is not there or is still refused, ask the Owner for a New token from the Integrate page into .aiport, and do not look for a token anywhere else."
 }
