@@ -696,7 +696,7 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   </section>}<section className="panel changes">
     <div className="panel-heading"><h2>Applied changes<HelpLink section="Applied changes and Revert"/></h2><div className="header-actions"><span className="caption">Newest first · kept across restarts</span><DecisionSoundToggle/></div></div>
     {autoFix !== null && <label className="check-label compact" title="adapting.auto_fix in aiport.yaml"><input type="checkbox" checked={autoFix} disabled={!!busy || !adapting} onChange={e => switchAutoFix(e.target.checked)}/>
-      <span>Automatic fixes: aiport applies an Issue’s aiport fix itself, only when exactly one Connection serves the model, and only for that one Application. Each one is a Change below that you can revert; a fix you revert is never applied automatically again.{!adapting && ' Adapting is turned off in the configuration, so nothing is applied.'}</span></label>}
+      <span>Fix Issues automatically when the fix is clear. You can revert any fix below, and a reverted fix is not applied again.{!adapting && ' Adapting is off, so nothing is applied.'}</span></label>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {message && <div className="notice" role="status">{message}</div>}
     {changes && !changes.length && <div className="empty"><span className="empty-icon"><History size={20} strokeWidth={1.75} aria-hidden/></span><h3>No changes yet</h3><p>Configuration edits made through aiport appear here, with the file before and after kept so you can revert them.</p></div>}

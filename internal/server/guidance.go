@@ -132,7 +132,7 @@ func (h *Handler) serveGuidance(w http.ResponseWriter, r *http.Request, applicat
 		return
 	}
 	if !h.isApplication(application) {
-		fail(403, "application_token_required", "Guidance is confirmed per Application: no Application token was recognized. Start the agent with AIPORT_APP_TOKEN set to this Application's token")
+		fail(403, "application_token_required", "Guidance is confirmed per Application: no Application token was recognized. Put this Application's token in .aiport at the repository root (or set AIPORT_APP_TOKEN); a lost token is replaced with New token on the Integrate page")
 		return
 	}
 	if done {

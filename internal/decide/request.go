@@ -43,7 +43,7 @@ var (
 	ErrNotPermitted = errors.New(capability.NotPermitted)
 	// ErrNotApplication: the caller is not a configured Application (the
 	// management token, for example).
-	ErrNotApplication = errors.New("change requests are filed by one Application: send that Application's own token")
+	ErrNotApplication = errors.New("change requests are filed by one Application: no Application token was recognized. Put this Application's token in .aiport at the repository root (or set AIPORT_APP_TOKEN); a lost token is replaced with New token on the Integrate page")
 )
 
 // RateLimited is returned when an Application filed too many requests;

@@ -197,7 +197,7 @@ func (h *Handler) serveCatalog(w http.ResponseWriter, r *http.Request, applicati
 		return
 	}
 	if !h.isApplication(application) {
-		fail(403, "application_token_required", "A Catalog belongs to one Application: send that Application's own token")
+		fail(403, "application_token_required", "A Catalog belongs to one Application: no Application token was recognized. Put this Application's token in .aiport at the repository root (or set AIPORT_APP_TOKEN); a lost token is replaced with New token on the Integrate page")
 		return
 	}
 	writeJSON(w, 200, map[string]any{

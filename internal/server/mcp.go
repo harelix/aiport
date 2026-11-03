@@ -57,7 +57,7 @@ func (h *Handler) serveMCP(w http.ResponseWriter, r *http.Request, applicationID
 		return
 	}
 	if !h.isApplication(applicationID) {
-		fail(403, "application_token_required", "The MCP endpoint serves one Application: send that Application's own token")
+		fail(403, "application_token_required", "The MCP endpoint serves one Application: no Application token was recognized. Put this Application's token in .aiport at the repository root (or set AIPORT_APP_TOKEN); a lost token is replaced with New token on the Integrate page")
 		return
 	}
 	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ct)), "application/json") {

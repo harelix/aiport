@@ -48,7 +48,7 @@ func (h *Handler) serveCapabilities(w http.ResponseWriter, r *http.Request, appl
 	}
 	caps, ok := h.capabilities(applicationID)
 	if !ok {
-		fail(403, "application_token_required", "Capabilities describe one Application: send that Application's own token")
+		fail(403, "application_token_required", "Capabilities describe one Application: no Application token was recognized. Put this Application's token in .aiport at the repository root (or set AIPORT_APP_TOKEN); a lost token is replaced with New token on the Integrate page")
 		return
 	}
 	writeJSON(w, 200, caps)
