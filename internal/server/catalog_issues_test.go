@@ -303,6 +303,26 @@ func TestOnlyCallsThatFollowedMovedRoutingCountAsUse(t *testing.T) {
 	}
 }
 
+// A model name that went through a protocol default the Application
+// follows counts as use when that default moves.
+func TestACallThroughAMovedProtocolDefaultCountsAsUse(t *testing.T) {
+	f := removalFixture(t, "")
+	f.h.now = time.Now
+	if code, _ := remCall(t, f.h, remDocs, "gpt-4o"); code != 200 { // not a task name: the OpenAI default, hosted
+		t.Fatalf("docs-bot's call: %d", code)
+	}
+	time.Sleep(2 * time.Millisecond)
+	removeHostedLeavingSummarize(t, f.h)
+	got := appIssues(t, f.h, remDocs)
+	if len(got) != 1 || got[0]["cause"] != "catalog_changed" {
+		t.Fatalf("docs-bot followed the OpenAI default: %v", got)
+	}
+	routing, _ := got[0]["catalog_change"].(map[string]any)["routing"].([]any)
+	if len(routing) != 1 || routing[0].(map[string]any)["of"] != "openai" {
+		t.Fatalf("the Issue's routing: %v", routing)
+	}
+}
+
 // A Change and its revert, applied back to back, leave no open Issue: the
 // revert is never handled before the Change it reverts.
 func TestAChangeRevertedAtOnceLeavesNoOpenCatalogIssue(t *testing.T) {

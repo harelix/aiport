@@ -77,6 +77,12 @@ func (q *Queue) CatalogChanged(notices []CatalogNotice) {
 // earlier drain has handled the ones before (the Change it reverts). Never
 // called with the lock held.
 func (q *Queue) drainCatalog() {
+	q.inboxMu.Lock()
+	waiting := len(q.inbox) > 0
+	q.inboxMu.Unlock()
+	if !waiting {
+		return // a notice queued after this has its own drain
+	}
 	retention := time.Duration(q.live.Config().Telemetry.RetentionDays) * 24 * time.Hour
 	q.mu.Lock()
 	defer q.mu.Unlock()
