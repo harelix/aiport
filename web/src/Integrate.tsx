@@ -397,6 +397,8 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
   const [agents] = useCodingAgents(tick);
   // The wizard starts collapsed once an Application exists; null = not chosen yet.
   const [wizardOpen, setWizardOpen] = useState<boolean | null>(null);
+  // The instructions sit above everything, collapsed once an Application exists; null = not chosen yet.
+  const [instructionsOpen, setInstructionsOpen] = useState<boolean | null>(null);
   const [appTile, setAppTile] = useState(false), [agentTile, setAgentTile] = useState(false);
   const wizardRef = useRef<HTMLDivElement>(null);
   const known = useRef(new Set(origins.map(x => x.id)));
@@ -432,9 +434,25 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
   const picker = <div className="segmented languages" role="radiogroup" aria-label="Language">
     {LANGUAGES.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={language === value} className={language === value ? 'on' : ''} onClick={() => pick(value)}>{label}</button>)}
   </div>;
-  const openAgentBrief = () => { setAgentTile(true); requestAnimationFrame(() => document.getElementById('tile-agent')?.scrollIntoView({behavior: 'smooth', block: 'start'})); };
+  const showInstructions = instructionsOpen ?? origins.length === 0;
+  const openAgentBrief = () => { setInstructionsOpen(true); setAgentTile(true); requestAnimationFrame(() => document.getElementById('tile-agent')?.scrollIntoView({behavior: 'smooth', block: 'start'})); };
 
   return <div className="integrate-layout">
+    <section className={'integrate-strip' + (showInstructions ? ' open' : '')} aria-labelledby="strip-heading">
+      <div className="strip-head">
+        <h2 id="strip-heading"><button type="button" className="text-button strip-toggle" aria-expanded={showInstructions} aria-controls="strip-body" onClick={() => setInstructionsOpen(!showInstructions)}>
+          <ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Instructions</button><HelpLink section="The instructions"/></h2>
+        <p className="muted-small">What the coding agent reads, written by aiport from this gateway's address and protocols ({doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}). <button type="button" className="text-button" onClick={onManual}>Read the manual</button></p>
+      </div>
+      {showInstructions && <div className="strip-body" id="strip-body">
+
+      <BriefTile id="application" title="Application brief" short="For the agent wiring the application's LLM calls through aiport." icon={<Terminal size={17} strokeWidth={1.75}/>}
+        brief={appBrief} link={link('application')} open={appTile} setOpen={setAppTile} picker={picker} snippets={[...appBrief.snippets.filter(s => !s.sdk), ...sdkSnippets]}/>
+      <BriefTile id="agent" title="Coding agent brief" short="For agents working in its repository later: MCP entry, AGENTS.md, Change requests." icon={<Bot size={17} strokeWidth={1.75}/>}
+        brief={agentBrief} link={link('agent')} open={agentTile} setOpen={setAgentTile} snippets={agentBrief.snippets} onSnippetCopied={s => { if (s.id === 'mcp') setMcp(true); }}/>
+      <p className="muted-small strip-foot">Reference: <a href="/_connect?format=markdown" target="_blank" rel="noreferrer"><code>/_connect?format=markdown</code> <ExternalLink size={12} aria-hidden/></a></p>
+      </div>}
+    </section>
     <div className="integrate-main">
       <ApplicationsList origins={origins} targets={targets} providers={providers} pairings={pairings} rejected={rejected} calls={calls} issues={issues} guidance={guidance} explain={explain} onExplained={reloadIssues} agents={agents} levels={levels} onLevels={() => { reloadLevels(); onChange(); }} app={app} adapting={doc.adapting}
         onSelect={setApp} onAgent={followAgent} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue} missing={missing}/>
@@ -443,16 +461,5 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
           prompt={doc.agent_prompt} docs={doc.docs} mcp={mcp} setMcp={setMcp} open={open} setOpen={setWizardOpen} onDone={done} onAgentBrief={openAgentBrief}/>
       </div>
     </div>
-    <aside className="integrate-strip" aria-labelledby="strip-heading">
-      <div className="strip-head">
-        <h2 id="strip-heading">Instructions<HelpLink section="The instructions"/></h2>
-        <p className="muted-small">What the coding agent reads, written by aiport from this gateway's address and protocols ({doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}). <button type="button" className="text-button" onClick={onManual}>Read the manual</button></p>
-      </div>
-      <BriefTile id="application" title="Application brief" short="For the agent wiring the application's LLM calls through aiport." icon={<Terminal size={17} strokeWidth={1.75}/>}
-        brief={appBrief} link={link('application')} open={appTile} setOpen={setAppTile} picker={picker} snippets={[...appBrief.snippets.filter(s => !s.sdk), ...sdkSnippets]}/>
-      <BriefTile id="agent" title="Coding agent brief" short="For agents working in its repository later: MCP entry, AGENTS.md, Change requests." icon={<Bot size={17} strokeWidth={1.75}/>}
-        brief={agentBrief} link={link('agent')} open={agentTile} setOpen={setAgentTile} snippets={agentBrief.snippets} onSnippetCopied={s => { if (s.id === 'mcp') setMcp(true); }}/>
-      <p className="muted-small strip-foot">Reference: <a href="/_connect?format=markdown" target="_blank" rel="noreferrer"><code>/_connect?format=markdown</code> <ExternalLink size={12} aria-hidden/></a></p>
-    </aside>
   </div>;
 }

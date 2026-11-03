@@ -734,9 +734,16 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .button-row{display:flex;gap:8px;flex-wrap:wrap}
 
 /* Integrate: main column (Applications, wizard) and the brief strip */
-.integrate-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;align-items:start}
+.integrate-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}
 .integrate-main{min-width:0}
 .integrate-strip{display:grid;gap:12px;align-content:start;min-width:0}
+.strip-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px}
+.strip-head h2{display:flex;align-items:center;gap:4px;margin:0}
+.strip-toggle{font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;display:inline-flex;align-items:center;gap:4px;padding:0}
+.strip-toggle .chevron{transition:transform .15s}
+.integrate-strip.open .strip-toggle .chevron{transform:rotate(90deg)}
+.strip-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;align-items:start}
+.strip-body .strip-foot{grid-column:1/-1}
 .strip-head h2{font-size:12px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--eyebrow)}
 .strip-head .muted-small{line-height:1.6;margin-top:6px}
 .strip-foot{margin:0}
@@ -761,8 +768,6 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .tile .snippet-code{font-size:12px;max-height:300px}
 @media(max-width:1280px){
   .integrate-layout{grid-template-columns:1fr}
-  .integrate-strip{grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}
-  .strip-head,.strip-foot{grid-column:1/-1}
   .tile.open{grid-column:1/-1}
 }
 .apps-list .panel-heading{flex-wrap:wrap}
