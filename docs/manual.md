@@ -472,6 +472,41 @@ for a replacement Connection of the same protocol.
 If your configuration already had an Alias called `fast`, `balanced` or
 `best`, it is now that Level's mapping on its Connection's protocol.
 
+### Effort
+
+An Application may also say how hard one call is: `low`, `medium` or
+`high`. aiport uses effort only to pick the model, so `balanced` with high
+effort can go to a stronger model than `balanced` with low effort. Any Alias,
+a Level or a task name, shared or an Application's own, may carry optional
+per-effort models on its own Connection:
+
+```yaml
+aliases:
+  - {target: hosted, alias: balanced, model: gpt-4o, effort: {low: gpt-4o-mini, high: gpt-4.1}}
+origins:
+  - id: docs-bot
+    # ...
+    aliases:
+      - {alias: summarize, target: local, model: 'llama3:8b', effort: {high: 'llama3:70b'}}
+```
+
+An effort without its own model uses the Alias's `model`. The effort of a
+call comes from, in this order:
+
+1. The `X-Aiport-Effort` header (`low`, `medium` or `high`). It is never
+   sent on to the provider. A value that is not an effort counts as none.
+2. The provider's own effort field, which aiport reads but never changes:
+   `reasoning_effort` on OpenAI Chat Completions, `reasoning.effort` on OpenAI
+   Responses, `output_config.effort` on Anthropic Messages. `none`, `minimal`
+   and `low` count as low, `medium` as medium, `high`, `xhigh` and `max` as
+   high. Numeric thinking budgets (`budget_tokens`) are never translated.
+3. Otherwise `medium`.
+
+As with every Alias, only the `model` field is replaced: the request,
+including its effort field, reaches the provider unchanged. Per-effort models
+are listed in the Catalog (`effort` on a task name), and changing them is a
+Catalog change.
+
 ## The Catalog
 
 An Application's **Catalog** is what it can use through aiport: its task

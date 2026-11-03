@@ -38,6 +38,8 @@ type LevelMapping struct {
 	Protocol   string
 	Connection string
 	Model      string
+	// Effort are its optional per-effort models on Connection.
+	Effort EffortModels
 	// Shared is true for the shared mapping, false for the Application's own.
 	Shared bool
 }
@@ -55,13 +57,13 @@ func (c Config) Level(application, protocol, level string) (m LevelMapping, ok b
 	if app, found := c.Application(application); found {
 		for _, a := range app.Aliases {
 			if a.Alias == level && speaks(a.Target) {
-				return LevelMapping{Level: level, Protocol: protocol, Connection: a.Target, Model: a.Model}, true
+				return LevelMapping{Level: level, Protocol: protocol, Connection: a.Target, Model: a.Model, Effort: a.Effort}, true
 			}
 		}
 	}
 	for _, a := range c.Aliases {
 		if a.Alias == level && speaks(a.Target) {
-			return LevelMapping{Level: level, Protocol: protocol, Connection: a.Target, Model: a.Model, Shared: true}, true
+			return LevelMapping{Level: level, Protocol: protocol, Connection: a.Target, Model: a.Model, Effort: a.Effort, Shared: true}, true
 		}
 	}
 	return LevelMapping{}, false
@@ -140,6 +142,13 @@ func SetLevel(current Config, application, protocol, level, connection, model st
 			for i, item := range list.Content {
 				if item.Kind == yaml.MappingNode && scalarValue(item, "alias") == level && onProtocol[scalarValue(item, "target")] {
 					if connection != "" {
+						// Per-effort models name models of their Connection:
+						// kept while the mapping stays on it.
+						if scalarValue(item, "target") == connection {
+							if effort := mappingValue(item, "effort"); effort != nil {
+								entry.Content = append(entry.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "effort"}, effort)
+							}
+						}
 						list.Content[i] = &entry
 						return nil
 					}
