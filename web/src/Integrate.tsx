@@ -153,7 +153,7 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, issues, 
   const counts: Record<Filter, number> = {approved: origins.length, rejected: rejected.length, all: origins.length + rejected.length};
   const showApproved = filter !== 'rejected', showRejected = filter !== 'approved';
   const lastCall = (id: string) => calls.off ? 'Not recorded' : calls.at[id] === undefined ? '…' : calls.at[id] === null ? 'None in 7 days' : ago(calls.at[id] as number);
-  return <section className="panel apps-list" aria-labelledby="apps-heading">
+  return <section className="panel apps-list grad-bottom" aria-labelledby="apps-heading">
     <div className="panel-heading">
       <h2 id="apps-heading"><AppWindow size={16} aria-hidden/> Applications<HelpLink section="Applications"/></h2>
       <div className="apps-tools">

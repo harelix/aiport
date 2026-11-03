@@ -345,7 +345,6 @@ textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 :root{--sidebar-w:248px}
 /* Accent gradient (yellow → pink-violet → periwinkle), on trial on the notice edges of Overview and Activity. */
 :root{--grad-1:#FAD279;--grad-2:#F198FE;--grad-3:#9CBEFF;--grad-v:linear-gradient(180deg,var(--grad-1),var(--grad-2),var(--grad-3))}
-.main.grad-notices .notice{border-left-width:0;padding-left:19px;background:var(--grad-v) left/3px 100% no-repeat,var(--panel)}
 /* Gradient frame like a mat around a card: the gradient shows in a wide border, the panel sits inside. */
 :root{--grad-h:linear-gradient(90deg,var(--grad-1),var(--grad-2),var(--grad-3))}
 /* The frame's gradient turns one full circle every 60s, too slowly to notice at a glance. */
@@ -394,8 +393,6 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .decision:first-of-type{border-top:0}
 /* Changes page: content lines up with the panel heading (24px), never against the panel's edge. */
 .panel.changes>.decision{padding:20px 24px;gap:12px}
-/* Each suggestion ends with the accent gradient instead of a grey rule. */
-.panel.suggestions>.decision{border-top:0;background:var(--grad-h) bottom/100% 2px no-repeat}
 .panel.suggestions>.panel-heading{border-bottom:1px solid var(--line)}
 .decision-filters{margin:0}
 .panel.suggestions>.quiet-empty{padding:28px 24px}
@@ -858,3 +855,34 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .removal-affected small{color:var(--muted);margin-left:6px}
 .removal-actions{display:flex;align-items:center;gap:16px;margin-top:16px}
 @media (max-width:560px){.removal-list li{grid-template-columns:1fr}}
+
+/* ============================================================================================
+   Gradient system. The accent gradient (yellow -> pink-violet -> periwinkle) means one thing
+   wherever it appears, in five roles only:
+   1. Active and current: the active menu item, tab, filter and wizard step; the current manual
+      section; the selected Application row; an open brief tile.
+   2. Progress: the onboarding progress bars. Never charts: the traffic chart and the provider
+      distribution keep one solid colour, so a colour never reads as a value.
+   3. Informational edges: notices, instruction blocks and opened details. Warnings, errors and
+      success keep their semantic colour (amber, red, green).
+   4. Separators between items that wait for a decision (Issues, Suggestions), and the edge of
+      the Applications list.
+   5. Frames: provider cards only (slowly turning).
+   Buttons, text and focus rings stay solid for contrast.
+   ============================================================================================ */
+/* 1. Active and current */
+.sidebar nav button.active::before{background:var(--grad-v)}
+.settings-tabs button.active{border-bottom-color:transparent;background:var(--grad-h) bottom/100% 2px no-repeat}
+.task-filters button.active{border-color:transparent;background:linear-gradient(var(--panel),var(--panel)) padding-box,var(--grad-h) border-box}
+.docs-toc a.current{border-left-color:transparent;background:var(--grad-v) left/2px 100% no-repeat}
+.app-row.selected td:first-child{box-shadow:none;background-image:var(--grad-v);background-size:3px 100%;background-repeat:no-repeat}
+.tile.open{border-top:1px solid var(--line);padding-top:16px;background:var(--grad-h) top/100% 3px no-repeat border-box,var(--panel)}
+.wizard .step.current{border-color:transparent;background:linear-gradient(var(--inset),var(--inset)) padding-box,var(--grad-h) border-box}
+.wizard .step.current .step-number{background:linear-gradient(135deg,var(--grad-1),var(--grad-2),var(--grad-3));color:#2E3440}
+/* 2. Progress */
+/* 3. Informational edges (a solid colour on the other borders paints over the gradient, so only the left edge shows it) */
+.notice:not(.error){border-left-color:transparent;background:linear-gradient(var(--panel),var(--panel)) padding-box,var(--grad-v) border-box}
+.setup pre,.recovery-content pre,.copy-block pre,.decision-more .request-text,.decision-more .askers{border-left-color:transparent;background:linear-gradient(var(--inset),var(--inset)) padding-box,var(--grad-v) border-box}
+.agent-prompt{border-left-color:transparent;background:linear-gradient(var(--panel2),var(--panel2)) padding-box,var(--grad-v) border-box}
+/* 4. Separators */
+.panel.decisions>.decision{border-top:0;background:var(--grad-h) bottom/100% 2px no-repeat}

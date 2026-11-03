@@ -645,10 +645,10 @@ export default function Changes({tick, onChange, targets = [], onOpenApplication
   }, [issues]);
   const byId = new Map((changes || []).map(c => [c.id, c]));
   const decided = (m: string) => { setMessage(m); setError(''); setReload(x => x + 1); onChange(); };
-  return <>{!!issues.length && <section className="panel changes" aria-label="Issues">
+  return <>{!!issues.length && <section className="panel changes decisions" aria-label="Issues">
     <div className="panel-heading"><h2><CircleAlert size={16} aria-hidden/> Issues<HelpLink section="Issues"/></h2><span>Problems aiport keeps seeing for one Application · they close themselves when its calls succeed again</span></div>
     {issues.map(i => <IssueCard key={i.id + i.state + (i.fix?.suggestion || '')} issue={i} targets={targets} explain={explain} onDecided={decided} onExplained={() => setReload(x => x + 1)}/>)}
-  </section>}{(adapting || pending.length + accepted.length + rejected.length > 0) && <section className="panel changes suggestions" aria-label="Suggestions and Change requests">
+  </section>}{(adapting || pending.length + accepted.length + rejected.length > 0) && <section className="panel changes suggestions decisions" aria-label="Suggestions and Change requests">
     <div className="panel-heading"><h2><Lightbulb size={16} aria-hidden/> Suggestions and Change requests<HelpLink section="What waits for your decision"/></h2>
       <div className="task-filters decision-filters" role="tablist" aria-label="Show">
         {([['pending', 'Waiting', pending.length], ['accepted', 'Accepted', accepted.length], ['rejected', 'Rejected', rejected.length]] as const).map(([key, label, n]) =>
