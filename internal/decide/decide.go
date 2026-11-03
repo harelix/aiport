@@ -431,6 +431,11 @@ func (q *Queue) settle(id string, d Decision, at time.Time, judged *guarded) (It
 			p.Model = d.Proposal.Model
 		}
 		c := q.live.Config()
+		if j := q.issueIndex(it.Issue); it.Issue != "" && j >= 0 {
+			if err := onIssueProtocol(c, q.issues[j], p); err != nil {
+				return Item{}, config.Change{}, nil, err
+			}
+		}
 		edit, what, err := change(c, it, p, scope)
 		if err != nil {
 			return Item{}, config.Change{}, nil, err
@@ -527,9 +532,12 @@ func init() {
 
 // aliasChange: for this Application (and any that joined) an Alias of its
 // own; for every Application a shared Alias.
-func aliasChange(_ config.Config, it Item, p Proposal, scope Scope) (config.Edit, string, error) {
+func aliasChange(c config.Config, it Item, p Proposal, scope Scope) (config.Edit, string, error) {
 	if p.Alias == "" || p.Target == "" || p.Model == "" {
 		return nil, "", Invalid{"choose the alias, the Connection and the model the alias should use"}
+	}
+	if config.IsLevel(p.Alias) {
+		return levelChange(c, it, p, scope)
 	}
 	if scope == ScopeEvery {
 		what := "shared alias " + p.Alias + " → " + p.Target + "/" + p.Model + " for every Application"
@@ -675,6 +683,7 @@ func (q *Queue) Detect(at time.Time) []Item {
 	q.mu.Unlock()
 	diagnose(finder, symptoms, c.Adapting.UnknownModel.Count, at)
 	failing, succeeded := failingSymptoms(c, q.history, at)
+	unmapped := levelUnmappedSymptoms(c, q.history, at)
 	q.mu.Lock()
 	var found []Item
 	if q.failed != nil {
@@ -687,6 +696,7 @@ func (q *Queue) Detect(at time.Time) []Item {
 	// Connection has no diagnosis, so automaticFixes never picks it.
 	auto := q.automaticFixes(c, out, at.UnixMilli())
 	out = append(out, q.track(c, CauseFailingConnection, failing, succeeded, at)...)
+	out = append(out, q.track(c, CauseLevelUnmapped, unmapped, nil, at)...)
 	for _, s := range found {
 		if q.quiet(s, at) {
 			continue

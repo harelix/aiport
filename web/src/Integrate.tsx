@@ -4,6 +4,8 @@ import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDa
 import {forgetRejected, MayRequestToggle, Origin, Pairing, PairingList, Rejected, Target, usePairings, useRejected} from './Applications';
 import {ApplicationFix, CatalogChange, isCatalogChange, type ExplainStatus, explainOf, type FixStatus, type Issue, IssueExplanation, IssueFix, issueAnchor} from './Changes';
 import {Inline} from './markdown';
+import {AppCatalog} from './RoutingMap';
+import type {ProviderSpec} from './Settings';
 import {AgentSettings, agentConnected, agentName, type CodingAgents, effectiveAgent, useCodingAgents} from './CodingAgents';
 import {AppLevels, appLevelsLabel, type LevelsDoc, useLevels} from './Levels';
 
@@ -121,7 +123,7 @@ function GuidanceCell({id, guidance}: {id: string; guidance: Guidance | null}) {
 }
 
 /** A short cause for an Issue, for the Applications list. */
-const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : isCatalogChange(i) ? 'Catalog change ' + i.subject : i.summary;
+const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : i.cause === 'level_unmapped' ? 'Unmapped Level ' + i.subject : isCatalogChange(i) ? 'Catalog change ' + i.subject : i.summary;
 
 /* An Application's Issues, under its row: each with its short cause, a link
    to the Issue on the Changes page, Explain and "Copy fix for the Coding agent". */
@@ -175,13 +177,16 @@ function RejectedRow({x, onDone}: {x: Rejected; onDone: () => void}) {
 /* The Applications list: waiting pairings first (always shown), then the
    approved Applications; rejected ones only behind the filter. Selecting an
    Application makes the wizard follow it. */
-function ApplicationsList({origins, targets, pairings, rejected, calls, issues, guidance, explain, onExplained, agents, levels, onLevels, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue}: {
-  origins: Origin[]; targets: Target[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; guidance: Guidance | null; explain: ExplainStatus | null; onExplained: () => void; agents: CodingAgents; levels: LevelsDoc | null; onLevels: () => void; app: string; onAgent: (id: string) => void;
+function ApplicationsList({origins, targets, providers, pairings, rejected, calls, issues, guidance, explain, onExplained, agents, levels, onLevels, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue}: {
+  origins: Origin[]; targets: Target[]; providers: ProviderSpec[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; guidance: Guidance | null; explain: ExplainStatus | null; onExplained: () => void; agents: CodingAgents; levels: LevelsDoc | null; onLevels: () => void; app: string; onAgent: (id: string) => void;
   onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void; onIssue: (i: Issue) => void;
 }) {
   const [filter, setFilter] = useState<Filter>('approved');
   const [shown, setShown] = useState<Record<string, boolean>>({});
   const [levelsShown, setLevelsShown] = useState<Record<string, boolean>>({});
+  const [catalogShown, setCatalogShown] = useState<Record<string, boolean>>({});
+  // An open Catalog is read again when the Applications or Connections change, not on every poll (each read may list models).
+  const configKey = JSON.stringify([origins, targets]);
   const counts: Record<Filter, number> = {approved: origins.length, rejected: rejected.length, all: origins.length + rejected.length};
   const showApproved = filter !== 'rejected', showRejected = filter !== 'approved';
   const lastCall = (id: string) => calls.off ? 'Not recorded' : calls.at[id] === undefined ? '…' : calls.at[id] === null ? 'None in 7 days' : ago(calls.at[id] as number);
@@ -203,9 +208,11 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, issues, 
       <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Issues</th><th title="The aiport guidance version its coding agent last confirmed">Guidance</th><th title="Its own mapping of fast, balanced and best, before the shared one">Levels</th><th title="Coding agent for Agent runs">Agent</th><th>Onboarding</th></tr></thead>
       <tbody>{origins.map(o => {
         const done = progress(o, {handed: true, waiting: false, seen: calls.at[o.id], adapting, mcp: mcpCopied(o.id), agents}).filter(Boolean).length;
-        const selected = app === o.id, own = issues[o.id] || [], open = !!shown[o.id] && own.length > 0, levelsOpen = !!levelsShown[o.id] && !!levels;
+        const selected = app === o.id, own = issues[o.id] || [], open = !!shown[o.id] && own.length > 0, catalogOpen = !!catalogShown[o.id], levelsOpen = !!levelsShown[o.id] && !!levels;
         return <React.Fragment key={o.id}><tr className={'app-row' + (selected ? ' selected' : '')} onClick={e => { if (!(e.target as HTMLElement).closest('input,button,a,label')) onSelect(o.id); }}>
-          <td><button type="button" className="row-select" aria-pressed={selected} onClick={() => onSelect(o.id)} title="Follow this application in the onboarding wizard">{o.name}</button><small><code>{o.id}</code></small></td>
+          <td><button type="button" className="row-select" aria-pressed={selected} onClick={() => onSelect(o.id)} title="Follow this application in the onboarding wizard">{o.name}</button><small><code>{o.id}</code></small>
+            <button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={catalogOpen} aria-controls={'app-catalog-' + o.id} onClick={() => setCatalogShown(x => ({...x, [o.id]: !x[o.id]}))}
+              title={'What ' + o.name + ' can send, what serves it, and its recent Catalog changes'}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Catalog</button></td>
           <td>{o.target ? <code>{o.target}</code> : <span className="muted">Protocol default</span>}</td>
           <td><MayRequestToggle o={o} onDone={onDone}/></td>
           <td title={typeof calls.at[o.id] === 'number' ? new Date(calls.at[o.id] as number).toLocaleString() : undefined}>{lastCall(o.id)}</td>
@@ -221,7 +228,8 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, issues, 
               title={connected ? agentName(id, agents) + (o.agent ? '' : ' (default)') + ' in ' + o.repository : 'Connect a coding agent (onboarding step 6)'}>{connected ? agentName(id, agents) : 'Connect'}</button>; })()}</td>
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
         </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={9}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}
-        {levelsOpen && <tr className="app-issues-row" id={'app-levels-' + o.id}><td colSpan={9}><AppLevels doc={levels!} application={o.id} onChange={onLevels}/></td></tr>}</React.Fragment>;
+          {catalogOpen && <tr className="app-issues-row" id={'app-catalog-' + o.id}><td colSpan={9}><AppCatalog application={o.id} targets={targets} providers={providers} reload={configKey}/></td></tr>}
+          {levelsOpen && <tr className="app-issues-row" id={'app-levels-' + o.id}><td colSpan={9}><AppLevels doc={levels!} application={o.id} onChange={onLevels}/></td></tr>}</React.Fragment>;
       })}</tbody>
     </table></div>}
     {showRejected && rejected.length > 0 && <div className="apps-table rejected-table"><table aria-label="Rejected applications">
@@ -329,7 +337,7 @@ function BriefTile({id, title, short, icon, brief, link, open, setOpen, snippets
   </section>;
 }
 
-export default function IntegratePage({origins, targets, tick, onChange, onManual, onChanges}: {origins: Origin[]; targets: Target[]; tick: number; onChange: () => void; onManual: () => void; onChanges?: () => void}) {
+export default function IntegratePage({origins, targets, providers = [], tick, onChange, onManual, onChanges}: {origins: Origin[]; targets: Target[]; providers?: ProviderSpec[]; tick: number; onChange: () => void; onManual: () => void; onChanges?: () => void}) {
   const [doc, setDoc] = useState<ConnectDoc | null>(null), [error, setError] = useState('');
   const [language, setLanguage] = useState<Language>(() => (['python', 'typescript', 'curl'].includes(remember(LANGUAGE_KEY)) ? remember(LANGUAGE_KEY) : 'python') as Language);
   const [app, setApp] = useState(NEW);
@@ -382,7 +390,7 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
 
   return <div className="integrate-layout">
     <div className="integrate-main">
-      <ApplicationsList origins={origins} targets={targets} pairings={pairings} rejected={rejected} calls={calls} issues={issues} guidance={guidance} explain={explain} onExplained={reloadIssues} agents={agents} levels={levels} onLevels={() => { reloadLevels(); onChange(); }} app={app} adapting={doc.adapting}
+      <ApplicationsList origins={origins} targets={targets} providers={providers} pairings={pairings} rejected={rejected} calls={calls} issues={issues} guidance={guidance} explain={explain} onExplained={reloadIssues} agents={agents} levels={levels} onLevels={() => { reloadLevels(); onChange(); }} app={app} adapting={doc.adapting}
         onSelect={follow} onAgent={followAgent} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue}/>
       <div ref={wizardRef}>
         <Wizard origins={origins} app={app} setApp={setApp} pairings={pairings} seen={app ? calls.at[app] : null} off={calls.off} adapting={doc.adapting} agents={agents}

@@ -27,7 +27,7 @@ Build from source (Go is the only prerequisite) and start it:
 
 ```sh
 make build                 # -> bin/aiport, dashboard included
-./bin/aiport init          # first run: choose providers and coding agents
+./bin/aiport init          # first run: choose providers, coding agents and Levels
 ./bin/aiport check         # validate the configuration
 ./bin/aiport serve         # start the gateway
 ```
@@ -35,7 +35,20 @@ make build                 # -> bin/aiport, dashboard included
 `init` writes `aiport.yaml` and a private credential file next to it
 (`aiport.yaml.env`, mode 0600) and never overwrites existing files. Provider
 keys are never asked for in the terminal: set them in the dashboard, or in
-your shell. `serve` prints the dashboard address and the management token
+your shell.
+
+`init` also proposes a Level mapping from the providers you chose, per
+protocol: a local Connection for `fast` when you chose one, hosted ones for
+`balanced` and `best` (whatever you chose when there is no other kind). The
+presets know no model ids, so it asks you for each Level's model; an empty
+answer leaves that Level unmapped, and nothing is mapped unless you confirm.
+Without a terminal, map them with
+`--levels fast=local-connection/llama3:8b,best=hosted-connection/some-model`
+(`LEVEL=CONNECTION/MODEL`, the Connection being one of the chosen provider
+ids; the protocol is that Connection's) or skip them with `--no-levels`; with
+neither flag and no input, no Level is mapped and `init` says so.
+
+`serve` prints the dashboard address and the management token
 when started in a terminal; `./bin/aiport auth token` prints the token again
 later.
 
@@ -218,6 +231,29 @@ Connection answers `503 target_disabled`.
 for the Anthropic protocol), the `/_connect` protocol description, and the
 Applications table.
 
+### The Routing map
+
+The **Routing map** panel on Routing answers "if this Application sends this
+name, which Connection and model serve it?" for every Application at once.
+Each Application lists every name it can send: its own task names, the
+shared task names of the Connections it reaches, the Levels mapped for it
+(its own mapping or the shared one, per protocol), and **Any other model
+name**, which goes unchanged to its binding or to the protocol default
+(with the number of models that Connection lists). Each row shows the
+protocol, the Connection with its provider's logo, and the model aiport
+sends upstream, with its per-effort models under it when it has any. For
+example, docs-bot sending `fast` on the OpenAI protocol
+reaches the local Connection with `llama3:8b`. Choose an Application or a
+provider to narrow the map.
+
+The map is built from each Application's Catalog, the same one its
+`GET /v1/models` answers, so the two never disagree. The same view for one
+Application, with its recent Catalog changes, is under **Catalog** on its
+row on Integrate. Scripts can read it with the management token at
+`GET /api/v1/routing` (`?application=<id>` for one Application, with its
+`changes`): Application ids, names, task names, model names and Connection
+ids only, never keys or addresses.
+
 ## Applications and pairing
 
 An Application is anything that calls aiport with its own token. Each call
@@ -286,6 +322,11 @@ narrow screen the strip moves below).
   up to date, **Copy refresh instruction** copies one paragraph to paste to
   that coding agent. "Sends Levels" is only a hint that its code may already
   use Levels; it never counts as confirming.
+- **Catalog** shows, under the row, the Application's Catalog: every name it
+  can send with the Connection and model that serve it (as on the Routing
+  map), the models its Connections list, and its recent Catalog changes
+  (newest first), the same changes the Application reads at
+  `/v1/aiport/catalog`.
 - The **Approved / Rejected / All** filter picks what the list shows.
   Rejected Applications are hidden until you choose **Rejected** or **All**;
   each shows when it was rejected, with **Forget**.
@@ -519,6 +560,9 @@ with `{application?}`, `PUT /api/v1/aliases/effort` with
 `{application?, alias, connection?, effort}` for the per-effort models of any
 Alias, and `GET /api/v1/levels` to read them all. Leaving `application` out
 edits the shared mapping.
+
+When an Application keeps asking for a Level that is not mapped, aiport
+opens an Issue for it (see [An unmapped Level](#an-unmapped-level)).
 
 ### Effort
 
@@ -776,6 +820,32 @@ It resolves itself when the Application's calls succeed again, on that
 Connection or on the one you bound it to (`aiport_fix` or `stopped`), and
 reopens if the failures stick again. Reverting the binding opens it again
 with the fix offered again.
+
+#### An unmapped Level
+
+aiport opens an Issue when one Application's calls for one Level keep being
+refused with `level_unmapped` (`adapting.level_unmapped`, default 5 times
+in 60 minutes). For example, docs-bot sends `best` on the OpenAI protocol
+and no `best` is mapped there, neither for docs-bot nor shared. There is one
+Issue per Application and Level.
+
+- **Evidence**: how many calls were refused, the time window and a few
+  request ids; the summary names the protocol.
+- **Fix in aiport**: map the Level for that Application only, on the
+  protocol its calls were refused on. aiport proposes the Connection its
+  other calls on that protocol go to (its binding, else the protocol
+  default) and leaves the model to you: it never makes up a model id.
+  **Approve** applies it as an ordinary Change you can revert (and a Catalog
+  change); a Connection of the other protocol is refused. It is never
+  applied automatically.
+- **Fix in the Application**: ask for the mapping with a Change request of
+  kind `application_alias` whose alias is the Level, or send another Level
+  or task name the gateway maps.
+
+It resolves itself when the Application's calls for that Level succeed, and
+reopens if the refusals stick again; reverting the mapping opens it again
+with the fix offered again. With the adapting loop off, nothing is counted
+and no Issue opens.
 
 #### A Catalog change
 

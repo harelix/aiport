@@ -875,6 +875,35 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .app-levels{display:grid;gap:4px}
 .app-levels>p{margin:0;display:flex;align-items:center;gap:4px}
 @media (max-width:560px){.level-efforts{grid-template-columns:1fr}}
+/* Routing map (Routing) and an Application's Catalog (Integrate) */
+.routing-map-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px 20px;padding:0 24px 12px}
+.routing-map-tools label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-2)}
+.routing-map-tools .task-filters{margin:0}
+.routing-map-tools .task-filters button{gap:6px}
+.routing-map-app{padding:6px 0 14px}
+.routing-map-app h3{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;margin:8px 24px 8px;font-size:14px}
+.routing-map-app h3 small code{font-size:11.5px;color:var(--muted)}
+.routing-map-app h3 .muted-small{margin:0 0 0 auto;font-size:12px}
+.route-table td,.route-table th{padding:8px 24px}
+.route-table td{white-space:normal}
+.route-table code{overflow-wrap:anywhere}
+.route-table tr.route-default td{color:var(--text-2)}
+.route-served{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.route-served small{display:inline;margin:0}
+.route-effort{display:block;color:var(--muted)}
+.route-none{padding:4px 24px 10px;margin:0}
+.app-catalog-toggle{display:flex;font-size:12px;gap:2px;margin-top:4px;color:var(--text-2)}
+.app-catalog{padding:4px 0}
+.app-catalog h4{display:flex;align-items:center;gap:6px;margin:6px 0 8px;font-size:13px}
+.app-catalog .route-table td:first-child,.app-catalog .route-table th:first-child{padding-left:0}
+.app-catalog .route-none{padding-left:0}
+.app-catalog-models summary{display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12.5px;color:var(--text-2);margin:8px 0;list-style:none}
+.app-catalog-models summary::-webkit-details-marker{display:none}
+.app-catalog-models[open] .chevron{transform:rotate(90deg)}
+.app-catalog-models p{font-size:12px;color:var(--muted);margin:0 0 8px;white-space:normal}
+.app-catalog-changes{list-style:none;margin:0 0 6px;padding:0;font-size:12.5px;white-space:normal}
+.app-catalog-changes li{padding:6px 0;border-bottom:1px solid var(--line)}
+.app-catalog-changes li .muted-small{display:block;margin:0 0 2px;font-size:11.5px}
 
 /* ============================================================================================
    Gradient system. The accent gradient (yellow -> pink-violet -> periwinkle) means one thing
