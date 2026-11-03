@@ -1,8 +1,9 @@
 #!/bin/sh
 # Development loop for aiport (make dev). No extra tools needed.
 #
-#   Go:        rebuilds and restarts `aiport serve` when a .go file (or the
-#              config) changes. Polls once a second: Go has no in-process hot
+#   Go:        rebuilds and restarts `aiport serve` when a .go file, the
+#              config or the embedded dashboard (internal/dashboard/dist,
+#              after `make web-build`) changes. Polls once a second: Go has no in-process hot
 #              reload, so a restart is the reliable equivalent (~1-2 s).
 #   Dashboard: Vite on http://127.0.0.1:5173 reloads the page on every edit
 #              (CSS updates in place) and proxies /api to the gateway.
@@ -52,7 +53,7 @@ touch "$STAMP"
 build_and_start
 while :; do
 	sleep 1
-	changed=$(find cmd internal "$CONFIG" go.mod -newer "$STAMP" \( -name '*.go' -o -name "$(basename "$CONFIG")" -o -name go.mod \) 2>/dev/null | head -1)
+	changed=$(find cmd internal "$CONFIG" go.mod -newer "$STAMP" \( -name '*.go' -o -name "$(basename "$CONFIG")" -o -name go.mod -o -path 'internal/dashboard/dist/*' \) 2>/dev/null | head -1)
 	if [ -n "$changed" ]; then
 		touch "$STAMP"
 		printf '\033[36m[dev] %s changed\033[0m\n' "$changed"
