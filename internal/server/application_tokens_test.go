@@ -131,3 +131,50 @@ func TestRemoveApplicationAndRevert(t *testing.T) {
 		t.Fatalf("still missing after issuing: %v", missing)
 	}
 }
+
+// Pairing dedup: a second request from the same application replaces the
+// waiting one, and a request from an Application that is already configured
+// is approved as that Application (a new token) instead of a duplicate.
+func TestPairingDedup(t *testing.T) {
+	h, management, _ := pairingServer(t)
+	_, first := call(h, "POST", PairPath, `{"name":"Docs Bot"}`, "", false)
+	_, second := call(h, "POST", PairPath, `{"name":"docs bot!"}`, "", false)
+	if _, st := call(h, "GET", first["poll"].(string), "", "", false); st["status"] != "superseded" || st["token"] != nil {
+		t.Fatalf("first request not superseded: %v", st)
+	}
+	_, list := call(h, "GET", "/api/v1/pairings", "", management, false)
+	if waiting := list["pairings"].([]any); len(waiting) != 1 || waiting[0].(map[string]any)["code"] != second["code"] {
+		t.Fatalf("waiting after a repeat request: %v", list)
+	}
+	_, other := call(h, "POST", PairPath, `{"name":"Nightly"}`, "", false)
+	if _, list = call(h, "GET", "/api/v1/pairings", "", management, false); len(list["pairings"].([]any)) != 2 {
+		t.Fatalf("a different application was deduplicated: %v", list)
+	}
+	call(h, "POST", "/api/v1/pairings/"+other["code"].(string)+"/reject", "", management, true)
+
+	// Approve the first; the same application asks again later.
+	call(h, "POST", "/api/v1/pairings/"+second["code"].(string)+"/approve", `{}`, management, true)
+	_, got := call(h, "GET", second["poll"].(string), "", "", false)
+	old := got["token"].(string)
+	_, again := call(h, "POST", PairPath, `{"name":"Docs Bot"}`, "", false)
+	_, list = call(h, "GET", "/api/v1/pairings", "", management, false)
+	existing, _ := list["pairings"].([]any)[0].(map[string]any)["existing"].(map[string]any)
+	if existing["id"] != "docs-bot" || existing["by"] != "name" {
+		t.Fatalf("existing Application not named: %v", list)
+	}
+	w, out := call(h, "POST", "/api/v1/pairings/"+again["code"].(string)+"/approve", `{"replace":"docs-bot"}`, management, true)
+	if w.Code != 200 || out["client_id"] != "docs-bot" || out["replaced"] != true {
+		t.Fatalf("approve as existing: %d %s", w.Code, w.Body)
+	}
+	_, got = call(h, "GET", again["poll"].(string), "", "", false)
+	fresh, _ := got["token"].(string)
+	if got["client_id"] != "docs-bot" || fresh == "" || fresh == old {
+		t.Fatalf("poll after replace: %v", got)
+	}
+	if n := len(h.snapshot().Origins); n != 1 {
+		t.Fatalf("a duplicate Application was added: %d Applications", n)
+	}
+	if catalogStatus(h, old) != 401 || catalogStatus(h, fresh) != 200 {
+		t.Fatal("replace did not swap the token")
+	}
+}

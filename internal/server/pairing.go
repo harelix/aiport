@@ -3,9 +3,11 @@ package server
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"log"
 	"math/big"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -28,7 +30,14 @@ import (
 //	GET  /api/v1/pairings           pending requests             management
 //	GET  /api/v1/pairings?status=rejected  rejected applications  management
 //	DELETE /api/v1/pairings/rejected/{id}  forget one              management
-//	POST /api/v1/pairings/{code}/approve  {id?, target?, may_request_changes?, agent?, repository?}  management
+//	POST /api/v1/pairings/{code}/approve  {id?, target?, may_request_changes?, agent?, repository?, replace?}  management
+//
+// Dedup: a new request replaces a waiting one from the same application
+// (same repository or name; the old one polls as "superseded"), and the
+// Owner's list names the configured Application a request matches
+// ("existing"), which approve with replace gives a new token instead of
+// adding a duplicate.
+//
 //	POST /api/v1/pairings/{code}/reject                          management
 const (
 	PairPath       = "/v1/aiport/pair"
@@ -66,9 +75,68 @@ type pairing struct {
 	// the top directory of a git repository on this machine.
 	RepositoryProblem string `json:"repository_problem,omitempty"`
 	OriginID          string `json:"origin_id,omitempty"`
-	secret            string
-	token             string // held between approval and collection only
-	doneAt            int64
+	// Existing is the Application this request most likely is already: one
+	// with the same repository or name. Set on the Owner's list, where the
+	// Owner can give it a new token instead of adding a duplicate.
+	Existing *existingApplication `json:"existing,omitempty"`
+	secret   string
+	token    string // held between approval and collection only
+	doneAt   int64
+}
+
+// existingApplication is a configured Application a pairing request matches,
+// and why: "repository" (the same git repository) or "name".
+type existingApplication struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	By   string `json:"by"`
+}
+
+// nameKey is how names are compared to find duplicates: case and
+// punctuation are ignored ("Docs Bot" and "docs bot!" match).
+func nameKey(name string) string {
+	return strings.Trim(slugInvalid.ReplaceAllString(strings.ToLower(name), "-"), "-")
+}
+
+// repoKey is how repository paths are compared: the git top directory with
+// symbolic links resolved when it is one, else the cleaned path; "" for none.
+func repoKey(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	if real, err := agents.Repository(path); err == nil {
+		return real
+	}
+	return filepath.Clean(path)
+}
+
+// sameRequest: two pairing requests come from the same application when they
+// report the same repository, or the same name.
+func sameRequest(a, b *pairing) bool {
+	if ra, rb := repoKey(a.Repository), repoKey(b.Repository); ra != "" && ra == rb {
+		return true
+	}
+	return nameKey(a.Name) != "" && nameKey(a.Name) == nameKey(b.Name)
+}
+
+// matchApplication finds the configured Application request x most likely
+// is: the same repository first, then the same name (or a name equal to the
+// Application's id).
+func matchApplication(c config.Config, x *pairing) *existingApplication {
+	if repo := repoKey(x.Repository); repo != "" {
+		for _, o := range c.Origins {
+			if o.Repository != "" && repoKey(o.Repository) == repo {
+				return &existingApplication{ID: o.ID, Name: o.Name, By: "repository"}
+			}
+		}
+	}
+	key := nameKey(x.Name)
+	for _, o := range c.Origins {
+		if key != "" && (nameKey(o.Name) == key || o.ID == key) {
+			return &existingApplication{ID: o.ID, Name: o.Name, By: "name"}
+		}
+	}
+	return nil
 }
 
 type pairings struct {
@@ -268,6 +336,10 @@ func (h *Handler) servePair(w http.ResponseWriter, r *http.Request, fail func(in
 			if x.Status == "rejected" {
 				delete(h.pair.byCode, code)
 			}
+			if x.Status == "superseded" {
+				out["message"] = "A newer pairing request from this application replaced this one. Poll the newer request, or request pairing again."
+				delete(h.pair.byCode, code)
+			}
 			writeJSON(w, 200, out)
 			return
 		}
@@ -318,6 +390,14 @@ func (h *Handler) servePair(w http.ResponseWriter, r *http.Request, fail func(in
 			x.RepositoryProblem = err.Error()
 		}
 	}
+	// Dedup: an earlier request from the same application (same repository
+	// or name) that still waits is replaced by this one, so the Owner sees
+	// one request per application.
+	for _, old := range h.pair.byCode {
+		if old.Status == "pending" && sameRequest(old, x) {
+			old.Status, old.doneAt = "superseded", now
+		}
+	}
 	h.pair.byCode[code] = x
 	h.pair.recent = append(h.pair.recent, now)
 	writeJSON(w, 202, map[string]any{
@@ -325,7 +405,7 @@ func (h *Handler) servePair(w http.ResponseWriter, r *http.Request, fail func(in
 		"poll":            PairPath + "/" + x.secret,
 		"poll_interval_s": pairPollEvery,
 		"expires_at_ms":   x.ExpiresAt,
-		"message":         "Show this code to the aiport owner. They approve it on the Integrate page of the aiport dashboard. Then GET the poll path to collect your token.",
+		"message":         "Show this code to the aiport owner. They approve it on the Integrate page of the aiport dashboard. Then GET the poll path to collect your token. Do not request pairing again while this request waits: keep polling it (a new request replaces this one and shows the owner a new code).",
 	})
 }
 
@@ -367,9 +447,12 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 		h.pair.init()
 		h.pair.expire(now)
 		list := []pairing{}
+		current := h.snapshot()
 		for _, x := range h.pair.byCode {
 			if x.Status == "pending" {
-				list = append(list, *x)
+				item := *x
+				item.Existing = matchApplication(current, x)
+				list = append(list, item)
 			}
 		}
 		h.pair.mu.Unlock()
@@ -423,9 +506,13 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 		// as the Owner confirmed or edited it.
 		Agent      string `json:"agent"`
 		Repository string `json:"repository"`
+		// Replace approves the request as the existing Application with this
+		// id: it gets a new token (its old one stops working) instead of a
+		// duplicate Application being added.
+		Replace string `json:"replace"`
 	}
 	if r.ContentLength != 0 && decodeJSON(w, r, &in) != nil {
-		fail(400, "invalid_request", "Send JSON with optional id, target, may_request_changes, agent and repository")
+		fail(400, "invalid_request", "Send JSON with optional id, target, may_request_changes, agent, repository and replace")
 		return true
 	}
 	h.pair.mu.Lock()
@@ -445,6 +532,26 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 	}
 	if !h.live.Writable() || h.keys.File == "" {
 		fail(503, "config_readonly", "This server cannot add clients to its configuration")
+		return true
+	}
+	if replace := strings.TrimSpace(in.Replace); replace != "" {
+		app, found := h.snapshot().Application(replace)
+		if !found {
+			fail(404, "origin_not_found", "No Application with this id to give the new token to")
+			return true
+		}
+		token := randomString(32)
+		if err := h.keys.SetLocal(app.TokenEnv, token); err != nil {
+			if errors.Is(err, config.ErrTokenFromEnvironment) {
+				fail(409, "token_from_environment", app.TokenEnv+": "+err.Error())
+				return true
+			}
+			fail(500, "token_save_failed", "Could not save the new token")
+			return true
+		}
+		h.resolveTokens(h.snapshot(), true)
+		x.Status, x.OriginID, x.token, x.doneAt = "approved", app.ID, token, now
+		writeJSON(w, 200, map[string]any{"status": "approved", "client_id": app.ID, "replaced": true})
 		return true
 	}
 	// Only what the Owner sent is used: a reported path nobody confirmed is not.

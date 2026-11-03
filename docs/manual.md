@@ -291,6 +291,16 @@ An Application gets its token by **pairing**:
    configuration without a restart; the token is stored in the private
    credential file.
 
+**One request per application.** A pairing request from an application
+that already has one waiting (the same repository, or the same name, ignoring
+case and punctuation) replaces the waiting one: the older request polls as
+`superseded` and only the newest code is listed. A request that matches an
+Application you already have is marked **Already connected as …**; its main
+button, **Give … a new token**, approves it as that Application (it receives
+a new token and its old one stops working) instead of adding a duplicate
+such as `docs-bot-2`. **Add as separate** still adds a new Application. Over
+the API, approve with `{"replace": "<id>"}`.
+
 Unapproved requests expire after 10 minutes. The Applications table on
 Routing lists every Application with its client id, Connection, own Aliases,
 and the **May request changes** toggle.

@@ -7,7 +7,9 @@ import {AppWindow, Check, Copy, KeyRound} from 'lucide-react';
    instructions for coding agents are on the Integrate page. */
 
 /** repository: the path the Application reported, not yet confirmed; repository_problem: what is wrong with it. */
-export type Pairing = {code: string; name: string; description?: string; repository?: string; repository_problem?: string; requested_at_ms: number; expires_at_ms: number};
+export type Pairing = {code: string; name: string; description?: string; repository?: string; repository_problem?: string; requested_at_ms: number; expires_at_ms: number;
+  /** The configured Application this request most likely is (same repository or name). */
+  existing?: {id: string; name: string; by: 'repository' | 'name'}};
 /** agent and repository: its Coding agent (empty = the default) and confirmed repository path. */
 export type Origin = {id: string; name: string; target?: string; aliases?: {alias: string; target: string; model: string}[]; may_request_changes?: boolean; agent?: string; repository?: string};
 export type Target = {id: string; disabled?: boolean};
@@ -27,9 +29,9 @@ function PairingRow({p, targets, onDone}: {p: Pairing; targets: Target[]; onDone
   const [target, setTarget] = useState(''), [mayRequest, setMayRequest] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   // The reported repository path is only a proposal: what is in this field when the Owner approves is what aiport keeps.
   const [repository, setRepository] = useState(p.repository || '');
-  async function act(action: 'approve' | 'reject') {
+  async function act(action: 'approve' | 'reject', replace?: string) {
     setBusy(true); setError('');
-    try { await post('pairings/' + encodeURIComponent(p.code) + '/' + action, action === 'approve' ? {target, may_request_changes: mayRequest, repository: repository.trim()} : undefined); onDone(); }
+    try { await post('pairings/' + encodeURIComponent(p.code) + '/' + action, action === 'approve' ? (replace ? {replace} : {target, may_request_changes: mayRequest, repository: repository.trim()}) : undefined); onDone(); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   return <li className="pairing">
@@ -37,6 +39,7 @@ function PairingRow({p, targets, onDone}: {p: Pairing; targets: Target[]; onDone
       <strong>{p.name}</strong> <span className="pair-code" aria-label={'Code ' + p.code}>{p.code}</span>
       {p.description && <p className="muted-small">{p.description}</p>}
       <small>Check the application shows this same code. Expires in {minutesLeft(p.expires_at_ms)} min.</small>
+      {p.existing && <p className="pairing-existing" role="note"><span className="badge warn">Already connected</span> as <strong>{p.existing.name}</strong> <code>{p.existing.id}</code> (same {p.existing.by}). Give it a new token rather than adding a second {p.existing.name}.</p>}
       {p.repository && <div className="pairing-repository">
         <label htmlFor={'repo-' + p.code}>Repository <small className="muted">(reported by the application; confirm, edit or clear it)</small></label>
         <input id={'repo-' + p.code} value={repository} spellCheck={false} disabled={busy} onChange={e => setRepository(e.target.value)}/>
@@ -52,7 +55,10 @@ function PairingRow({p, targets, onDone}: {p: Pairing; targets: Target[]; onDone
       <label className="check-label" title="Lets this application ask you for changes to aiport. You decide on each request.">
         <input type="checkbox" checked={mayRequest} onChange={e => setMayRequest(e.target.checked)}/>May request changes
       </label>
-      <button type="button" className="primary" disabled={busy} onClick={() => act('approve')}>Approve</button>
+      {p.existing
+        ? <><button type="button" className="primary" disabled={busy} onClick={() => act('approve', p.existing!.id)} title={'Approve as ' + p.existing.id + ': it gets a new token, its old one stops working'}>Give {p.existing.id} a new token</button>
+            <button type="button" className="secondary" disabled={busy} onClick={() => act('approve')} title="Add another Application with its own token">Add as separate</button></>
+        : <button type="button" className="primary" disabled={busy} onClick={() => act('approve')}>Approve</button>}
       <button type="button" className="text-button" disabled={busy} onClick={() => act('reject')}>Reject</button>
     </div>
     {error && <p className="auth-error" role="alert">{error}</p>}

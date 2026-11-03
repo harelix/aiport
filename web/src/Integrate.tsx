@@ -121,6 +121,13 @@ export function useGuidance(tick: number): Guidance | null {
 /* An Application's guidance state in the list: up to date, behind vN → vM,
    or unknown (never confirmed), with the refresh instruction to copy while
    it is not up to date. Sending Levels is a hint only. */
+/** A compact copy button for table cells: an icon, a check once copied. */
+function IconCopy({text, label}: {text: string; label: string}) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  return <button type="button" className="row-action icon" onClick={copy} aria-label={copied ? 'Copied' : label} title={label}>{copied ? <Check size={14} aria-hidden/> : <Copy size={14} aria-hidden/>}</button>;
+}
+
 function GuidanceCell({id, guidance}: {id: string; guidance: Guidance | null}) {
   const a = guidance?.applications[id];
   if (!guidance || !a) return <span className="muted">…</span>;
@@ -130,7 +137,7 @@ function GuidanceCell({id, guidance}: {id: string; guidance: Guidance | null}) {
   return <div className="guidance-cell">
     <span className={'badge' + (a.confirmed ? ' warn' : ' info')} title={why + (a.sends_levels ? ' Its calls sent Levels in the last 6 hours, a hint that its code may follow version 2.' : '')}>{label}</span>
     {a.sends_levels && <small className="muted">Sends Levels</small>}
-    <CopyButton text={guidance.instruction} label="Copy refresh instruction"/>
+    <IconCopy text={guidance.instruction} label={'Copy the refresh instruction for its coding agent'}/>
   </div>;
 }
 
@@ -232,20 +239,17 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
     {adding && <AddApplicationForm targets={targets} onCancel={() => setAdding(false)} onAdded={(t, name) => { setAdding(false); setIssued({...t, name, replaced: false}); onDone(); }}/>}
     {issued && !origins.some(o => o.id === issued.id) && <TokenReveal name={issued.name} issued={issued} replaced={issued.replaced} onClose={() => setIssued(null)}/>}
     {showApproved && origins.length > 0 && <div className="apps-table"><table aria-label="Approved applications">
-      <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Issues</th><th title="The aiport guidance version its coding agent last confirmed">Guidance</th><th title="Coding agent for Agent runs">Agent</th><th>Onboarding</th></tr></thead>
+      <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Issues</th><th title="The aiport guidance version its coding agent last confirmed">Guidance</th><th title="Coding agent for Agent runs">Agent</th><th>Onboarding</th><th><span className="sr-only">Actions</span></th></tr></thead>
       <tbody>{origins.map(o => {
         const done = progress(o, {handed: true, waiting: false, seen: calls.at[o.id], adapting, mcp: mcpCopied(o.id), agents}).filter(Boolean).length;
         const selected = app === o.id, own = issues[o.id] || [], open = !!shown[o.id] && own.length > 0, catalogOpen = !!catalogShown[o.id], levelsOpen = !!levelsShown[o.id] && !!levels;
         return <React.Fragment key={o.id}><tr className={'app-row' + (selected ? ' selected' : '')} onClick={e => { if (!(e.target as HTMLElement).closest('input,button,a,label')) pickRow(o.id); }}>
-          <td><button type="button" className="row-select" aria-expanded={expanded === o.id} onClick={() => pickRow(o.id)} title={'Open ' + o.name + '\'s token and removal actions'}>{o.name}</button><small><code>{o.id}</code></small>
+          <td className="app-cell"><div className="app-name"><button type="button" className="row-select" aria-expanded={expanded === o.id} onClick={() => pickRow(o.id)} title={'Open ' + o.name + '\'s token and removal actions'}>{o.name}</button><code>{o.id}</code>
+              {missing.includes(o.id) && <span className="badge warn" title="Its calls are refused until you issue a token">No token</span>}</div>
             <span className="app-toggles"><button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={catalogOpen} aria-controls={'app-catalog-' + o.id} onClick={() => setCatalogShown(x => ({...x, [o.id]: !x[o.id]}))}
               title={'What ' + o.name + ' can send, what serves it, and its recent Catalog changes'}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Catalog</button>
             <button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={levelsOpen} aria-controls={'app-levels-' + o.id} disabled={!levels} onClick={() => setLevelsShown(x => ({...x, [o.id]: !x[o.id]}))}
-              title={o.name + '\'s own mapping of fast, balanced and best, before the shared one: ' + appLevelsLabel(levels, o.id)}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Levels</button>
-            <button type="button" className="text-button issue-count app-catalog-toggle" disabled={tokenBusy === o.id} onClick={() => missing.includes(o.id) ? reissue(o) : setReplacing(x => x === o.id ? '' : o.id)} aria-expanded={missing.includes(o.id) ? undefined : replacing === o.id} aria-label={'Issue a new token for ' + o.name}
-              title={'Issue a new token for ' + o.name + ' to paste into its .env; the current one stops working'}><KeyRound size={13} aria-hidden/> {missing.includes(o.id) ? 'Issue token' : 'New token'}</button>
-            <button type="button" className="text-button issue-count app-catalog-toggle" onClick={() => setRemoving(x => x === o.id ? '' : o.id)} aria-expanded={removing === o.id} aria-label={'Remove ' + o.name}><Trash2 size={13} aria-hidden/> Remove</button></span>
-            {missing.includes(o.id) && <span className="badge warn" title="Its calls are refused until you issue a token">No token</span>}
+              title={o.name + '\'s own mapping of fast, balanced and best, before the shared one: ' + appLevelsLabel(levels, o.id)}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Levels</button></span>
             {tokenError[o.id] && <small className="auth-error" role="alert">{tokenError[o.id]}</small>}</td>
           <td>{o.target ? <code>{o.target}</code> : <span className="muted">Protocol default</span>}</td>
           <td><MayRequestToggle o={o} onDone={onDone}/></td>
@@ -259,7 +263,12 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
             return <button type="button" className="text-button" onClick={() => onAgent(o.id)} aria-label={(connected ? 'Change the coding agent of ' : 'Connect a coding agent to ') + o.name}
               title={connected ? agentName(id, agents) + (o.agent ? '' : ' (default)') + ' in ' + o.repository : 'Connect a coding agent (onboarding step 6)'}>{connected ? agentName(id, agents) : 'Connect'}</button>; })()}</td>
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
-        </tr>{expanded === o.id && <tr className="app-issues-row"><td colSpan={8}><div className="app-actions" role="region" aria-label={o.name + ' actions'}>
+          <td className="row-actions">
+            <button type="button" className="row-action" disabled={tokenBusy === o.id} onClick={() => missing.includes(o.id) ? reissue(o) : setReplacing(x => x === o.id ? '' : o.id)} aria-expanded={missing.includes(o.id) ? undefined : replacing === o.id}
+              aria-label={'Issue a new token for ' + o.name} title={'Issue a new token for ' + o.name + ' to paste into its .env; the current one stops working'}><KeyRound size={14} aria-hidden/> {missing.includes(o.id) ? 'Issue token' : 'New token'}</button>
+            <button type="button" className="row-action icon remove" onClick={() => setRemoving(x => x === o.id ? '' : o.id)} aria-expanded={removing === o.id} aria-label={'Remove ' + o.name} title={'Remove ' + o.name}><Trash2 size={14} aria-hidden/></button>
+          </td>
+        </tr>{expanded === o.id && <tr className="app-issues-row"><td colSpan={9}><div className="app-actions" role="region" aria-label={o.name + ' actions'}>
             <p><strong>{o.name}</strong> <code>{o.id}</code>{missing.includes(o.id) ? <> · <span className="badge warn">No token</span> its calls are refused until you issue one.</> : <> · its application sends its token as <code>AIPORT_APP_TOKEN</code> from its <code>.env</code>.</>}</p>
             <div className="pairing-actions">
               <button type="button" className="secondary with-icon" disabled={tokenBusy === o.id} onClick={() => missing.includes(o.id) ? reissue(o) : setReplacing(o.id)}><KeyRound size={14} aria-hidden/> {missing.includes(o.id) ? 'Issue token' : 'Issue new token'}</button>
@@ -267,14 +276,14 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
               <button type="button" className="text-button" onClick={() => setExpanded('')}>Close</button>
             </div>
           </div></td></tr>}
-          {issued?.id === o.id && <tr className="app-issues-row"><td colSpan={8}><TokenReveal name={o.name} issued={issued} replaced={issued.replaced} onClose={() => setIssued(null)}/></td></tr>}
-          {replacing === o.id && <tr className="app-issues-row"><td colSpan={8}><div className="token-reveal" role="region" aria-label={'New token for ' + o.name}>
+          {issued?.id === o.id && <tr className="app-issues-row"><td colSpan={9}><TokenReveal name={o.name} issued={issued} replaced={issued.replaced} onClose={() => setIssued(null)}/></td></tr>}
+          {replacing === o.id && <tr className="app-issues-row"><td colSpan={9}><div className="token-reveal" role="region" aria-label={'New token for ' + o.name}>
             <p><strong>Issue a new token for {o.name}?</strong> Its current token stops working at once; put the new one in its <code>.env</code>.</p>
             <div className="pairing-actions"><button type="button" className="primary" disabled={tokenBusy === o.id} onClick={() => reissue(o)}>Issue new token</button><button type="button" className="text-button" onClick={() => setReplacing('')}>Cancel</button></div>
           </div></td></tr>}
-          {removing === o.id && <tr className="app-issues-row"><td colSpan={8}><RemoveApplication o={o} onCancel={() => setRemoving('')} onRemoved={() => { setRemoving(''); if (issued?.id === o.id) setIssued(null); onDone(); }}/></td></tr>}{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={8}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}
-          {catalogOpen && <tr className="app-issues-row" id={'app-catalog-' + o.id}><td colSpan={8}><AppCatalog application={o.id} targets={targets} providers={providers} reload={configKey}/></td></tr>}
-          {levelsOpen && <tr className="app-issues-row" id={'app-levels-' + o.id}><td colSpan={8}><AppLevels doc={levels!} application={o.id} onChange={onLevels}/></td></tr>}</React.Fragment>;
+          {removing === o.id && <tr className="app-issues-row"><td colSpan={9}><RemoveApplication o={o} onCancel={() => setRemoving('')} onRemoved={() => { setRemoving(''); if (issued?.id === o.id) setIssued(null); onDone(); }}/></td></tr>}{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={9}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}
+          {catalogOpen && <tr className="app-issues-row" id={'app-catalog-' + o.id}><td colSpan={9}><AppCatalog application={o.id} targets={targets} providers={providers} reload={configKey}/></td></tr>}
+          {levelsOpen && <tr className="app-issues-row" id={'app-levels-' + o.id}><td colSpan={9}><AppLevels doc={levels!} application={o.id} onChange={onLevels}/></td></tr>}</React.Fragment>;
       })}</tbody>
     </table></div>}
     {showRejected && rejected.length > 0 && <div className="apps-table rejected-table"><table aria-label="Rejected applications">
@@ -438,13 +447,14 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
   const openAgentBrief = () => { setInstructionsOpen(true); setAgentTile(true); requestAnimationFrame(() => document.getElementById('tile-agent')?.scrollIntoView({behavior: 'smooth', block: 'start'})); };
 
   return <div className="integrate-layout">
-    <section className={'integrate-strip' + (showInstructions ? ' open' : '')} aria-labelledby="strip-heading">
-      <div className="strip-head">
-        <h2 id="strip-heading"><button type="button" className="text-button strip-toggle" aria-expanded={showInstructions} aria-controls="strip-body" onClick={() => setInstructionsOpen(!showInstructions)}>
-          <ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Instructions</button><HelpLink section="The instructions"/></h2>
-        <p className="muted-small">What the coding agent reads, written by aiport from this gateway's address and protocols ({doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}). <button type="button" className="text-button" onClick={onManual}>Read the manual</button></p>
+    <section className="panel wizard instructions-panel" aria-labelledby="strip-heading">
+      <div className="panel-heading wizard-heading">
+        <h2 id="strip-heading"><button type="button" className="group-toggle" aria-expanded={showInstructions} aria-controls="strip-body" onClick={() => setInstructionsOpen(!showInstructions)}>
+          <ChevronRight size={16} strokeWidth={2} aria-hidden className="chevron"/>Instructions</button><HelpLink section="The instructions"/></h2>
+        <span className="muted-small">Application brief · Coding agent brief</span>
       </div>
       {showInstructions && <div className="strip-body" id="strip-body">
+      <p className="muted-small strip-intro">What the coding agent reads, written by aiport from this gateway's address and protocols ({doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}). <button type="button" className="text-button" onClick={onManual}>Read the manual</button></p>
 
       <BriefTile id="application" title="Application brief" short="For the agent wiring the application's LLM calls through aiport." icon={<Terminal size={17} strokeWidth={1.75}/>}
         brief={appBrief} link={link('application')} open={appTile} setOpen={setAppTile} picker={picker} snippets={[...appBrief.snippets.filter(s => !s.sdk), ...sdkSnippets]}/>

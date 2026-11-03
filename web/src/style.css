@@ -736,14 +736,8 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 /* Integrate: main column (Applications, wizard) and the brief strip */
 .integrate-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}
 .integrate-main{min-width:0}
-.integrate-strip{display:grid;gap:12px;align-content:start;min-width:0}
-.strip-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px}
-.strip-head h2{display:flex;align-items:center;gap:4px;margin:0}
-.strip-toggle{font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;display:inline-flex;align-items:center;gap:4px;padding:0}
-.strip-toggle .chevron{transition:transform .15s}
-.integrate-strip.open .strip-toggle .chevron{transform:rotate(90deg)}
-.strip-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;align-items:start}
-.strip-body .strip-foot{grid-column:1/-1}
+.instructions-panel .strip-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start;padding:0 24px 20px}
+.instructions-panel .strip-intro,.instructions-panel .strip-foot{grid-column:1/-1;margin:0;line-height:1.6}
 .strip-head h2{font-size:12px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--eyebrow)}
 .strip-head .muted-small{line-height:1.6;margin-top:6px}
 .strip-foot{margin:0}
@@ -772,7 +766,8 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 }
 .apps-list .panel-heading{flex-wrap:wrap}
 .apps-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.apps-filter{min-width:290px}
+.apps-filter{grid-template-columns:repeat(3,auto)}
+.apps-filter button{padding:6px 12px}
 .apps-filter .count{background:transparent;padding:0 2px}
 .apps-filter button.on .count{color:var(--text-2)}
 .waiting{padding:0 0 4px}
@@ -810,7 +805,20 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .apps-table th,.apps-table td{padding:10px 8px;vertical-align:middle}
 .apps-table th:first-child,.apps-table td:first-child{padding-left:24px}
 .apps-table th:last-child,.apps-table td:last-child{padding-right:16px}
-.apps-table th{letter-spacing:.4px}
+.apps-table th{letter-spacing:.4px;white-space:nowrap}
+.apps-table td{white-space:nowrap}
+.apps-table td.app-cell{white-space:normal;min-width:200px;width:30%}
+.app-name{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
+.app-name code{font-size:12px;color:var(--muted)}
+.app-name .badge{align-self:center}
+.apps-table .guidance-cell{flex-direction:row;align-items:center;gap:6px}
+.row-actions{text-align:right}
+.row-actions .row-action+.row-action{margin-left:6px}
+.row-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);color:var(--text-2);font-size:12px;font-weight:500;vertical-align:middle}
+.row-action:hover{color:var(--text);border-color:var(--text-2)}
+.row-action[aria-expanded="true"]{color:var(--text);background:var(--panel2)}
+.row-action.icon{width:30px;padding:0}
+.row-action.remove:hover,.row-action.remove[aria-expanded="true"]{color:var(--bad);border-color:var(--bad)}
 .apps-table td small{display:block;margin-top:2px}
 .apps-table td small code{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
 .apps-table .progress-text{white-space:nowrap}
@@ -822,6 +830,7 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .panel .agent-fields{max-width:520px;margin-top:8px}
 .install-hint{display:grid;gap:6px;margin:4px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--field);font-size:13px;color:var(--text)}
 .install-command{display:block;font-size:12.5px;overflow-wrap:anywhere;user-select:all}
+.pairing-existing{margin:8px 0 0;font-size:13px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .pairing-repository{display:grid;gap:4px;margin-top:8px;font-size:13px}
 .pairing-repository input{padding:6px 10px;font-size:13px;width:100%;max-width:520px}
 
@@ -900,7 +909,7 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .levels-panel>p.muted{margin-top:0}
 @media(max-width:650px){.levels-panel>p,.levels-panel>.levels-table,.levels-panel>.level-editor{margin-left:16px;margin-right:16px}}
 /* Catalog and Levels toggles side by side under an Application's name on Integrate */
-.app-toggles{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:4px;white-space:nowrap}
+.app-toggles{display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:4px;white-space:nowrap;font-size:12px}
 .app-toggles .app-catalog-toggle{margin-top:0}
 /* A task name's per-effort models, edited on its Routing map row */
 .route-table td.route-edit{width:1%;padding-left:0;text-align:right}
