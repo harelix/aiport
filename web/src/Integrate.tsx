@@ -94,7 +94,19 @@ function useIssues(tick: number): {issues: Record<string, Issue[]>; explain: Exp
 
 /** aiport's guidance version for coding agents and, per Application, the
     version its coding agent last confirmed (GET /api/v1/guidance). */
-export type Guidance = {current: number; behind: number; instruction: string; applications: Record<string, {confirmed: number | null; confirmed_at_ms: number | null; behind: boolean; sends_levels: boolean}>};
+export type Guidance = {current: number; behind: number; never_confirmed?: number; instruction: string; applications: Record<string, {confirmed: number | null; confirmed_at_ms: number | null; behind: boolean; sends_levels: boolean}>};
+
+/* The Overview line: Applications whose coding agent confirmed an older
+   guidance version ("behind"), and those whose agent never confirmed any
+   (integrated before guidance versions, say), told apart. */
+export function guidanceLine(g: Guidance): string {
+  const never = Math.min(g.never_confirmed || 0, g.behind), older = g.behind - never;
+  const apps = (n: number) => n === 1 ? '1 Application\'s coding agent' : n + ' Applications\' coding agents';
+  const parts: string[] = [];
+  if (older) parts.push(apps(older) + (older === 1 ? ' is' : ' are') + ' behind: ' + (older === 1 ? 'it confirmed' : 'they confirmed') + ' an older guidance version than ' + g.current);
+  if (never) parts.push(apps(never) + (never === 1 ? ' has' : ' have') + ' never confirmed any guidance version');
+  return parts.join('; ') + '.';
+}
 
 export function useGuidance(tick: number): Guidance | null {
   const [g, setG] = useState<Guidance | null>(null);

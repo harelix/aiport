@@ -165,7 +165,11 @@ func (h *Handler) startFix(is decide.Issue) (*agentrun.Run, *refused) {
 	env, token, revoke := h.runEnv(a, calls)
 	b := decide.BranchFix{Branch: t.Branch, Base: t.Base, Worktree: t.Dir, Repository: t.Repo, Agent: a.ID, State: decide.BranchRunning, StartedAt: h.clock().UnixMilli()}
 	allowed := &allowances{}
-	run, err := h.runner().Start(context.Background(), agentrun.Spec{
+	parent := h.fixContext
+	if parent == nil {
+		parent = context.Background()
+	}
+	run, err := h.runner().Start(parent, agentrun.Spec{
 		Application: is.Application, Issue: is.ID, Mode: agentrun.Fix, Agent: a.ID, AgentName: a.Name,
 		Program: agentrun.Program{Path: a.ACP.Path, Args: a.ACP.Args}, Dir: t.Dir,
 		Prompt: fixPrompt(is, t.Branch), Env: env, Secret: token, ModelCalls: calls, Limit: h.fixTimeLimit(), Warnings: agents.SettingsWarnings(t.Dir),

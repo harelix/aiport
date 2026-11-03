@@ -6,6 +6,7 @@ import (
 	localauth "aiport/internal/auth"
 	"aiport/internal/dashboard"
 	"aiport/internal/telemetry"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -60,6 +61,7 @@ type Handler struct {
 	runTokens        map[[32]byte]bool // digests of the live run credentials (guarded by runTokenMu)
 	explainLimit     time.Duration     // 0 = agent_runs.explain_minutes; tests set a short one
 	fixLimit         time.Duration     // 0 = agent_runs.fix_minutes; tests set a short one
+	fixContext       context.Context   // the parent of each Fix it run's context; nil = context.Background(); tests end it to reach the limit at a moment they choose
 	worktrees        string            // where Fix it makes its worktrees: next to the configuration; "" = the temporary directory
 	fixMu            sync.Mutex        // one Fix it start or end at a time
 	approvalMu       sync.Mutex

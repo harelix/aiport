@@ -1,11 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -442,12 +445,51 @@ func TestFixItIsOnlyForCausesInTheApplicationsCode(t *testing.T) {
 
 // A Fix it run that reaches its time limit keeps its worktree and diff for
 // review, like one whose command went unanswered.
+// expiry is a context whose deadline passes when the test says so: once
+// expired, it is done with context.DeadlineExceeded, as a run's own time
+// limit would be.
+type expiry struct {
+	once sync.Once
+	done chan struct{}
+}
+
+func (e *expiry) expire()                     { e.once.Do(func() { close(e.done) }) }
+func (e *expiry) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (e *expiry) Done() <-chan struct{}       { return e.done }
+func (e *expiry) Value(any) any               { return nil }
+func (e *expiry) Err() error {
+	select {
+	case <-e.done:
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
+}
+
 func TestATimedOutFixKeepsItsDiffForReview(t *testing.T) {
-	f, _ := newFixFixture(t, acpScript{Steps: []acpStep{editConfig.Steps[0], {Ignore: true}}})
-	f.h.fixLimit = 500 * time.Millisecond
+	f, _ := newFixFixture(t, acpScript{Steps: []acpStep{editConfig.Steps[0], {Say: "config.py edited."}, {Ignore: true}}})
+	// The limit is reached only once the edit is in the run log, however
+	// slowly the agent starts: the test ends the run's parent context as
+	// its deadline.
+	limit := &expiry{done: make(chan struct{})}
+	f.h.fixContext = limit
 	if code, out := f.fix(t); code != 202 {
 		t.Fatalf("fix: %d %v", code, out)
 	}
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		_, logged := call(f.h, "GET", "/api/v1/issues/"+f.id+"/run", "", issuesManagement, false)
+		edited := false
+		for _, u := range func() []any { l, _ := logged["log"].([]any); return l }() {
+			edited = edited || strings.Contains(fmt.Sprint(m(u)["text"]), "config.py edited.")
+		}
+		if edited {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the agent did not edit: %v", logged)
+		}
+	}
+	limit.expire()
 	b := m(f.fixEnded(t)["branch_fix"])
 	if b["state"] != "timed_out" || b["worktree"] == nil || !strings.Contains(b["note"].(string), "time limit") {
 		t.Fatalf("branch fix: %v", b)

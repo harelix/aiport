@@ -411,7 +411,7 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 @media(max-width:650px){.panel.changes>.decision{padding:14px 16px}.panel.changes>.askers{padding:0 16px 18px}.panel.changes>.check-label,.panel.changes>.notice{margin:0 16px 14px}.panel.changes>.caption{padding:14px 16px 18px}}
 .decision .need{color:var(--text);font-size:14px;overflow-wrap:anywhere}
 .decision .evidence{color:var(--muted);font-size:12px}
-.dot.grad{background:var(--grad-h);margin-top:6px}
+.dot.info{background:var(--info);margin-top:6px}
 .guidance-cell{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
 .guidance-cell .copy-button{font-size:12px;padding:2px 8px}
 .issue-count{display:inline-flex;align-items:center;gap:6px;text-align:left}
