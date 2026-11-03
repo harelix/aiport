@@ -134,7 +134,7 @@ func TestMCPRemindsOnlyWhileBehind(t *testing.T) {
 	if done["isError"] == true || len(texts(done)) != 1 {
 		t.Fatalf("guidance_done: %v", done)
 	}
-	if s := initialize(t, h, reqHelper); strings.Contains(s, "aiport_guidance") {
+	if s := initialize(t, h, reqHelper); strings.Contains(s, first) || strings.Contains(s, "\n") {
 		t.Fatalf("reminder still there after confirming: %q", s)
 	}
 	if got := texts(toolCall(t, h, reqHelper, "aiport_capabilities", nil)); len(got) != 1 {

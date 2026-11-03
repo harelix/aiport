@@ -497,8 +497,8 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
       <p className="muted handover-intro integrate-pointer">The Application brief and the coding-agent brief, with SDK snippets and a live checklist per Application, are on the Integrate page.</p>
     </section>
     <section className="panel planned">
-      <div className="panel-heading"><h2>Per-application limits</h2><span className="badge">Planned</span></div>
-      <p className="muted">Model allowlists per application are not built yet. Today an application's calls go to its bound connection or the protocol default, or where a Level sends them; per-application task names (model aliases) are set in the YAML file (<code>origins[].aliases</code>).</p>
+      <div className="panel-heading"><h2>Model allowlists</h2><span className="badge">Planned</span></div>
+      <p className="muted">Restricting which models an application may request is not built yet. What each application's names reach is built: Levels and their per-effort models are edited in the Levels panel above (an application's own mapping under Levels on its row on Integrate), and the Routing map shows where every name goes. Per-application task names come from approved change requests or the YAML file (<code>origins[].aliases</code>).</p>
     </section>
   </>;
 }
@@ -563,7 +563,7 @@ export default function SettingsPage({config, providers, onChange}: Props) {
     <section className="panel setup">
       <p className="eyebrow">CONFIGURATION</p>
       <h2>One configuration file. Clear ownership.</h2>
-      <p className="muted">Providers and routing are managed from their pages; coding agents, aliases and the listen address live in your YAML file. Validate hand edits with <code>aiport check</code>, then restart. A new setup can be created with:</p>
+      <p className="muted">Providers, routing, Levels and their per-effort models, and each application's coding agent are managed from their pages; task names (aliases) arrive as approved Changes or are edited, with their per-effort models and the listen address, in your YAML file. Validate hand edits with <code>aiport check</code>, then restart. A new setup can be created with:</p>
       <CopyBlock label="setup commands" text={'aiport init --config aiport-new.yaml\naiport check --config aiport-new.yaml\naiport serve --config aiport-new.yaml'}/>
     </section>
   </>;

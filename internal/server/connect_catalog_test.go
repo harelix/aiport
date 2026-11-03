@@ -91,7 +91,7 @@ func TestTheCodingAgentBriefChecksTheCatalogAtSessionStart(t *testing.T) {
 	brief := getBrief(t, briefServer(t, ""), "?format=handover&for=agent")
 	mustContain(t, "coding-agent brief", brief,
 		"aiport_catalog", "GET http://127.0.0.1:9911/v1/aiport/catalog", "GET http://127.0.0.1:9911/v1/models",
-		CatalogHeader, "catalog_changed", "aiport_my_issues", "**Check the Catalog and Issues at the start of a session.**",
+		CatalogHeader, "catalog_changed", "aiport_my_issues", "**Check the Catalog, Issues and guidance at the start of a session.**",
 		"(`catalog`)", // the snippet
 	)
 	mustContain(t, "AGENTS.md line", connect.AgentsLine, "aiport_catalog", "aiport_my_issues")

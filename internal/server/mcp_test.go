@@ -59,9 +59,12 @@ func TestMCPInitializeExplainsTheLoop(t *testing.T) {
 		t.Fatalf("serverInfo: %v", res)
 	}
 	instr, _ := res["instructions"].(string)
-	if !strings.Contains(instr, "aiport_request_change") || !strings.Contains(instr, "aiport_my_requests") || !strings.Contains(instr, "aiport_my_issues") || strings.Count(instr, ". ") != 2 {
-		t.Fatalf("instructions should explain the loop and Issues in three sentences: %q", instr)
-	}
+	// The same three things as the AGENTS.md line: a Level or task name,
+	// never a provider's model id; effort with the header; the session-start
+	// checks and confirming guidance.
+	mustContain(t, "MCP instructions", instr, "aiport_request_change", "aiport_my_requests")
+	mustContain(t, "MCP instructions", instr, levelWords...)
+	mustContain(t, "MCP instructions", instr, sessionStartTools...)
 }
 
 func TestConnectAnnouncesTheMCPEndpoint(t *testing.T) {

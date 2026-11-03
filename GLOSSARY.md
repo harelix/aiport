@@ -49,8 +49,10 @@ an Application's own mapping comes before the shared one.
 _Avoid_: tier, `<provider>-<tier>` names.
 
 **Effort**
-How hard one call is (`low`, `medium`, `high`), stated by the client and used
-only to pick the model.
+How hard one call is (`low`, `medium`, `high`), stated by the client (the
+`X-Aiport-Effort` header, else its provider's own effort field, else
+`medium`) and used only to pick the model: a Level or task name may have a
+model per effort. aiport never changes the effort in the request.
 
 **Catalog**
 What one Application can use through aiport: its task names (its own Aliases

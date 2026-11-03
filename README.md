@@ -32,7 +32,8 @@ One place for provider keys, routing and request history, that notices when an a
 | **Keys stay in aiport** | Each application pairs for its own local token, approved by you. aiport adds the real provider key on the way out. |
 | **Native forwarding** | Chat Completions, Responses and Messages pass through byte for byte, in the provider's own format. Nothing is translated, so nothing is lost. |
 | **Adapts, with your approval** | When an application keeps failing, aiport opens an Issue with the evidence and a fix on each side: a Change you approve in one click, and instructions for the application's coding agent. |
-| **Applications know what they can use** | `GET /v1/models` lists each application's own task names and models (its Catalog), and an `X-Aiport-Catalog` header tells it when you change them. Remove any Connection: aiport re-points what used it as one revertable Change and tells every application it affects. |
+| **Applications know what they can use** | `GET /v1/models` lists each application's Levels, task names and models (its Catalog), and an `X-Aiport-Catalog` header tells it when you change them. Remove any Connection: aiport re-points what used it as one revertable Change and tells every application it affects. |
+| **Name the need, not the provider** | Applications send a Level (`fast`, `balanced`, `best`) or a task name, and say how hard a call is with `X-Aiport-Effort`; you map each to a Connection and model in the dashboard, and the Routing map shows where every name goes. |
 | **Local and private** | Loopback only, cross-site requests refused, and only request metadata is kept: never prompts or responses. |
 
 ## How it works

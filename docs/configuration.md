@@ -72,9 +72,10 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `hostnames` | Optional list of local names aiport also answers to on the listen port, for example `[aiport.localhost]`. Each must be lowercase, `localhost` or end in `.localhost`, valid DNS label syntax (letters, digits, inner hyphens), without a port, listed once. aiport accepts `Host`/`Origin` `<name>:<listen port>` next to the listen address and refuses every other name. The first name replaces the IP in every address aiport hands out (`/_connect`, briefs, the dashboard's Connect panel, `aiport serve`); the socket stays on the `listen` IP. A change made through aiport takes effect without a restart; a hand edit needs one |
 | `auth.token_env` | Required name of the global management/local bearer token environment variable |
 | `targets` | List of `id`, `provider`, and for built-in providers optionally nothing else. `protocol`, `base_url` and `api_key_env` default from the provider preset (required for custom providers). `region` is required by regional providers (Bedrock) and fills `{region}`. `endpoint` picks a provider API surface (Bedrock: `runtime` default, or `mantle`). Optional `disabled` (false) |
-| `origins` | List of `id`, `name`, `token_env`, optional `target`, optional `aliases` (`alias`, `target`, `model`): models only this client can ask for, checked before global aliases and allowed to pick another connection |
+| `origins` | List of `id`, `name`, `token_env`, optional `target`, optional `aliases` (`alias`, `target`, `model`, optional `effort`): models only this client can ask for, checked before global aliases and allowed to pick another connection. An entry whose `alias` is a Level is this client's own mapping of that Level on its `target`'s protocol, at most one per Level and protocol |
 | `defaults` | Optional `openai_target` and `anthropic_target`; matching target protocols required |
-| `aliases` | List of `target`, `alias`, `model`; unique alias per target; model strings 1–256 bytes |
+| `aliases` | List of `target`, `alias`, `model`, optional `effort`; unique alias per target; model strings 1–256 bytes. An entry whose `alias` is a Level (`fast`, `balanced`, `best`) is the shared mapping of that Level on its `target`'s protocol, at most one per Level and protocol |
+| `aliases[].effort`, `origins[].aliases[].effort` | Optional `{low, medium, high}`, each a model on the same `target`; the model for a call of that effort (`X-Aiport-Effort`, else the provider's own effort field, else `medium`). An effort left out uses `model` |
 | `telemetry.enabled` | true; request metadata is saved to `<config>.db` (SQLite) |
 | `telemetry.retention_days` | 7; range 1–3650; also how long decided Suggestions and Change requests, and resolved or dismissed Issues, are kept (dismissed ones at least 7 days, the quiet period), and how long Catalog changes are kept; Changes themselves are never pruned |
 | `telemetry.queue_capacity` | 4096; range 1–65536 |
@@ -92,6 +93,21 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `adapting.failing_connection.window_minutes` | 60; range 1–10080; how far back those failures are counted |
 | `adapting.level_unmapped.count` | 5; range 1–1000000; calls from one Application for one Level refused with `level_unmapped` that open an Issue (mapping the Level for that Application as the aiport fix) |
 | `adapting.level_unmapped.window_minutes` | 60; range 1–10080; how far back those refusals are counted |
+
+A Levels and per-effort example (anonymous names):
+
+```yaml
+aliases:
+  - {target: local, alias: fast, model: 'llama3:8b'}
+  - {target: hosted, alias: balanced, model: mid-model, effort: {low: small-model, high: big-model}}
+origins:
+  - id: docs-bot
+    name: Docs Bot
+    token_env: AIPORT_APP_DOCS_BOT_TOKEN
+    aliases:
+      - {alias: best, target: local, model: 'llama3:70b'}   # its own best
+      - {alias: summarize, target: local, model: 'llama3:8b', effort: {high: 'llama3:70b'}}
+```
 | `adapting.auto_fix` | false; `true` lets aiport apply an Issue's aiport fix itself, as a revertable Change made by "aiport (automatic)", only when exactly one Connection serves the model, the error reached its threshold and the fix is an Alias for that one Application. A fix the Owner reverted (or rejected) is never applied automatically again for that Application and cause. Also switchable on the Changes page |
 | `adapting.explain` | none; `{connection, model}`: the configured Connection and a model it serves that write an Issue's explanation (Explain) from its evidence alone. Without it Explain is unavailable. Also set in Settings → Explanations |
 
@@ -147,7 +163,10 @@ downstream is terminated at the idle/write deadline. After response commitment,
 transport failures abort the response; no synthetic provider events are appended.
 Clients may observe a truncated response. No outcome persistence exists yet.
 
-Selection: authenticated origin target, then protocol default; missing targets
+Selection: a Level (the origin's own mapping on the request's protocol, then
+the shared one; neither is 400 `level_unmapped`), then the origin's own alias,
+then the origin's target, then the protocol default; per-effort models of the
+matched Level or alias then pick the model. Missing targets
 return 503, disabled targets 503, protocol mismatch 400, concurrency overflow 429,
 upstream connection failure 502, and pre-commit upstream timeout 504. No fallback
 or retries. A new upstream connection is used for every request to avoid implicit
@@ -172,6 +191,11 @@ authentication response headers are stripped. Compression is not transformed.
 
 `aiport init` supports comma-separated providers/agents, private exclusive setup
 files and a companion shell `.env` file with generated local credentials only.
+It proposes a Level mapping from the chosen providers and asks for each
+model, mapping nothing unless confirmed; `--levels
+fast=local/llama3:8b,best=hosted/big-model` (`LEVEL=CONNECTION/MODEL`, the
+Connection one of the chosen provider ids) maps them without a terminal, and
+`--no-levels` skips the step.
 It configures endpoints and references; it does not contact providers or test keys.
 `aiport agent` performs per-launch configuration without changing global client
 settings. Agent target selection follows the configured origin; edit YAML to
@@ -194,14 +218,17 @@ recording is turned off instead. WAL, backups and free pages can keep deleted
 metadata; deletion is not a secure-erasure guarantee.
 
 Records contain gateway UUID, UTC start, origin, selected target/provider/protocol,
-normalized method/route, bounded requested model, status/outcome, monotonic latency
-and first observed body-byte time. No prompts, body fragments, tool arguments,
+normalized method/route, bounded requested model, its effort and the effort's
+source (`header`, `field` or `default`), the model sent upstream
+(`resolved_model`, empty when the call was not forwarded), status/outcome,
+monotonic latency and first observed body-byte time. No prompts, body fragments, tool arguments,
 raw headers, query values or provider errors are retained. Usage and pricing are
 unobserved/unknown. There is no TTFT metric; TTFB is not relabeled as TTFT.
 
 Authenticated GET management APIs: `/api/v1/config` (redacted references/status,
 read-only), `/api/v1/requests`, `/api/v1/requests/{id}`, `/api/v1/stats`, and health.
-List/stats share `hours` (1–168), origin/target/provider/outcome filters, and optional
+List/stats share `hours` (1–168), origin/target/provider/outcome/model filters
+(`model` is the name the Application sent), and optional
 exact UTC `from_ms`/`to_ms` bounds capped at seven days. Stable descending
 `(started_at_ms, id)` cursors are base64url encoded; list size defaults to 50, max
 100. Detail returns 404 if absent/evicted. Counts cover retained records only.
@@ -236,6 +263,32 @@ hourly; without a database they are kept in memory for this session, also no
 longer than that). A `catalog_changed` Issue opens only for an Application
 that used what the Change took away within request history.
 
+Levels and per-effort models (management access; writes need the
+`X-Aiport-CSRF: 1` header; each write is one revertable Change and a Catalog
+change): `GET /api/v1/levels` returns `{shared, applications, connections}`;
+`PUT /api/v1/levels/{protocol}/{level}` with `{application?, connection,
+model, effort?}` maps a Level (`application` left out: the shared mapping;
+`effort` left out keeps the per-effort models while the Connection stays the
+same and drops them when it changes); `DELETE` on the same path with
+`{application?}` removes the mapping; `PUT /api/v1/aliases/effort` with
+`{application?, alias, connection?, effort}` sets the per-effort models of
+any Alias (`connection` required for shared Aliases and Levels).
+
+Routing map (management access): `GET /api/v1/routing` returns, per
+Application, every name it can send (task names, Levels, any other model
+name) with the Connection and model that serve it, built from the same
+Catalog as its `GET /v1/models`; `?application=<id>` returns one Application
+with its recent Catalog `changes`.
+
+Guidance versions: `GET /v1/aiport/guidance` and `POST
+/v1/aiport/guidance/done` (Application token; MCP `aiport_guidance` and
+`aiport_guidance_done`; work with `adapting.disabled`) read and confirm the
+guidance version of the calling Application; `GET /api/v1/guidance`
+(management access) lists every Application's `confirmed`,
+`confirmed_at_ms`, `behind` and `sends_levels` (a hint only), with the
+refresh instruction. Confirmations are kept in the `guidance` table of
+`<config>.db` (in memory for the session without a database).
+
 Removing a Connection (management access): `GET /api/v1/targets/{id}/dependents`
 (or `POST` with `X-Aiport-CSRF: 1` and a draft plan) returns `{connection, dependents, applications,
 problem?}`, each dependent with its suggested replacement and `applications`
@@ -243,7 +296,8 @@ the Applications whose Catalog the plan changes; `DELETE /api/v1/targets/{id}`
 with `{"plan": {"<dependent id>": "<Connection id or empty>"}}` re-points every
 dependent and removes the Connection as one Change (`{ok, change_id,
 applications}`). Dependent ids are `default:<protocol>`, `binding:<app>`,
-`alias:<name>`, `application_alias:<app>:<name>`, `explain`, `agent_runs` and
+`alias:<name>`, `application_alias:<app>:<name>`, `level:<level>:<protocol>`,
+`application_level:<app>:<level>:<protocol>`, `explain`, `agent_runs` and
 `evaluation`; an empty Connection leaves the item without one (default unset,
 binding or Alias removed, the feature turned off). Without a plan, a
 Connection something uses is refused (`400 invalid_connection`, naming what

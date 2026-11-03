@@ -24,8 +24,10 @@ the listen port, and refuses everything else with `403 invalid_host` /
 `invalid_origin`.
 
 Each feature and header has a status. Only `available` items are implemented;
-`planned` items (model allowlists, effort tiers, capabilities, routing headers)
-are published early so integrators can prepare.
+`planned` items (model allowlists, the `X-Aiport-Task`, `X-Aiport-Session`
+and `X-Aiport-Version` request headers, and the `X-Aiport-Model`,
+`X-Aiport-Route` and `X-Aiport-Source` response headers) are published early
+so integrators can prepare.
 
 ## Pairing
 
@@ -75,6 +77,57 @@ All of it answers about the calling Application only and holds Application
 ids, task names, model names and Connection ids, never keys or URLs. It works
 with adapting off; only the `catalog_changed` Issues follow the switch.
 
+## Levels and effort
+
+Every aiport shares three Levels, `fast`, `balanced` and `best` (the `levels`
+feature). An Application sends one as its model to say how capable the model
+must be; the Owner maps each Level per protocol to a Connection and model,
+optionally per Application (its own mapping comes first). Only the `model`
+field is replaced; the rest of the body is forwarded unchanged. Mapped Levels
+are listed in `GET /v1/models` (`owned_by: "aiport"`, or "(aiport Level)" in
+`display_name`) and in the Catalog (`task_names` entries with `level: true`
+and `protocol`). A Level not mapped on the request's protocol is refused with
+`400 level_unmapped`, naming the Level and protocol; aiport never picks
+another model.
+
+`X-Aiport-Effort: low|medium|high` (available) says how hard one call is. A
+Level or task name may have per-effort models (`effort: {low, medium, high}`
+in the Catalog); the call's effort picks one. Without the header aiport reads
+the provider's own field, never changing it: `reasoning_effort` (Chat
+Completions), `reasoning.effort` (Responses), `output_config.effort`
+(Messages), where `none`, `minimal` and `low` count as low and `high`,
+`xhigh` and `max` as high; numeric budgets are ignored. Neither means
+`medium`. The header is never forwarded.
+
+Both briefs, the `AGENTS.md` line and the MCP instructions teach the same:
+send a Level or a task name, never a provider's model id, and state effort
+with `X-Aiport-Effort`.
+
+## Guidance versions
+
+aiport numbers the guidance it gives coding agents (the briefs, the
+`AGENTS.md` line from `connect.AgentsLine`, the MCP instructions) in
+`connect.GuidanceVersion`, with a change log per version in
+`internal/connect/guidance.go` (the `guidance` feature). Raise the version,
+and add an entry that says exactly what an agent must change, whenever that
+guidance changes in a way agents must act on. Per Application aiport keeps
+the version its coding agent last confirmed:
+
+- `GET /v1/aiport/guidance` (MCP tool `aiport_guidance`), with the
+  Application's own token: `{current, confirmed, confirmed_at_ms, behind,
+  changes, agents_line, steps}`; `changes` lists every version after the
+  confirmed one (`version`, `summary`, `actions`), `steps` end with
+  confirming.
+- `POST /v1/aiport/guidance/done` (MCP tool `aiport_guidance_done`) records
+  the current version.
+- `GET /v1/aiport/capabilities` carries `guidance: {current, confirmed}`
+  (`confirmed` is `null` when the Application never confirmed).
+- While behind, the MCP `initialize` instructions start with a one-line
+  reminder and every other aiport tool answer ends with it, as a second text
+  block.
+
+It works with adapting off, and an Application only ever sees its own state.
+
 ## The two briefs
 
 Both briefs are generated from the live gateway: its real listen address and
@@ -90,29 +143,33 @@ configured) and `code`. The dashboard's Integrate page renders the same data.
 - The **Application brief** covers pairing for the Application's own token,
   `AIPORT_BASE_URL` and `AIPORT_APP_TOKEN`, SDK base URLs with snippets for the
   OpenAI and Anthropic SDKs in Python and TypeScript plus curl, removing
-  provider keys, model names (read `GET /v1/models`, prefer task names; the
-  `models` snippet), watching `X-Aiport-Catalog`, errors and retries,
+  provider keys, model names (a Level or a task name, never a provider's
+  model id; read `GET /v1/models`, the `models` snippet; `level_unmapped`),
+  effort (`X-Aiport-Effort`, the `level` snippet), watching
+  `X-Aiport-Catalog`, errors and retries,
   `X-Aiport-Request-Id`, Issues (including `catalog_changed`), and
   verification.
 - The **coding-agent brief** covers the project MCP entry, the `AGENTS.md`
-  line, the tools `aiport_capabilities`, `aiport_catalog`,
-  `aiport_request_change`, `aiport_my_requests`, `aiport_my_issues` and
-  `aiport_issue_fixed` and their HTTP equivalents, checking the Catalog (and
-  re-reading it when `X-Aiport-Catalog` changes) and the Application's Issues
-  at the start of a session and saying when one is fixed on its side (the
-  `catalog` snippet), how to write a Change
+  line, keeping the guidance current (`aiport_guidance_done` after setting
+  up), the tools `aiport_capabilities`, `aiport_catalog`, `aiport_guidance`,
+  `aiport_guidance_done`, `aiport_request_change`, `aiport_my_requests`,
+  `aiport_my_issues` and `aiport_issue_fixed` and their HTTP equivalents,
+  checking the Catalog (and re-reading it when `X-Aiport-Catalog` changes),
+  the Application's Issues and `aiport_guidance` at the start of a session
+  and saying when an Issue is fixed on its side (the `catalog` snippet), how to write a Change
   request (`kind`, `need`, `details`, `why`, `scope`, `scope_case`, and the
-  optional `alias`, `prefer_connection` and `prefer_model`), naming tasks
-  rather than providers (the Owner decides which provider serves an
-  Application; a preference is advice), waiting
+  optional `alias`, `prefer_connection` and `prefer_model`), naming the need
+  (a Level or task name and an effort) rather than a provider (the Owner
+  decides which provider serves an Application; a preference is advice),
+  waiting
   for the Owner's decision, the permission (`403 change_requests_not_allowed`
   until the Owner allows it) and hints.
 
 When the Owner turns adapting off (`adapting.disabled: true`), the document
 marks `change_requests`, `issues` and `X-Aiport-Hint` with status `off`, the `mcp`
 feature says the change tools are off, `adapting` is `false`, and the
-coding-agent brief opens with the same one-line reason. The `catalog` feature
-and `X-Aiport-Catalog` stay `available`.
+coding-agent brief opens with the same one-line reason. The `catalog`,
+`levels` and `guidance` features and `X-Aiport-Catalog` stay `available`.
 
 ## Hints and the coding-agent brief
 
@@ -130,7 +187,11 @@ is open for the Application, a failing call's `X-Aiport-Hint` names that Issue
 The coding-agent brief tells the coding agent to add a project-level MCP entry
 pointing at this gateway's `/mcp`, with the token taken from
 `${AIPORT_APP_TOKEN}` (never the value), and the line from
-`connect.AgentsLine` to the application's `AGENTS.md`.
+`connect.AgentsLine` to the application's `AGENTS.md`: send a Level or a task
+name, never a provider's model id; state effort with `X-Aiport-Effort`; check
+`aiport_catalog`, `aiport_my_issues` and `aiport_guidance` at the start of a
+session and call `aiport_guidance_done` after updating. The MCP `initialize`
+instructions (`internal/server/mcp.go`) say the same.
 
 ## Extensions
 

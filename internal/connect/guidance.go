@@ -29,11 +29,12 @@ var guidanceLog = []GuidanceChange{
 		"Make sure AGENTS.md has the aiport line (agents_line).",
 		"At the start of a session, read aiport_catalog and aiport_my_issues.",
 	}},
-	{2, "Levels and effort: name how capable a model must be (fast, balanced, best) instead of naming a provider or model.", []string{
-		"Where the code picks a model by how capable it must be, send a Level as the model name: fast, balanced or best. The Owner maps each Level to a model per protocol; aiport_catalog lists the Levels this Application can use.",
-		"Send how hard a task is with the X-Aiport-Effort header (low, medium or high) where it helps pick the model; aiport never rewrites the provider's own effort field.",
-		"Never put a provider or a provider's model id in code where a Level or a task name will do.",
-		"Check that AGENTS.md has the current agents_line in place of any older aiport line.",
+	{2, "Levels and effort: name how capable a model must be (fast, balanced, best) instead of naming a provider or model, and check aiport_guidance at the start of a session.", []string{
+		"Find every place the code names a model for its LLM calls (model arguments, configuration, environment defaults). Where it names a provider's model id, or a name with a provider in it (such as <provider>-<tier>), send a Level instead: fast, balanced or best, by how capable the model must be; or a task name from aiport_catalog when the Owner set one up for that work. Keep a model id only where no Level or task name will do; the rule is never a provider's model id where a Level or task name will do.",
+		"Check the names against the Catalog: aiport_catalog (or GET /v1/models with the Application's token) lists the Levels mapped for this Application (task_names entries with level: true and their protocol) and its task names. A Level that is not mapped on the call's protocol is refused with 400 level_unmapped; send a name the Catalog lists, or ask the Owner to map it.",
+		"Where calls differ in difficulty, add the X-Aiport-Effort header (low, medium or high) to those calls, through the SDK's extra headers. Leave the provider's own effort field (reasoning_effort, reasoning.effort, output_config.effort) as it is: aiport reads it when the header is missing and never changes it.",
+		"Replace the aiport line in AGENTS.md with agents_line from this answer (it now names Levels, X-Aiport-Effort and aiport_guidance); keep one aiport line only.",
+		"Then call aiport_guidance_done; from now on check aiport_guidance at the start of a session, with aiport_catalog and aiport_my_issues.",
 	}},
 }
 

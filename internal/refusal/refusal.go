@@ -138,8 +138,8 @@ var (
 	LevelUnmapped = advised(fixable(rejected(400, "level_unmapped", "This Level is not mapped on this protocol"), "application_alias"), Advice{
 		Summary:     "Refused: the Level is not mapped for the {protocol} protocol",
 		Explanation: "The Application asked for a Level (fast, balanced or best) as its model, and no Connection and model are mapped to that Level for the {protocol} protocol, neither for this Application nor shared. aiport does not pick another model silently.",
-		Fix:         "Map the Level for the {protocol} protocol: an entry under aliases in aiport.yaml whose alias is the Level, on a Connection of that protocol (or under the Application's own aliases for it alone).",
-		Page:        "Routing", Config: true})
+		Fix:         "Map the Level for the {protocol} protocol under Routing → Levels, on a Connection of that protocol, or give the Application its own mapping under Levels on its row on Integrate.",
+		Page:        "Routing", Section: "Levels", Config: true})
 	UpstreamKeyMissing = advised(rejected(503, "upstream_key_missing", "No API key is set for this connection; add it in the dashboard under Providers"), Advice{
 		Summary:     "Refused: no API key for the Connection",
 		Explanation: "The Connection needs an API key and none is set, so aiport did not send the request.",

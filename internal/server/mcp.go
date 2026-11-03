@@ -21,11 +21,13 @@ const MCPPath = "/mcp"
 // mcpVersions are the protocol revisions aiport speaks, newest first.
 var mcpVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 
-// mcpInstructions explain the loop to a coding agent in two sentences.
-const mcpInstructions = "This Application's LLM calls go through aiport; call aiport_capabilities to see what it can use right now and aiport_catalog for the model names it can use and what changed in them (read it again when the X-Aiport-Catalog header changes), and if aiport lacks something it needs, ask the Owner with aiport_request_change instead of working around it. The Owner decides in aiport's dashboard, and aiport_my_requests shows each request's answer and the Change that was made."
+// mcpInstructions explain the loop to a coding agent; they teach what the
+// AGENTS.md line (connect.AgentsLine) does. The guidance tools work with
+// adapting off, so they are here rather than in mcpIssuesInstructions.
+const mcpInstructions = "This Application's LLM calls go through aiport. As the model, send a Level (fast, balanced or best) or a task name from aiport_catalog, never a provider's model id, and say how hard a call is with the X-Aiport-Effort header (low, medium or high). At the start of a session, call aiport_catalog for the names it can use and what changed in them (read it again when the X-Aiport-Catalog header changes) and aiport_guidance for changes to aiport's guidance; after updating the repository to it, call aiport_guidance_done. aiport_capabilities shows what it can use right now; if aiport lacks something it needs, ask the Owner with aiport_request_change instead of working around it. The Owner decides in aiport's dashboard, and aiport_my_requests shows each request's answer and the Change that was made."
 
 // mcpIssuesInstructions are added while aiport adapts.
-const mcpIssuesInstructions = " At the start of a session, check aiport_my_issues for problems aiport keeps seeing with this Application's calls and their fix; after fixing one in the code, say so with aiport_issue_fixed."
+const mcpIssuesInstructions = " At the start of a session, also check aiport_my_issues for problems aiport keeps seeing with this Application's calls and their fix; after fixing one in the code, say so with aiport_issue_fixed."
 
 type rpcMessage struct {
 	JSONRPC string          `json:"jsonrpc"`
