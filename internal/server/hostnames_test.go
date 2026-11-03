@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/config"
-	"aiport/internal/connect"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/connect"
 )
 
 // hostnameGateway serves the given aiport.yaml (auth off, so only the Host

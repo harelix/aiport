@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // Repository checks the repository path of an Application: an absolute path

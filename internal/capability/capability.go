@@ -6,7 +6,7 @@
 // (aiport_capabilities) both answer with For, so the two doors agree.
 package capability
 
-import "aiport/internal/config"
+import "github.com/harelix/aiport/internal/config"
 
 // Kind is a kind of Change an Application may ask for.
 type Kind struct {

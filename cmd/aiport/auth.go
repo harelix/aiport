@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // runAuth reveals the local management token only on explicit CLI request.

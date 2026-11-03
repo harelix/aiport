@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/connect"
+	"github.com/harelix/aiport/internal/connect"
 )
 
 // The handover brief tells a coding agent how future sessions find out about

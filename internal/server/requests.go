@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"aiport/internal/decide"
-	"aiport/internal/extension"
-	"aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/extension"
+	"github.com/harelix/aiport/internal/refusal"
 )
 
 // RequestsPath is where an Application files and reads its own Change

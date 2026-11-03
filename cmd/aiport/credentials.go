@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // ensureLocalCredentials makes local tokens available without manual exports.

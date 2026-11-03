@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/agentrun"
-	"aiport/internal/agents"
-	"aiport/internal/decide"
-	"aiport/internal/explain"
-	"aiport/internal/worktree"
+	"github.com/harelix/aiport/internal/agentrun"
+	"github.com/harelix/aiport/internal/agents"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/explain"
+	"github.com/harelix/aiport/internal/worktree"
 )
 
 // Fix it (harelix/aiport#25): on the Owner's click aiport makes a git

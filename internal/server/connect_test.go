@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/config"
-	"aiport/internal/connect"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/connect"
 )
 
 func TestConnectDocument(t *testing.T) {

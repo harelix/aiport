@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/config"
-	"aiport/internal/connect"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/connect"
 )
 
 // aiport serves two briefs at /_connect: one for the coding agent changing an

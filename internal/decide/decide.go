@@ -23,10 +23,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"aiport/internal/capability"
-	"aiport/internal/config"
-	"aiport/internal/extension"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/capability"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/extension"
+	"github.com/harelix/aiport/internal/telemetry"
 
 	"go.yaml.in/yaml/v3"
 )

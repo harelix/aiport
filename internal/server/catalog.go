@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"sync"
 
-	"aiport/internal/catalog"
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/catalog"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // ModelsPath is where an Application's SDK or Coding agent looks for the

@@ -14,9 +14,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"aiport/internal/capability"
-	"aiport/internal/decide"
-	"aiport/internal/extension"
+	"github.com/harelix/aiport/internal/capability"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/extension"
 )
 
 // Limits on a draft the Owner edited before filing it.

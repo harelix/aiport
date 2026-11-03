@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/store"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/store"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // activityJSON is one request as /api/v1/requests returns it, with its reason.

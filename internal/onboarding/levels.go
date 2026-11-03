@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // Levels at first run. init proposes, per protocol of the chosen providers,

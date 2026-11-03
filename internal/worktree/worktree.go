@@ -31,11 +31,11 @@ import (
 	"sync"
 	"time"
 
-	"aiport/internal/extension"
+	"github.com/harelix/aiport/internal/extension"
 )
 
 // BranchPrefix starts every branch aiport makes.
-const BranchPrefix = "aiport/fix-"
+const BranchPrefix = "github.com/harelix/aiport/fix-"
 
 // MaxDiff bounds the diff text Diff returns (bytes).
 const MaxDiff = 1 << 20

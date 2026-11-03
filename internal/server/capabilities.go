@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"aiport/internal/capability"
+	"github.com/harelix/aiport/internal/capability"
 )
 
 // CapabilitiesPath answers what aiport can do right now for the calling

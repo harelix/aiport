@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"aiport/internal/capability"
-	"aiport/internal/config"
-	"aiport/internal/connect"
-	"aiport/internal/store"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/capability"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/connect"
+	"github.com/harelix/aiport/internal/store"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // GuidancePath is where an Application's coding agent reads what changed in

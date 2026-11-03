@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // Key sources reported to the dashboard. Key values are never returned.

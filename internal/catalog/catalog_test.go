@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // base is a gateway with an OpenAI-protocol default (hosted), an

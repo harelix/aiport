@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 const Iterations = 600000

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/tasks"
+	"github.com/harelix/aiport/internal/tasks"
 )
 
 func TestQueueDoneAnnouncement(t *testing.T) {

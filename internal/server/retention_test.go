@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // Decided Suggestions and Change requests are kept as long as request

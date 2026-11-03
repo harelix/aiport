@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"slices"
 
-	"aiport/internal/catalog"
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/catalog"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // RoutingMapPath answers the Owner's Routing map: for every Application,

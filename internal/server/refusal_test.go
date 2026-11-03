@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // Refused inference requests are recorded with the outcome their refusal

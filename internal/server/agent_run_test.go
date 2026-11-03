@@ -120,7 +120,7 @@ func TestExplainByACodingAgentStreamsAndSavesTheRootCause(t *testing.T) {
 	if _, err := os.Stat(start.Cwd); err == nil {
 		t.Fatalf("the Explain worktree %s is still there", start.Cwd)
 	}
-	if len(worktrees(t, f.repo)) != 1 || strings.Contains(gitIn(t, f.repo, "branch", "--list"), "aiport/") {
+	if len(worktrees(t, f.repo)) != 1 || strings.Contains(gitIn(t, f.repo, "branch", "--list"), "github.com/harelix/aiport/") {
 		t.Fatalf("left behind: %v %s", worktrees(t, f.repo), gitIn(t, f.repo, "branch", "--list"))
 	}
 	var session struct {

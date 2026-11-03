@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // Hints in refusals: when an Application allowed to request changes hits a

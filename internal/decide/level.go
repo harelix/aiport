@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // CauseLevelUnmapped: an Application keeps asking for a Level (fast,

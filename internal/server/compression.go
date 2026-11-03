@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/compress"
-	"aiport/internal/config"
-	"aiport/internal/evaluate"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/compress"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/evaluate"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // FeedbackPath lets an application score a response it received, so the

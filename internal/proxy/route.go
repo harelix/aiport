@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"aiport/internal/config"
-	"aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/refusal"
 )
 
 // routes is the routing table for new requests: which connection serves a

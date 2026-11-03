@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"aiport/internal/agentrun"
+	"github.com/harelix/aiport/internal/agentrun"
 )
 
 // The permission rules of Agent runs. aiport only sees the permission

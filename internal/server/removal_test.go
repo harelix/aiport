@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // Removing a Connection with a plan, over HTTP: the Owner reads what uses the

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 func manageHandler(t *testing.T) (*Handler, string, func(method, path, body string) *httptest.ResponseRecorder) {

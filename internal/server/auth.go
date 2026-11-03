@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"strings"
 
-	localauth "aiport/internal/auth"
-	"aiport/internal/config"
-	"aiport/internal/tasks"
-	"aiport/internal/telemetry"
+	localauth "github.com/harelix/aiport/internal/auth"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/tasks"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 const sessionCookie = "aiport_session"

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 func pairingServer(t *testing.T) (*Handler, string, *time.Time) {

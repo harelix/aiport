@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/refusal"
 )
 
 // errorBodyLimit bounds how much of a provider's error body is looked at to

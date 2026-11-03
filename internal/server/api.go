@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/refusal"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) bool {

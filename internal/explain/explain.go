@@ -19,11 +19,11 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/decide"
-	"aiport/internal/proxy"
-	"aiport/internal/refusal"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/proxy"
+	"github.com/harelix/aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // Writer writes Issue explanations.

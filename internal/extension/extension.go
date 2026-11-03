@@ -23,7 +23,7 @@ import (
 	"time"
 	"unicode"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // Protocol is the version of Input and Output.

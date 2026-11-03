@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/agentrun"
-	"aiport/internal/config"
-	"aiport/internal/decide"
-	"aiport/internal/explain"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/agentrun"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/explain"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // ExplainTimeout bounds one explanation written by a Connection.

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // Issues as the Application's Coding agent sees them (GET /v1/aiport/issues

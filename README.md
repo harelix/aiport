@@ -59,6 +59,8 @@ make build              # bin/aiport, dashboard included
 ./bin/aiport serve      # prints the dashboard address and management token
 ```
 
+Or install the binary without cloning: `go install github.com/harelix/aiport/cmd/aiport@latest` (it lands in `$(go env GOPATH)/bin`; run `aiport init` and `aiport serve`).
+
 Open the dashboard address `serve` prints (**http://127.0.0.1:8787/** by default; `init --listen` picks another, and you can [use `aiport.localhost` instead](docs/manual.md#use-a-name-instead-of-127001)), paste the management token and set a password. Paste your provider keys on **Providers**, then **Check connection** on each card: it makes one free `GET /models` call and generates nothing. Start any local provider (Ollama, llama.cpp) yourself.
 
 ## Using it

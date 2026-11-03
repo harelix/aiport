@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/config"
-	"aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/refusal"
 )
 
 func TestRuntimeKeyUpdate(t *testing.T) {

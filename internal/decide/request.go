@@ -11,9 +11,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"aiport/internal/capability"
-	"aiport/internal/config"
-	"aiport/internal/extension"
+	"github.com/harelix/aiport/internal/capability"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/extension"
 )
 
 // Change requests: an Application asking for a Change. Both doors, the HTTP

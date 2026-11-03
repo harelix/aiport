@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // Changes keeps config.Live's Changes in the database (config.ChangeLog).

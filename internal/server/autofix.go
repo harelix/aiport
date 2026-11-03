@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // autoFixRoute is the Changes page switch for automatic fixes:

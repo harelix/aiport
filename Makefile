@@ -8,7 +8,7 @@ export GOFLAGS = -mod=vendor
 # UPSTREAM (owner/name on GitHub) is where "Suggest to aiport" and "Share
 # upstream" drafts open unless aiport.yaml sets upstream.repository.
 UPSTREAM ?=
-LDFLAGS = -s -w -X main.version=$(VERSION) -X aiport/internal/config.BuiltInUpstream=$(UPSTREAM)
+LDFLAGS = -s -w -X main.version=$(VERSION) -X github.com/harelix/aiport/internal/config.BuiltInUpstream=$(UPSTREAM)
 PLATFORMS = darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64
 
 # Live development: Go rebuild/restart on save + Vite dashboard with live reload.

@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"aiport/internal/compress"
-	"aiport/internal/config"
-	"aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/compress"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/refusal"
 )
 
 type Gateway struct {

@@ -1,4 +1,4 @@
-module aiport
+module github.com/harelix/aiport
 
 go 1.27.0
 

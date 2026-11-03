@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/connect"
+	"github.com/harelix/aiport/internal/connect"
 )
 
 // /_connect, both briefs, the MCP instructions and the AGENTS.md line teach

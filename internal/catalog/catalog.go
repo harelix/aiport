@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strconv"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // Models are the model ids each Connection listed, by Connection id. A

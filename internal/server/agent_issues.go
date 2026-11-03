@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"aiport/internal/decide"
-	"aiport/internal/refusal"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // IssuesPath is where an Application's Coding agent reads its own Issues

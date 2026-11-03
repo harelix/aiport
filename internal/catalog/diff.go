@@ -1,6 +1,6 @@
 package catalog
 
-import "aiport/internal/config"
+import "github.com/harelix/aiport/internal/config"
 
 // Move is a task name that still exists but now goes somewhere else.
 type Move struct {

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // An Application that keeps asking for a Level nobody mapped on its

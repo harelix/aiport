@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"aiport/internal/decide"
+	"github.com/harelix/aiport/internal/decide"
 )
 
 // MCPPath serves the Model Context Protocol over Streamable HTTP for one

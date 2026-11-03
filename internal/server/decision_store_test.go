@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/store"
+	"github.com/harelix/aiport/internal/store"
 )
 
 // When kept decisions cannot be read, aiport says so in its log (without

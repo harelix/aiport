@@ -1,8 +1,6 @@
 package main
 
 import (
-	"aiport/internal/agents"
-	"aiport/internal/onboarding"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -19,12 +17,14 @@ import (
 	"syscall"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/server"
-	"aiport/internal/store"
-	"aiport/internal/telemetry"
-	"aiport/internal/terminal"
-	"aiport/internal/worktree"
+	"github.com/harelix/aiport/internal/agents"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/onboarding"
+	"github.com/harelix/aiport/internal/server"
+	"github.com/harelix/aiport/internal/store"
+	"github.com/harelix/aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/terminal"
+	"github.com/harelix/aiport/internal/worktree"
 )
 
 var version = "0.0.0-dev"

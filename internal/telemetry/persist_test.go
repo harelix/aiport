@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/store"
+	"github.com/harelix/aiport/internal/store"
 )
 
 func openDB(t *testing.T, path string) Store {

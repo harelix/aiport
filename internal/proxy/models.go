@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // Which models each Connection serves. aiport learns it from the same free

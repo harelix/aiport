@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"aiport/internal/catalog"
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/catalog"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // removalPlan is the body of DELETE /api/v1/targets/{id} and of the

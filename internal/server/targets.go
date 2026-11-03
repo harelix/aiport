@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 type targetInput struct {

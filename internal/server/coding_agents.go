@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"aiport/internal/agents"
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/agents"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // codingAgentsRoute lists the Coding agents aiport can drive and sets the

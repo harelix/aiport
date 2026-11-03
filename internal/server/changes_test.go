@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 const changesYAML = "version: 1\nauth: {token_env: CHANGES_MGMT_TOKEN}\n# my connections\ntargets:\n  - id: local\n    provider: ollama\ndefaults: {openai_target: local}\n"

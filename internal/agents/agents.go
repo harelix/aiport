@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 type Launch struct {

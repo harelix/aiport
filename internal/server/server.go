@@ -2,10 +2,6 @@
 package server
 
 import (
-	"aiport/internal/agentrun"
-	localauth "aiport/internal/auth"
-	"aiport/internal/dashboard"
-	"aiport/internal/telemetry"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -20,12 +16,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/connect"
-	"aiport/internal/decide"
-	"aiport/internal/proxy"
-	"aiport/internal/refusal"
-	"aiport/internal/tasks"
+	"github.com/harelix/aiport/internal/agentrun"
+	localauth "github.com/harelix/aiport/internal/auth"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/connect"
+	"github.com/harelix/aiport/internal/dashboard"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/proxy"
+	"github.com/harelix/aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/tasks"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 type Handler struct {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // A client added while aiport runs can use its token at once, and loses it

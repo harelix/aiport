@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/config"
-	"aiport/internal/proxy"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/proxy"
 )
 
 func TestConnectionCheck(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // Three Connections; nightly-report is bound to local, which keeps failing.

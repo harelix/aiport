@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"aiport/internal/agents"
-	"aiport/internal/config"
-	"aiport/internal/store"
+	"github.com/harelix/aiport/internal/agents"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/store"
 )
 
 // Pairing lets an application on this machine ask for its own token. The

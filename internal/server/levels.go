@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // levelMapping is one Level mapping as the dashboard reads it.

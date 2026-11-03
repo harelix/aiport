@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // fakeProvider is an upstream whose model list the test controls.

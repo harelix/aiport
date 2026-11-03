@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/catalog"
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/catalog"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // Catalog changes over HTTP: every configuration Change (reverts included)

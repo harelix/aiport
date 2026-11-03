@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 type observationKey struct{}

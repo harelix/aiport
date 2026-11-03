@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 func TestTasksAPI(t *testing.T) {

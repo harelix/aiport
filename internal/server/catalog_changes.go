@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"aiport/internal/catalog"
-	"aiport/internal/config"
-	"aiport/internal/decide"
-	"aiport/internal/refusal"
-	"aiport/internal/store"
+	"github.com/harelix/aiport/internal/catalog"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/store"
 )
 
 // CatalogPath answers the calling Application's Catalog and its recent

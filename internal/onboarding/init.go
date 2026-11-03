@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"aiport/internal/agents"
-	"aiport/internal/config"
-	"aiport/internal/terminal"
+	"github.com/harelix/aiport/internal/agents"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/terminal"
 	"go.yaml.in/yaml/v3"
 )
 

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/refusal"
 )
 
 type roundTrip func(*http.Request) (*http.Response, error)

@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"aiport/internal/connect"
+	"github.com/harelix/aiport/internal/connect"
 )
 
 // /_connect and both briefs tell Applications and their coding agents about

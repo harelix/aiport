@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 const suggestionsYAML = "version: 1\nauth: {token_env: SUGG_MGMT_TOKEN}\ntargets:\n  - id: local\n    provider: ollama\n    base_url: http://127.0.0.1:9/v1\ndefaults: {openai_target: local}\norigins:\n  - id: nightly-report\n    name: Nightly Report\n    token_env: SUGG_NIGHTLY_TOKEN\n  - id: other\n    name: Other App\n    token_env: SUGG_OTHER_TOKEN\n"

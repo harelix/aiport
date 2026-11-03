@@ -116,7 +116,7 @@ func TestFixItEditsOnlyInsideItsOwnWorktree(t *testing.T) {
 	}
 	is := f.fixEnded(t)
 	b := m(is["branch_fix"])
-	branch := "aiport/fix-" + f.id
+	branch := "github.com/harelix/aiport/fix-" + f.id
 	if b["state"] != "ready" || b["branch"] != branch || b["agent"] != "claude" || b["run"] != run["id"] {
 		t.Fatalf("branch fix: %v", b)
 	}

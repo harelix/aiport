@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // Per-effort models are part of where a task name or Level goes: listed in

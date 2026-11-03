@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // Explain without a coding agent: a Connection and model the Owner chose in

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // leveled is base with Level mappings: shared best on hosted (OpenAI) and on

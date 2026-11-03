@@ -14,7 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"aiport/internal/agentrun"
+	"github.com/harelix/aiport/internal/agentrun"
 )
 
 // Approving commands during Fix it (harelix/aiport#26). A command the agent

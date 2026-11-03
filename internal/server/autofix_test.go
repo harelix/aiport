@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // autoFix turns automatic fixes on or off from the Changes page.

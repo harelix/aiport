@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // failed reports whether a request counts against its Connection: an error by

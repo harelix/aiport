@@ -31,7 +31,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"aiport/internal/extension"
+	"github.com/harelix/aiport/internal/extension"
 )
 
 // Mode is what a run is for.

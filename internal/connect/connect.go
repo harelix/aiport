@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 const (

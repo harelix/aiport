@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/agentrun"
-	"aiport/internal/agents"
-	"aiport/internal/config"
-	"aiport/internal/decide"
-	"aiport/internal/explain"
-	"aiport/internal/worktree"
+	"github.com/harelix/aiport/internal/agentrun"
+	"github.com/harelix/aiport/internal/agents"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/explain"
+	"github.com/harelix/aiport/internal/worktree"
 )
 
 // Agent runs (spec harelix/aiport#21): aiport starts an Application's

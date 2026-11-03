@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/catalog"
-	"aiport/internal/refusal"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/catalog"
+	"github.com/harelix/aiport/internal/refusal"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // Catalog-change Issues. A configuration Change that takes something away

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/tasks"
-	"aiport/internal/terminal"
+	"github.com/harelix/aiport/internal/tasks"
+	"github.com/harelix/aiport/internal/terminal"
 )
 
 const taskUsage = `usage:

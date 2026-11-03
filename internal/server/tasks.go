@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"aiport/internal/tasks"
+	"github.com/harelix/aiport/internal/tasks"
 )
 
 var actorPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$`)

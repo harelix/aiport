@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"aiport/internal/agents"
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/agents"
+	"github.com/harelix/aiport/internal/config"
 
 	"go.yaml.in/yaml/v3"
 )

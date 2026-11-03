@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"aiport/internal/config"
-	"aiport/internal/store"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/store"
 )
 
 // keepChanges keeps Changes in the database next to the configuration, so

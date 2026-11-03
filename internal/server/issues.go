@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"aiport/internal/decide"
+	"github.com/harelix/aiport/internal/decide"
 )
 
 // modelFinder adapts the gateway's model listings to the decision module's

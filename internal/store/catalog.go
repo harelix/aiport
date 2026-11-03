@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"aiport/internal/catalog"
+	"github.com/harelix/aiport/internal/catalog"
 )
 
 // CatalogChanges keeps Applications' Catalog changes in the database.

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"aiport/internal/config"
+	"github.com/harelix/aiport/internal/config"
 )
 
 // EffortHeader is how a client states the effort of one call (low, medium

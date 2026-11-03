@@ -1,6 +1,6 @@
 package catalog
 
-import "aiport/internal/config"
+import "github.com/harelix/aiport/internal/config"
 
 // Suggest proposes a replacement for each item that uses Connection removed
 // (config.Dependents), by Dependent ID; "" means none. Only enabled

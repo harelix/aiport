@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"aiport/internal/config"
-	"aiport/internal/decide"
-	"aiport/internal/extension"
-	"aiport/internal/telemetry"
+	"github.com/harelix/aiport/internal/config"
+	"github.com/harelix/aiport/internal/decide"
+	"github.com/harelix/aiport/internal/extension"
+	"github.com/harelix/aiport/internal/telemetry"
 )
 
 // openDecisions sets up the decision queue, keeping its items in the same
