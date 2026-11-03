@@ -257,7 +257,9 @@ provider to narrow the map.
 The map is built from each Application's Catalog, the same one its
 `GET /v1/models` answers, so the two never disagree. The same view for one
 Application, with its recent Catalog changes, is under **Catalog** on its
-row on Integrate. Scripts can read it with the management token at
+row on Integrate. The pencil on a task name's row edits its per-effort
+models (see [Effort](#effort)); a Level's are edited in the Levels panel.
+Scripts can read it with the management token at
 `GET /api/v1/routing` (`?application=<id>` for one Application, with its
 `changes`): Application ids, names, task names, model names and Connection
 ids only, never keys or addresses.
@@ -401,7 +403,8 @@ next to the configuration; none for Applications integrated earlier).
 
 While an Application is behind, its coding agent is told without you: the
 MCP `initialize` instructions start with a one-line reminder, every aiport
-MCP tool answer ends with it, and `aiport_capabilities` shows
+MCP tool answer ends with it (except the answers of `aiport_guidance` and
+`aiport_guidance_done` themselves, which are the guidance), and `aiport_capabilities` shows
 `guidance: {current, confirmed}`. The agent calls `aiport_guidance`
 (`GET /v1/aiport/guidance`) for what changed since its version, the current
 `AGENTS.md` line and the steps, does them, then calls
@@ -409,7 +412,10 @@ MCP tool answer ends with it, and `aiport_capabilities` shows
 Application's own token and only ever show or change that Application's
 state. The Integrate page shows each Application's state in the
 **Guidance** column, and **Overview** shows one quiet line while any
-Application has not confirmed the current version.
+Application has not confirmed the current version. An Application that never
+confirmed any version counts as not confirmed; the line tells the two apart
+("behind": confirmed an older version; "never confirmed": none yet), as does
+`never_confirmed` next to `behind` in `GET /api/v1/guidance`.
 
 ### Onboarding an application, step by step
 
@@ -558,8 +564,22 @@ changing a mapping is a Change you can revert and a Catalog change the
 Applications are told about. Removing a Connection a Level is mapped on asks
 for a replacement Connection of the same protocol.
 
-If your configuration already had an Alias called `fast`, `balanced` or
-`best`, it is now that Level's mapping on its Connection's protocol.
+A request that nothing could route (no binding or protocol default for its
+protocol, no task name of its own there and no Level mapped for it) is
+refused at once, before aiport reads its body. Once any Level is mapped for
+an Application, or while its Connection is only switched off, aiport reads
+the model first, so a Level is still refused as `level_unmapped`, naming it.
+
+**Upgrading: Aliases named like a Level.** If your configuration already had
+an Alias called `fast`, `balanced` or `best`, it is now that Level's mapping
+on its Connection's protocol. A shared one now chooses the Connection for
+every Application's calls for that name on that protocol, whatever they are
+bound to (before, it only renamed a model on the Connection a call already
+went to); an Application's own one applies on its Connection's protocol
+only. `aiport check` and the startup log print one notice per such entry,
+naming it and its Connection. To keep it a plain Alias, rename it (its
+`alias:`) to a name that is not a Level and send the new name; to keep it as
+the Level, nothing needs doing.
 
 `aiport init` proposes a first mapping (see [Install and run](#install-and-run));
 the briefs and the `AGENTS.md` line tell every Application's coding agent to
@@ -574,8 +594,8 @@ You edit Levels in the dashboard, without touching the file:
   its mapping: a Connection of that protocol, a model, and optional
   per-effort models (see Effort below). **Clear** removes the shared mapping.
   A cell also says how many Applications have their own.
-- **Integrate → Applications → Levels** (on an Application's row) shows the
-  same grid for that Application: its own mappings, marked *Own*, and the
+- **Integrate → Applications → Levels** (the toggle under an Application's
+  name, next to **Catalog**) shows the same grid for that Application: its own mappings, marked *Own*, and the
   shared ones it falls back to. The pencil gives it its own mapping; **Use
   the shared mapping** removes it again.
 
@@ -613,8 +633,9 @@ An effort without its own model uses the Alias's `model`. The effort of a
 call comes from, in this order:
 
 1. The `X-Aiport-Effort` header (`low`, `medium` or `high`), the one the
-   briefs teach. It is never sent on to the provider. A value that is not
-   an effort counts as none.
+   briefs teach. It also accepts the provider words below (`none` and
+   `minimal` count as low, `xhigh` and `max` as high). It is never sent on to
+   the provider. A value that is not an effort counts as none.
 2. The provider's own effort field, which aiport reads but never changes:
    `reasoning_effort` on OpenAI Chat Completions, `reasoning.effort` on OpenAI
    Responses, `output_config.effort` on Anthropic Messages. `none`, `minimal`
@@ -632,10 +653,19 @@ A Level's per-effort models are edited in its mapping on Routing or
 Integrate (empty fields use the mapping's model). Over the API, a `PUT` on a
 Level without `effort` keeps them while the mapping stays on the same
 Connection and drops them when it moves to another (they name models of
-the old one). A task name's per-effort models are set with
-`PUT /api/v1/aliases/effort` (there is no dashboard editor for them yet), or
-with `effort:` in `aiport.yaml`: a shared task name is found by its name and
-`connection`, an Application's own by its name.
+the old one). The same holds when a removal plan moves a Level or a task
+name to another Connection: it keeps its model and loses its per-effort
+models, which you set again on the new Connection.
+
+A task name's per-effort models are edited on its row of the
+[Routing map](#the-routing-map) (and in an Application's Catalog on
+Integrate): the pencil opens a model for low, medium and high on the task
+name's own Connection; an empty field uses its model, and **Clear** removes
+them all. A shared task name's per-effort models apply to every Application.
+Each save is one Change you can revert. Over the API it is
+`PUT /api/v1/aliases/effort` (a shared task name is found by its name and
+`connection`, an Application's own by its name), and in `aiport.yaml` the
+`effort:` of the Alias.
 
 ## The Catalog
 
@@ -874,7 +904,8 @@ aiport opens an Issue when one Application's calls for one Level keep being
 refused with `level_unmapped` (`adapting.level_unmapped`, default 5 times
 in 60 minutes). For example, docs-bot sends `best` on the OpenAI protocol
 and no `best` is mapped there, neither for docs-bot nor shared. There is one
-Issue per Application and Level.
+Issue per Application, Level and protocol: `best` unmapped on both protocols
+opens two, each with its fix on its own protocol.
 
 - **Evidence**: how many calls were refused, the time window and a few
   request ids; the summary names the protocol.

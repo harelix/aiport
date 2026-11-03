@@ -99,7 +99,7 @@ func LevelNotices(c Config) []string {
 	}
 	for _, a := range c.Aliases {
 		if IsLevel(a.Alias) {
-			out = append(out, fmt.Sprintf("aiport: notice: the shared Alias %q (Connection %s, model %s) is the Level %s on the %s protocol: every Application's %q calls on that protocol go to %s, whatever Connection it is bound to. To keep a plain Alias, rename it (aliases[].alias) to a name that is not fast, balanced or best.", a.Alias, a.Target, a.Model, a.Alias, on(a.Target), a.Alias, a.Target))
+			out = append(out, fmt.Sprintf("aiport: notice: the shared Alias %q (Connection %s, model %s) is the Level %s on the %s protocol: every Application's %q calls on that protocol go to %s, whatever Connection the Application is bound to. To keep a plain Alias, rename it (aliases[].alias) to a name that is not fast, balanced or best.", a.Alias, a.Target, a.Model, a.Alias, on(a.Target), a.Alias, a.Target))
 		}
 	}
 	for _, o := range c.Origins {

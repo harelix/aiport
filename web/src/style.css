@@ -413,7 +413,7 @@ html[data-sidebar=collapsed]{--sidebar-w:68px}
 .decision .evidence{color:var(--muted);font-size:12px}
 .dot.info{background:var(--info);margin-top:6px}
 .guidance-cell{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
-.guidance-cell .copy-button{font-size:12px;padding:2px 8px}
+.guidance-cell .copy-button{font-size:12px;padding:2px 8px;white-space:normal;text-align:left}
 .issue-count{display:inline-flex;align-items:center;gap:6px;text-align:left}
 .issue-count[aria-expanded="true"] .chevron{transform:rotate(90deg)}
 .app-issues-row td{background:var(--inset)}
@@ -792,9 +792,10 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 
 /* Applications on Integrate: fit the main column, no horizontal scroll */
 .apps-table table{white-space:normal;table-layout:auto}
-.apps-table th,.apps-table td{padding:10px 12px;vertical-align:middle}
+.apps-table th,.apps-table td{padding:10px 8px;vertical-align:middle}
 .apps-table th:first-child,.apps-table td:first-child{padding-left:24px}
-.apps-table th:last-child,.apps-table td:last-child{padding-right:24px}
+.apps-table th:last-child,.apps-table td:last-child{padding-right:16px}
+.apps-table th{letter-spacing:.4px}
 .apps-table td small{display:block;margin-top:2px}
 .apps-table td small code{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
 .apps-table .progress-text{white-space:nowrap}
@@ -878,6 +879,22 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .app-levels{display:grid;gap:4px}
 .app-levels>p{margin:0;display:flex;align-items:center;gap:4px}
 @media (max-width:560px){.level-efforts{grid-template-columns:1fr}}
+/* The Levels panel's content sits inside the panel's padding, like other panel content. */
+.levels-panel{padding-bottom:12px}
+.levels-panel>p,.levels-panel>.levels-table,.levels-panel>.level-editor{margin-left:24px;margin-right:24px}
+.levels-panel>p.muted{margin-top:0}
+@media(max-width:650px){.levels-panel>p,.levels-panel>.levels-table,.levels-panel>.level-editor{margin-left:16px;margin-right:16px}}
+/* Catalog and Levels toggles side by side under an Application's name on Integrate */
+.app-toggles{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:4px;white-space:nowrap}
+.app-toggles .app-catalog-toggle{margin-top:0}
+/* A task name's per-effort models, edited on its Routing map row */
+.route-table td.route-edit{width:1%;padding-left:0;text-align:right}
+.route-table tr.route-editing td{background:var(--inset);padding-top:4px;padding-bottom:12px}
+.effort-editor{display:grid;gap:10px;margin:0}
+.effort-editor>p{margin:0}
+.effort-editor .form-actions{display:flex;align-items:center;gap:12px}
+.routing-map-app>.auth-success{margin:8px 24px 0}
+@media(max-width:650px){.routing-map-app>.auth-success{margin:8px 16px 0}}
 /* Routing map (Routing) and an Application's Catalog (Integrate) */
 .routing-map-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px 20px;padding:0 24px 12px}
 .routing-map-tools label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-2)}

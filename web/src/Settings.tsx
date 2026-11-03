@@ -481,7 +481,7 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
       <DefaultsForm key={JSON.stringify(config?.defaults) + targets.length} config={config} providers={providers} onChange={onChange}/>
     </section>
     <LevelsPanel refresh={config} onChange={onChange}/>
-    <RoutingMapPanel targets={targets} providers={providers} reload={JSON.stringify(config)}/>
+    <RoutingMapPanel targets={targets} providers={providers} reload={JSON.stringify(config)} onChange={onChange}/>
     <section className="panel">
       <div className="panel-heading"><h2>Connect an application</h2><span>Point any OpenAI or Anthropic SDK here</span></div>
       <dl>
@@ -498,7 +498,7 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
     </section>
     <section className="panel planned">
       <div className="panel-heading"><h2>Model allowlists</h2><span className="badge">Planned</span></div>
-      <p className="muted">Restricting which models an application may request is not built yet. What each application's names reach is built: Levels and their per-effort models are edited in the Levels panel above (an application's own mapping under Levels on its row on Integrate), and the Routing map shows where every name goes. Per-application task names come from approved change requests or the YAML file (<code>origins[].aliases</code>).</p>
+      <p className="muted">Restricting which models an application may request is not built yet. What each application's names reach is built: Levels and their per-effort models are edited in the Levels panel above (an application's own mapping under Levels on its row on Integrate), and the Routing map shows where every name goes, with an edit button on each task name's row for its per-effort models (also in an application's Catalog on Integrate). Per-application task names themselves come from approved change requests or the YAML file (<code>origins[].aliases</code>).</p>
     </section>
   </>;
 }
@@ -563,7 +563,7 @@ export default function SettingsPage({config, providers, onChange}: Props) {
     <section className="panel setup">
       <p className="eyebrow">CONFIGURATION</p>
       <h2>One configuration file. Clear ownership.</h2>
-      <p className="muted">Providers, routing, Levels and their per-effort models, and each application's coding agent are managed from their pages; task names (aliases) arrive as approved Changes or are edited, with their per-effort models and the listen address, in your YAML file. Validate hand edits with <code>aiport check</code>, then restart. A new setup can be created with:</p>
+      <p className="muted">Providers, routing, Levels and their per-effort models, the per-effort models of task names (on the Routing map) and each application's coding agent are managed from their pages; task names (aliases) themselves arrive as approved Changes or are edited, with the listen address, in your YAML file. Validate hand edits with <code>aiport check</code>, then restart. A new setup can be created with:</p>
       <CopyBlock label="setup commands" text={'aiport init --config aiport-new.yaml\naiport check --config aiport-new.yaml\naiport serve --config aiport-new.yaml'}/>
     </section>
   </>;

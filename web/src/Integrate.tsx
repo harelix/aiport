@@ -217,14 +217,16 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
       <PairingList pairings={pairings} targets={targets} onDone={onDone}/>
     </div>}
     {showApproved && origins.length > 0 && <div className="apps-table"><table aria-label="Approved applications">
-      <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Issues</th><th title="The aiport guidance version its coding agent last confirmed">Guidance</th><th title="Its own mapping of fast, balanced and best, before the shared one">Levels</th><th title="Coding agent for Agent runs">Agent</th><th>Onboarding</th></tr></thead>
+      <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Issues</th><th title="The aiport guidance version its coding agent last confirmed">Guidance</th><th title="Coding agent for Agent runs">Agent</th><th>Onboarding</th></tr></thead>
       <tbody>{origins.map(o => {
         const done = progress(o, {handed: true, waiting: false, seen: calls.at[o.id], adapting, mcp: mcpCopied(o.id), agents}).filter(Boolean).length;
         const selected = app === o.id, own = issues[o.id] || [], open = !!shown[o.id] && own.length > 0, catalogOpen = !!catalogShown[o.id], levelsOpen = !!levelsShown[o.id] && !!levels;
         return <React.Fragment key={o.id}><tr className={'app-row' + (selected ? ' selected' : '')} onClick={e => { if (!(e.target as HTMLElement).closest('input,button,a,label')) onSelect(o.id); }}>
           <td><button type="button" className="row-select" aria-pressed={selected} onClick={() => onSelect(o.id)} title="Follow this application in the onboarding wizard">{o.name}</button><small><code>{o.id}</code></small>
-            <button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={catalogOpen} aria-controls={'app-catalog-' + o.id} onClick={() => setCatalogShown(x => ({...x, [o.id]: !x[o.id]}))}
-              title={'What ' + o.name + ' can send, what serves it, and its recent Catalog changes'}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Catalog</button></td>
+            <span className="app-toggles"><button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={catalogOpen} aria-controls={'app-catalog-' + o.id} onClick={() => setCatalogShown(x => ({...x, [o.id]: !x[o.id]}))}
+              title={'What ' + o.name + ' can send, what serves it, and its recent Catalog changes'}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Catalog</button>
+            <button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={levelsOpen} aria-controls={'app-levels-' + o.id} disabled={!levels} onClick={() => setLevelsShown(x => ({...x, [o.id]: !x[o.id]}))}
+              title={o.name + '\'s own mapping of fast, balanced and best, before the shared one: ' + appLevelsLabel(levels, o.id)}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Levels</button></span></td>
           <td>{o.target ? <code>{o.target}</code> : <span className="muted">Protocol default</span>}</td>
           <td><MayRequestToggle o={o} onDone={onDone}/></td>
           <td title={typeof calls.at[o.id] === 'number' ? new Date(calls.at[o.id] as number).toLocaleString() : undefined}>{lastCall(o.id)}</td>
@@ -233,15 +235,13 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
               <ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/><span className="badge warn">{own.length}</span> {own.length === 1 ? shortCause(own[0]) : own.length + ' Issues'}</button>
             : <span className="muted">None</span>}</td>
           <td><GuidanceCell id={o.id} guidance={guidance}/></td>
-          <td><button type="button" className="text-button issue-count" aria-expanded={levelsOpen} aria-controls={'app-levels-' + o.id} disabled={!levels} onClick={() => setLevelsShown(x => ({...x, [o.id]: !x[o.id]}))}
-              title={'Edit ' + o.name + '\'s own Level mappings'}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/>{appLevelsLabel(levels, o.id)}</button></td>
           <td>{(() => { const id = effectiveAgent(o, agents), connected = agentConnected(o, agents);
             return <button type="button" className="text-button" onClick={() => onAgent(o.id)} aria-label={(connected ? 'Change the coding agent of ' : 'Connect a coding agent to ') + o.name}
               title={connected ? agentName(id, agents) + (o.agent ? '' : ' (default)') + ' in ' + o.repository : 'Connect a coding agent (onboarding step 6)'}>{connected ? agentName(id, agents) : 'Connect'}</button>; })()}</td>
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
-        </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={9}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}
-          {catalogOpen && <tr className="app-issues-row" id={'app-catalog-' + o.id}><td colSpan={9}><AppCatalog application={o.id} targets={targets} providers={providers} reload={configKey}/></td></tr>}
-          {levelsOpen && <tr className="app-issues-row" id={'app-levels-' + o.id}><td colSpan={9}><AppLevels doc={levels!} application={o.id} onChange={onLevels}/></td></tr>}</React.Fragment>;
+        </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={8}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}
+          {catalogOpen && <tr className="app-issues-row" id={'app-catalog-' + o.id}><td colSpan={8}><AppCatalog application={o.id} targets={targets} providers={providers} reload={configKey}/></td></tr>}
+          {levelsOpen && <tr className="app-issues-row" id={'app-levels-' + o.id}><td colSpan={8}><AppLevels doc={levels!} application={o.id} onChange={onLevels}/></td></tr>}</React.Fragment>;
       })}</tbody>
     </table></div>}
     {showRejected && rejected.length > 0 && <div className="apps-table rejected-table"><table aria-label="Rejected applications">

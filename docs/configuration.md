@@ -91,7 +91,7 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `adapting.unknown_token.window_minutes` | 60; range 1–10080; how far back those refusals are counted |
 | `adapting.failing_connection.count` | 5; range 1–1000000; failed calls (gateway errors, timeouts and upstream 5xx; never cancellations or refusals) from one Application to one Connection that lead to a Suggestion to bind the Application to a working Connection |
 | `adapting.failing_connection.window_minutes` | 60; range 1–10080; how far back those failures are counted |
-| `adapting.level_unmapped.count` | 5; range 1–1000000; calls from one Application for one Level refused with `level_unmapped` that open an Issue (mapping the Level for that Application as the aiport fix) |
+| `adapting.level_unmapped.count` | 5; range 1–1000000; calls from one Application for one Level on one protocol refused with `level_unmapped` that open an Issue (mapping the Level for that Application as the aiport fix) |
 | `adapting.level_unmapped.window_minutes` | 60; range 1–10080; how far back those refusals are counted |
 
 A Levels and per-effort example (anonymous names):
@@ -108,6 +108,14 @@ origins:
       - {alias: best, target: local, model: 'llama3:70b'}   # its own best
       - {alias: summarize, target: local, model: 'llama3:8b', effort: {high: 'llama3:70b'}}
 ```
+
+Upgrade note: an Alias entry named `fast`, `balanced` or `best`, shared or an
+Application's own, is a Level mapping on its Connection's protocol. A shared
+one chooses the Connection for every Application's calls for that name on
+that protocol (a plain shared Alias only renames a model on the Connection a
+call already goes to); an Application's own one applies on that protocol
+only. `aiport check` and startup print one notice per such entry; to keep a
+plain Alias, rename its `alias` to a name that is not a Level.
 | `adapting.auto_fix` | false; `true` lets aiport apply an Issue's aiport fix itself, as a revertable Change made by "aiport (automatic)", only when exactly one Connection serves the model, the error reached its threshold and the fix is an Alias for that one Application. A fix the Owner reverted (or rejected) is never applied automatically again for that Application and cause. Also switchable on the Changes page |
 | `adapting.explain` | none; `{connection, model}`: the configured Connection and a model it serves that write an Issue's explanation (Explain) from its evidence alone. Without it Explain is unavailable. Also set in Settings → Explanations |
 
@@ -286,7 +294,9 @@ Guidance versions: `GET /v1/aiport/guidance` and `POST
 guidance version of the calling Application; `GET /api/v1/guidance`
 (management access) lists every Application's `confirmed`,
 `confirmed_at_ms`, `behind` and `sends_levels` (a hint only), with the
-refresh instruction. Confirmations are kept in the `guidance` table of
+counts `behind` (every Application not on the current version) and
+`never_confirmed` (those of them that never confirmed any) and the refresh
+instruction. Confirmations are kept in the `guidance` table of
 `<config>.db` (in memory for the session without a database).
 
 Removing a Connection (management access): `GET /api/v1/targets/{id}/dependents`
@@ -299,7 +309,9 @@ applications}`). Dependent ids are `default:<protocol>`, `binding:<app>`,
 `alias:<name>`, `application_alias:<app>:<name>`, `level:<level>:<protocol>`,
 `application_level:<app>:<level>:<protocol>`, `explain`, `agent_runs` and
 `evaluation`; an empty Connection leaves the item without one (default unset,
-binding or Alias removed, the feature turned off). Without a plan, a
+binding or Alias removed, the feature turned off). An Alias or Level mapping
+moved to another Connection keeps its model and drops its per-effort models
+(`effort`), which name models of the removed Connection. Without a plan, a
 Connection something uses is refused (`400 invalid_connection`, naming what
 uses it).
 
