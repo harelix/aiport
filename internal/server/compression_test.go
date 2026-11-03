@@ -51,9 +51,15 @@ func TestCompressionRecordedAndReported(t *testing.T) {
 	}
 	id := w.Header().Get("X-Aiport-Request-Id")
 	send("POST", "/v1/chat/completions", body, nil) // uncompressed baseline
+	// The collector records events on its own goroutine. Three requests were
+	// sent (the refused one is recorded too), so wait for all three: waiting
+	// for two let the report run before the uncompressed baseline was in.
 	deadline := time.Now().Add(2 * time.Second)
-	for len(collector.Find(telemetry.Query{})) < 2 && time.Now().Before(deadline) {
+	for len(collector.Find(telemetry.Query{})) < 3 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
+	}
+	if n := len(collector.Find(telemetry.Query{})); n != 3 {
+		t.Fatalf("recorded %d events, want 3", n)
 	}
 	if f := send("POST", "/v1/aiport/feedback", `{"request_id":"`+id+`","score":0.9}`, nil); f.Code != 200 {
 		t.Fatal("feedback", f.Code, f.Body.String())
