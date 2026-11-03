@@ -110,7 +110,7 @@ listens on and Sign out (or "Authentication off" when it is turned off).
   details view per request. Only metadata is recorded: time, route, model,
   effort, status, latency.
 - **Providers**: your Connections, grouped Local and Remote.
-- **Routing**: protocol defaults and the Applications table.
+- **Routing**: protocol defaults, the Levels and the Applications table.
 - **Integrate**: your Applications (waiting, approved and rejected),
   onboarding a new one, and the instructions aiport writes for coding
   agents.
@@ -542,6 +542,26 @@ for a replacement Connection of the same protocol.
 If your configuration already had an Alias called `fast`, `balanced` or
 `best`, it is now that Level's mapping on its Connection's protocol.
 
+You edit Levels in the dashboard, without touching the file:
+
+- **Routing → Levels** shows each Level on each protocol. The pencil opens
+  its mapping: a Connection of that protocol, a model, and optional
+  per-effort models (see Effort below). **Clear** removes the shared mapping.
+  A cell also says how many Applications have their own.
+- **Integrate → Applications → Levels** (on an Application's row) shows the
+  same grid for that Application: its own mappings, marked *Own*, and the
+  shared ones it falls back to. The pencil gives it its own mapping; **Use
+  the shared mapping** removes it again.
+
+Every save is one Change: revert it in Changes to get the previous mapping
+back. The same edits are in the management API, with the management token
+and the `X-Aiport-CSRF: 1` header: `PUT /api/v1/levels/{protocol}/{level}`
+with `{application?, connection, model, effort?}`, `DELETE` on the same path
+with `{application?}`, `PUT /api/v1/aliases/effort` with
+`{application?, alias, connection?, effort}` for the per-effort models of any
+Alias, and `GET /api/v1/levels` to read them all. Leaving `application` out
+edits the shared mapping.
+
 When an Application keeps asking for a Level that is not mapped, aiport
 opens an Issue for it (see [An unmapped Level](#an-unmapped-level)).
 
@@ -580,6 +600,14 @@ including its effort field, reaches the provider unchanged. Per-effort models
 are listed in the Catalog (`effort` on a task name), and changing them is a
 Catalog change. Activity shows the effort of each call and where it came
 from (see below).
+
+A Level's per-effort models are edited in its mapping on Routing or
+Integrate (empty fields use the mapping's model). Over the API, a `PUT` on a
+Level without `effort` keeps them while the mapping stays on the same
+Connection and drops them when it moves to another (they name models of
+the old one). A task name's per-effort models are set with
+`PUT /api/v1/aliases/effort`: a shared task name is found by its name and
+`connection`, an Application's own by its name.
 
 ## The Catalog
 

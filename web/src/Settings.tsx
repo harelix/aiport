@@ -7,6 +7,7 @@ import {RoutingMapPanel} from './RoutingMap';
 import type {Reason} from './Reason';
 import {ApplicationsPanel} from './Applications';
 import {DefaultAgentPanel} from './CodingAgents';
+import {LevelsPanel} from './Levels';
 import KeyField, {KeySource, keyBadge} from './KeyField';
 
 export type Location = 'local' | 'remote';
@@ -479,6 +480,7 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
       <div className="panel-heading"><h2>Protocol defaults<HelpLink section="Routing and protocol defaults"/></h2><span>Where requests go when an app doesn't pick a connection</span></div>
       <DefaultsForm key={JSON.stringify(config?.defaults) + targets.length} config={config} providers={providers} onChange={onChange}/>
     </section>
+    <LevelsPanel refresh={config} onChange={onChange}/>
     <RoutingMapPanel targets={targets} providers={providers} reload={JSON.stringify(config)}/>
     <section className="panel">
       <div className="panel-heading"><h2>Connect an application</h2><span>Point any OpenAI or Anthropic SDK here</span></div>
@@ -496,7 +498,7 @@ export function RoutingPage({config, providers, onChange, queueDepth, onIntegrat
     </section>
     <section className="panel planned">
       <div className="panel-heading"><h2>Per-application limits</h2><span className="badge">Planned</span></div>
-      <p className="muted">Model allowlists per application and routing by reasoning effort are not built yet. Today an application's calls go to its bound connection or the protocol default; per-application model aliases are set in the YAML file (<code>origins[].aliases</code>).</p>
+      <p className="muted">Model allowlists per application are not built yet. Today an application's calls go to its bound connection or the protocol default, or where a Level sends them; per-application task names (model aliases) are set in the YAML file (<code>origins[].aliases</code>).</p>
     </section>
   </>;
 }
