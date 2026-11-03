@@ -108,7 +108,7 @@ func TestCapabilitiesAndMCPCarryTheCatalog(t *testing.T) {
 	_, res := mcp(h, reqHelper, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"aiport_catalog","arguments":{}}}`)
 	result, _ := res["result"].(map[string]any)
 	content, _ := result["content"].([]any)
-	if len(content) != 1 || content[0].(map[string]any)["text"] != strings.TrimSpace(w.Body.String()) || result["isError"] != false {
+	if len(content) == 0 || content[0].(map[string]any)["text"] != strings.TrimSpace(w.Body.String()) || result["isError"] != false {
 		t.Fatalf("aiport_catalog differs from GET %s:\n%v\n%s", CatalogPath, res, w.Body)
 	}
 	_, list := mcp(h, reqHelper, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)

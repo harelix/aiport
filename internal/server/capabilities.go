@@ -22,6 +22,7 @@ func (h *Handler) capabilities(applicationID string) (capability.Capabilities, b
 		if last := h.recentCatalogChanges(applicationID, 1); len(last) == 1 {
 			caps.Catalog.ChangedAt = &last[0].At
 		}
+		caps.Guidance = h.guidanceState(applicationID)
 	}
 	if ok && h.decisions != nil && h.decisions.On() {
 		n := h.decisions.OpenIssues(applicationID)

@@ -221,6 +221,14 @@ var migrations = []string{
 	);
 	CREATE INDEX catalog_changes_application ON catalog_changes(application, at_ms DESC);
 	CREATE INDEX catalog_changes_time ON catalog_changes(at_ms);`,
+	// 9: the guidance version each Application's coding agent last
+	// confirmed (aiport_guidance_done) and when. No row = never confirmed.
+	// Application ids, version numbers and times only. Additive.
+	`CREATE TABLE guidance (
+		application     TEXT PRIMARY KEY,
+		version         INTEGER NOT NULL,
+		confirmed_at_ms INTEGER NOT NULL
+	);`,
 }
 
 // preRelease maps the schema version of a database written by a pre-release
