@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="visuals/logo-256.png" alt="aiport logo" width="112" height="112">
+<img src="docs/images/logo-256.png" alt="aiport logo" width="112" height="112">
 
 <h1>aiport</h1>
 
@@ -21,7 +21,7 @@ One place for provider keys, routing and request history, that notices when an a
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-<img src="visuals/providers-sc.png" alt="The aiport dashboard: provider Connections with their keys saved, protocol defaults and connection checks" width="880">
+<img src="docs/images/providers-sc.png" alt="The aiport dashboard: provider Connections with their keys saved, protocol defaults and connection checks" width="880">
 
 </div>
 
@@ -96,7 +96,7 @@ aiport is experimental. No provider and coding-agent combination has passed the 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Run `make test`, `make check` and `make check-offline`, and sign off every commit (DCO). Larger changes start from [the design](aiport_DESIGN.md); the vocabulary is in the [glossary](GLOSSARY.md), and dependency licenses are in [THIRD_PARTY.md](THIRD_PARTY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Run `make test`, `make check` and `make check-offline`, and sign off every commit (DCO). Larger changes start from [the design](docs/design.md); the vocabulary is in the [glossary](GLOSSARY.md), and dependency licenses are in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## License
 

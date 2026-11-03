@@ -103,7 +103,7 @@ func TestLoadPermissionsAndSize(t *testing.T) {
 }
 
 func TestExampleConfiguration(t *testing.T) {
-	data, err := os.ReadFile("../../tests/fixtures/local-config.yaml")
+	data, err := os.ReadFile("testdata/local-config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

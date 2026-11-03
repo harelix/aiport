@@ -405,25 +405,26 @@ Proposed management API prefix: `/api/v1/`, separate from native `/v1/` inferenc
 ## 11. Repository and OSS distribution
 
 ```text
-cmd/aiport/
-internal/
-  config/
-  server/
-  proxy/
-  providers/       # small native auth/usage helpers only
-  origin/
-  telemetry/
-  storage/
-  pricing/
-web/              # React/TypeScript sources and build
-tests/fixtures/   # synthetic, secret-free native requests and streams
-tests/integration/
-docs/
+cmd/aiport/        # the binary: init, serve, agent, task and the other commands
+internal/          # every package is private to the module
+  config/          # aiport.yaml, credentials, Levels, live Changes
+  server/          # HTTP API, dashboard, MCP endpoint, pairing
+  proxy/           # forwarding to providers per protocol
+  decide/          # Issues, Suggestions and Change requests
+  catalog/         # what each Application can use
+  store/           # SQLite request history and state
+  telemetry/       # request metadata collection
+  ...              # one package per concern; see `go list ./...`
+  */testdata/      # synthetic, secret-free fixtures next to the package that reads them
+web/               # React/TypeScript dashboard sources (pnpm, Vite)
+internal/dashboard/dist/  # the built dashboard, committed and embedded in the binary
+vendor/            # vendored Go dependencies, for offline builds
+docs/              # manual, configuration, connect, this design; docs/images/ for pictures
 ```
 
 Use small packages. Add interfaces only when a real consumer/test seam requires one. Choose a SQLite driver after testing cross-platform packaging; document CGO/native-library consequences. Do not call a binary self-contained if it requires an undeclared runtime library.
 
-Apache-2.0 is the proposed project license from the discussion, not an already verified repository license. Before first public release, the maintainer MUST confirm rights and adopt an actual `LICENSE`; do not replace a pre-existing license without explicit authority. Include required dependency notices and any applicable `NOTICE`. Use a simple documented contribution policy; do not invent a CLA requirement.
+aiport is licensed Apache-2.0 (`LICENSE`, `NOTICE`); dependency licenses are listed in `THIRD_PARTY.md` and bundled under `licenses/`. Contributions are signed off under the DCO (see `CONTRIBUTING.md`); there is no CLA.
 
 Required repository documents:
 

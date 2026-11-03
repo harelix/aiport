@@ -3,7 +3,7 @@
 The aiport **source code** is licensed under Apache-2.0 (see `LICENSE`). The
 Apache License does not grant rights to the project's name or logo (section 6).
 
-The **"aiport" name** and the **windsock logo** (files in `visuals/` and the
+The **"aiport" name** and the **windsock logo** (files in `docs/images/` and the
 dashboard logo assets) are reserved by the aiport project.
 
 You may, without asking:

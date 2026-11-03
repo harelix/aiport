@@ -79,5 +79,5 @@ Prior sessions are revoked on changes; provider settings remain intact. A disabl
 mode retains Host/Origin/CSRF protections. Added flow/restart/recovery tests and
 PBKDF2/session tests. Nord official color variables now cover light/dark UI and
 interactive CLI accents; checked key text/control contrasts. Supplied original
-`visuals/logo-circle-with-sky` is embedded for login/sidebar/recovery and favicon,
+`docs/images/logo-circle-with-sky.png` is embedded for login/sidebar/recovery and favicon,
 preserving its original artwork. Browser visual verification remains pending.
