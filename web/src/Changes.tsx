@@ -31,7 +31,7 @@ export type Decision = {
 
 /** An Issue: a problem aiport keeps seeing for one Application, as GET /api/v1/issues lists it. */
 export type Issue = {
-  id: string; application: string; cause: string; subject: string;
+  id: string; application: string; cause: string; subject: string; protocol?: string;
   state: 'open' | 'resolving' | 'resolved' | 'dismissed';
   summary: string; needs_owner: boolean; application_fix: string;
   evidence: {count: number; from_ms: number; to_ms: number; window_minutes: number; status?: number; error?: string; examples?: string[]; connections?: string[]};
@@ -375,8 +375,8 @@ const AUTOMATIC = 'aiport (automatic)';
  * says it fixed the Issue (resolving); Dismiss is there for any Issue still open or resolving.
  */
 function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Issue; targets: string[]; explain: ExplainStatus | null; onDecided: (message: string) => void; onExplained: () => void}) {
-  const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection';
-  const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || issue.subject);
+  const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection', level = issue.cause === 'level_unmapped';
+  const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || (level ? '' : issue.subject));
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [blocked, setBlocked] = useState<Blocked | null>(null);
   const automatic = fix?.state === 'applied' && fix.by === AUTOMATIC && !!fix.change_id;
   const revert = async () => {
@@ -395,7 +395,7 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
     try {
       await send('POST', 'issues/' + encodeURIComponent(issue.id), action !== 'accept' ? {action} : binds ? {action, target} : {action, target, model});
       onDecided(action === 'accept'
-        ? 'Approved for only ' + issue.application + (binds ? ': bound to ' + target : ': the alias “' + issue.subject + '” → ' + target + '/' + model) + '. The Issue resolves itself when its calls succeed; you can revert the Change below.'
+        ? 'Approved for only ' + issue.application + (binds ? ': bound to ' + target : level ? ': the Level “' + issue.subject + '” → ' + target + '/' + model : ': the alias “' + issue.subject + '” → ' + target + '/' + model) + '. The Issue resolves itself when its calls succeed; you can revert the Change below.'
         : 'Dismissed. aiport stays quiet about this Issue for 7 days unless the evidence doubles.');
     } catch (e) {
       const err = e as Error & {code?: string; extension?: string; reason?: string};
@@ -423,12 +423,12 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
             {targets.filter(t => t !== issue.subject).map(t => <option key={t}>{t}</option>)}
           </select></label>
         : <>
-          <label>Fix in aiport: alias for only {issue.application}<input value={issue.subject} readOnly spellCheck={false}/></label>
+          <label>{level ? 'Fix in aiport: map the Level (' + (issue.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI') + ' protocol) for only ' + issue.application : 'Fix in aiport: alias for only ' + issue.application}<input value={issue.subject} readOnly spellCheck={false}/></label>
           <label>Connection<select value={target} onChange={e => setTarget(e.target.value)}>
             {!target && <option value="">Choose a Connection</option>}
             {targets.map(t => <option key={t}>{t}</option>)}
           </select></label>
-          <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} spellCheck={false} autoComplete="off"/></label>
+          <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} spellCheck={false} autoComplete="off" placeholder={level ? 'A model the Connection serves' : undefined}/></label>
         </>}
       <div className="actions">
         <button className="primary" disabled={!!busy || !target || (!binds && !model.trim())}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>

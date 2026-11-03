@@ -213,6 +213,32 @@ func TestALevelIsServedWithoutAProtocolDefault(t *testing.T) {
 	}
 }
 
+// On a protocol with no default and no Level mapped, a Level is still
+// refused as an unmapped Level, not as a missing Connection.
+func TestALevelOnAProtocolWithNothingIsUnmappedNotUnconfigured(t *testing.T) {
+	f := levelsServer(t)
+	if _, _, err := f.h.live.Change("no OpenAI default", config.SetDefaultTarget("openai", "")); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range []string{"best", "fast"} {
+		e, err := config.SetLevel(f.h.live.Config(), "", "openai", l, "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := f.h.live.Change("unmap "+l, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := levelCall(f.h, "/v1/chat/completions", lvlDocs, `{"model":"best"}`)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "level_unmapped") {
+		t.Fatalf("best with nothing on OpenAI: %d %s", w.Code, w.Body)
+	}
+	// Any other name still finds no Connection.
+	if w := levelCall(f.h, "/v1/chat/completions", lvlDocs, `{"model":"gpt-4o"}`); w.Code != 503 || !strings.Contains(w.Body.String(), "target_unconfigured") {
+		t.Fatalf("plain model without a default: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestMappedLevelsAreListedInModelsOnTheirProtocol(t *testing.T) {
 	f := levelsServer(t)
 	_, out := listModels(f.h, lvlDocs)

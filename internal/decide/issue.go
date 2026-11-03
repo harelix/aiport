@@ -134,11 +134,13 @@ type Resolution struct {
 
 // Issue is one problem aiport keeps seeing for one Application.
 type Issue struct {
-	ID          string     `json:"id"`
-	Application string     `json:"application"`
-	Cause       Cause      `json:"cause"`
-	Subject     string     `json:"subject"`
-	State       IssueState `json:"state"`
+	ID          string `json:"id"`
+	Application string `json:"application"`
+	Cause       Cause  `json:"cause"`
+	Subject     string `json:"subject"`
+	// Protocol is the protocol the Issue is on (CauseLevelUnmapped only).
+	Protocol string     `json:"protocol,omitempty"`
+	State    IssueState `json:"state"`
 	// Summary says what is wrong and what aiport found, in fixed words.
 	Summary   string     `json:"summary"`
 	Evidence  Evidence   `json:"evidence"`
@@ -601,6 +603,8 @@ type causeRules struct {
 	// counts reports whether call e is one of the errors of Issue is (what
 	// X-Aiport-Hint uses to name the Issue).
 	counts func(e telemetry.Event, is hintIssue) bool
+	// onProtocol: the Issue keeps the protocol of its symptoms.
+	onProtocol bool
 }
 
 var causes = map[Cause]causeRules{
@@ -627,6 +631,19 @@ var causes = map[Cause]causeRules{
 		summary:        func(is Issue, p Proposal) string { return failingSummary(is, p.Target) },
 		applicationFix: failingFix,
 		counts:         func(e telemetry.Event, is hintIssue) bool { return failed(e) && e.Target == is.subject },
+	},
+	CauseLevelUnmapped: {
+		threshold: func(c config.Config) config.Threshold { return c.Adapting.LevelUnmapped },
+		fix: func(is Issue, s *symptom) (Kind, Proposal) {
+			// The model is the Owner's to choose: aiport never invents one.
+			return KindApplicationAlias, Proposal{Alias: is.Subject, Target: s.proposedConnection}
+		},
+		summary:        levelUnmappedSummary,
+		applicationFix: levelUnmappedFix,
+		counts: func(e telemetry.Event, is hintIssue) bool {
+			return levelUnmapped(e) && *e.RequestedModel == is.subject
+		},
+		onProtocol: true,
 	},
 	// A Catalog change is not detected from errors (CatalogChanged opens
 	// it), so it has no threshold and no aiport fix.
@@ -686,6 +703,9 @@ func (q *Queue) track(c config.Config, cause Cause, symptoms []*symptom, succeed
 			is.State, is.ResolvingBy, is.SinceMS = IssueOpen, "", now // the fix did not work
 		}
 		is.Evidence = s.evidence(th.WindowMinutes)
+		if r.onProtocol {
+			is.Protocol = s.protocol
+		}
 		if s.diagnosis != nil {
 			is.Diagnosis = s.diagnosis
 		}
