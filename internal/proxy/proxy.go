@@ -267,13 +267,6 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 			return
 		}
 	}
-	if o := observation(r); o != nil && model != "" {
-		served := model
-		if to, ok := route.Rewrite[model]; ok {
-			served = to
-		}
-		o.Event.ResolvedModel = served
-	}
 	base, err := url.Parse(t.URL())
 	if err != nil {
 		fail(refusal.TargetInvalid)
@@ -301,6 +294,14 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 	}
 	// Headers named by Connection cannot remove our selected upstream credential.
 	setUpstreamAuth(upstream.Header, protocol, secret)
+	// The model it is sent upstream as (recorded only once it is sent).
+	if o := observation(r); o != nil && model != "" {
+		served := model
+		if to, ok := route.Rewrite[model]; ok {
+			served = to
+		}
+		o.Event.ResolvedModel = served
+	}
 	response, err := g.transport.RoundTrip(upstream)
 	if err != nil {
 		if r.Context().Err() != nil {
