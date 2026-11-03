@@ -19,6 +19,10 @@ type Adapting struct {
 	// (gateway errors, timeouts) at least Count times within the last
 	// WindowMinutes.
 	FailingConnection Threshold `yaml:"failing_connection,omitempty" json:"failing_connection"`
+	// LevelUnmapped: one Application's calls for one Level were refused
+	// with level_unmapped at least Count times within the last
+	// WindowMinutes.
+	LevelUnmapped Threshold `yaml:"level_unmapped,omitempty" json:"level_unmapped"`
 	// AutoFix lets aiport apply an Issue's aiport fix itself, as a revertable
 	// Change made by "aiport (automatic)", when the diagnosis is certain and
 	// the fix is for that Application only. Off by default.
@@ -49,7 +53,7 @@ type Threshold struct {
 
 // DefaultAdapting is the loop's configuration when aiport.yaml says nothing.
 func DefaultAdapting() Adapting {
-	return Adapting{IntervalSeconds: 60, UnknownModel: Threshold{Count: 5, WindowMinutes: 60}, UnknownToken: Threshold{Count: 10, WindowMinutes: 60}, FailingConnection: Threshold{Count: 5, WindowMinutes: 60}}
+	return Adapting{IntervalSeconds: 60, UnknownModel: Threshold{Count: 5, WindowMinutes: 60}, UnknownToken: Threshold{Count: 10, WindowMinutes: 60}, FailingConnection: Threshold{Count: 5, WindowMinutes: 60}, LevelUnmapped: Threshold{Count: 5, WindowMinutes: 60}}
 }
 
 func (a Adapting) validate() error {
@@ -61,6 +65,9 @@ func (a Adapting) validate() error {
 		return err
 	}
 	if err := a.FailingConnection.validate("failing_connection"); err != nil {
+		return err
+	}
+	if err := a.LevelUnmapped.validate("level_unmapped"); err != nil {
 		return err
 	}
 	return nil
