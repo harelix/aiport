@@ -33,7 +33,7 @@ var guidanceLog = []GuidanceChange{
 		"Where the code picks a model by how capable it must be, send a Level as the model name: fast, balanced or best. The Owner maps each Level to a model per protocol; aiport_catalog lists the Levels this Application can use.",
 		"Send how hard a task is with the X-Aiport-Effort header (low, medium or high) where it helps pick the model; aiport never rewrites the provider's own effort field.",
 		"Never put a provider or a provider's model id in code where a Level or a task name will do.",
-		"Replace the aiport line in AGENTS.md with the current agents_line.",
+		"Check that AGENTS.md has the current agents_line in place of any older aiport line.",
 	}},
 }
 

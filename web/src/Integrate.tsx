@@ -113,7 +113,7 @@ function GuidanceCell({id, guidance}: {id: string; guidance: Guidance | null}) {
   const label = a.confirmed ? 'Behind v' + a.confirmed + ' → v' + guidance.current : 'Unknown';
   const why = a.confirmed ? 'Its coding agent confirmed guidance version ' + a.confirmed + '; aiport\'s is ' + guidance.current + '.' : 'Its coding agent has never confirmed a guidance version; aiport\'s is ' + guidance.current + '.';
   return <div className="guidance-cell">
-    <span className={'badge' + (a.confirmed ? ' warn' : ' info')} title={why + (a.sends_levels ? ' Its calls already send Levels, a hint that its code may follow version 2.' : '')}>{label}</span>
+    <span className={'badge' + (a.confirmed ? ' warn' : ' info')} title={why + (a.sends_levels ? ' Its calls sent Levels in the last 6 hours, a hint that its code may follow version 2.' : '')}>{label}</span>
     {a.sends_levels && <small className="muted">Sends Levels</small>}
     <CopyButton text={guidance.instruction} label="Copy refresh instruction"/>
   </div>;

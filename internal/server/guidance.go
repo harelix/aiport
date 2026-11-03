@@ -158,7 +158,7 @@ func (h *Handler) guidanceRoute(w http.ResponseWriter, r *http.Request, fail fun
 		ConfirmedAt *int64 `json:"confirmed_at_ms"`
 		Behind      bool   `json:"behind"`
 		// SendsLevels is a hint only: the Application's calls named a Level
-		// in the last day, so its code may already follow version 2. It
+		// in the last 6 hours, so its code may already follow version 2. It
 		// never counts as confirmation.
 		SendsLevels bool `json:"sends_levels"`
 	}
@@ -182,7 +182,7 @@ func (h *Handler) guidanceRoute(w http.ResponseWriter, r *http.Request, fail fun
 		apps[o.ID] = a
 	}
 	if behind > 0 && h.collector != nil {
-		for _, e := range h.collector.Find(telemetry.Query{From: h.clock().Add(-24 * time.Hour).UnixMilli(), InferenceOnly: true}) {
+		for _, e := range h.collector.Find(telemetry.Query{From: h.clock().Add(-6 * time.Hour).UnixMilli(), InferenceOnly: true}) {
 			if a, ok := apps[e.Origin]; ok && a.Behind && !a.SendsLevels && e.RequestedModel != nil && config.IsLevel(*e.RequestedModel) {
 				a.SendsLevels = true
 				apps[e.Origin] = a
