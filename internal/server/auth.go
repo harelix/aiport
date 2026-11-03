@@ -23,6 +23,7 @@ func NewConfigured(c config.Config, s config.Secrets, collector *telemetry.Colle
 		h.worktrees = path + ".worktrees" // before keepChanges: its startup cleanup removes worktrees here
 	}
 	h.keepChanges(path)
+	h.guidance = openGuidance(h.changesDB)
 	h.live.OnChange(h.applyLive)
 	h.openCatalogLog()
 	h.keys = config.EnvKeys(path)

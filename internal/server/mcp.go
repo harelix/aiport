@@ -108,7 +108,7 @@ func (h *Handler) mcpCall(applicationID string, m rpcMessage) (any, *rpcError) {
 			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
 			"serverInfo":      map[string]any{"name": "aiport", "version": "1"},
-			"instructions":    h.mcpInstructions(),
+			"instructions":    h.mcpInstructions(applicationID),
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -145,6 +145,10 @@ func (h *Handler) mcpTool(applicationID, name string, args []byte) (any, *rpcErr
 		r = internalRequest(http.MethodGet, CapabilitiesPath, nil)
 	case "aiport_catalog":
 		r = internalRequest(http.MethodGet, CatalogPath, nil)
+	case "aiport_guidance":
+		r = internalRequest(http.MethodGet, GuidancePath, nil)
+	case "aiport_guidance_done":
+		r = internalRequest(http.MethodPost, GuidancePath+"/done", nil)
 	case "aiport_request_change":
 		r = internalRequest(http.MethodPost, RequestsPath, args)
 	case "aiport_my_requests":
@@ -190,14 +194,25 @@ func (h *Handler) mcpTool(applicationID, name string, args []byte) (any, *rpcErr
 		h.serveCapabilities(tw, r, applicationID, fail)
 	case name == "aiport_catalog":
 		h.serveCatalog(tw, r, applicationID, fail)
+	case strings.HasPrefix(r.URL.Path, GuidancePath):
+		h.serveGuidance(tw, r, applicationID, fail)
 	case strings.HasPrefix(r.URL.Path, IssuesPath):
 		h.serveIssues(tw, r, applicationID, fail)
 	default:
 		h.serveRequests(tw, r, applicationID, fail)
 	}
 	body := bytes.TrimSpace(tw.body.Bytes())
+	content := []map[string]string{{"type": "text", "text": string(body)}}
+	// While this Application's guidance is behind, every other tool answer
+	// ends with the reminder, as a second text block so the first stays
+	// exactly the HTTP body.
+	if !strings.HasPrefix(name, "aiport_guidance") {
+		if line := h.guidanceReminder(applicationID); line != "" {
+			content = append(content, map[string]string{"type": "text", "text": line})
+		}
+	}
 	return map[string]any{
-		"content":           []map[string]string{{"type": "text", "text": string(body)}},
+		"content":           content,
 		"structuredContent": json.RawMessage(body),
 		"isError":           tw.status >= 400,
 	}, nil
@@ -239,6 +254,20 @@ var mcpTools = []map[string]any{
 		"description": "The model names this Application can use through aiport: its task names (Aliases, use these first), where each goes, its binding or the protocol defaults it follows, and the models of the Connections it reaches; then its recent Catalog changes, newest first (task names removed, added or moved, routing that changed, each with the Change id and time). Read it at the start of a session and whenever the X-Aiport-Catalog header changes. Same answer as GET " + CatalogPath + ".",
 		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
 		"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
+	},
+	{
+		"name":        "aiport_guidance",
+		"title":       "What changed in aiport's guidance for this repository",
+		"description": "What changed in aiport's guidance for coding agents since this Application's coding agent last confirmed it: current and confirmed versions, behind, the changes of each newer version with what to do, the current AGENTS.md line (agents_line) and the steps. Call it when aiport says the guidance is behind, then aiport_guidance_done. Same answer as GET " + GuidancePath + ".",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+		"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
+	},
+	{
+		"name":        "aiport_guidance_done",
+		"title":       "Confirm this repository follows aiport's current guidance",
+		"description": "Record that this repository now follows aiport's current guidance version (after doing the steps from aiport_guidance); the reminder then stops. Same as POST " + GuidancePath + "/done.",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+		"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
 	},
 	{
 		"name":        "aiport_request_change",
@@ -304,12 +333,18 @@ var mcpIssueTools = []map[string]any{
 	},
 }
 
-// mcpInstructions is what initialize tells the agent now.
-func (h *Handler) mcpInstructions() string {
-	if h.decisions == nil || !h.decisions.On() {
-		return mcpInstructions
+// mcpInstructions is what initialize tells the agent of applicationID now:
+// first the guidance reminder, on its own line, while its guidance is
+// behind.
+func (h *Handler) mcpInstructions(applicationID string) string {
+	s := mcpInstructions
+	if h.decisions != nil && h.decisions.On() {
+		s += mcpIssuesInstructions
 	}
-	return mcpInstructions + mcpIssuesInstructions
+	if line := h.guidanceReminder(applicationID); line != "" {
+		s = line + "\n" + s
+	}
+	return s
 }
 
 // mcpToolList is what tools/list offers now.

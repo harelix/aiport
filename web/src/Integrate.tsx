@@ -89,6 +89,36 @@ function useIssues(tick: number): {issues: Record<string, Issue[]>; explain: Exp
   return {issues, explain, reload: () => setAgain(x => x + 1)};
 }
 
+/** aiport's guidance version for coding agents and, per Application, the
+    version its coding agent last confirmed (GET /api/v1/guidance). */
+export type Guidance = {current: number; behind: number; instruction: string; applications: Record<string, {confirmed: number | null; confirmed_at_ms: number | null; behind: boolean; sends_levels: boolean}>};
+
+export function useGuidance(tick: number): Guidance | null {
+  const [g, setG] = useState<Guidance | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/v1/guidance', {credentials: 'same-origin', signal: controller.signal}).then(r => r.ok ? r.json() : null).then(setG).catch(() => {});
+    return () => controller.abort();
+  }, [tick]);
+  return g;
+}
+
+/* An Application's guidance state in the list: up to date, behind vN → vM,
+   or unknown (never confirmed), with the refresh instruction to copy while
+   it is not up to date. Sending Levels is a hint only. */
+function GuidanceCell({id, guidance}: {id: string; guidance: Guidance | null}) {
+  const a = guidance?.applications[id];
+  if (!guidance || !a) return <span className="muted">…</span>;
+  if (!a.behind) return <span className="badge good" title={a.confirmed_at_ms ? 'Confirmed ' + new Date(a.confirmed_at_ms).toLocaleString() : undefined}>Up to date</span>;
+  const label = a.confirmed ? 'Behind v' + a.confirmed + ' → v' + guidance.current : 'Unknown';
+  const why = a.confirmed ? 'Its coding agent confirmed guidance version ' + a.confirmed + '; aiport\'s is ' + guidance.current + '.' : 'Its coding agent has never confirmed a guidance version; aiport\'s is ' + guidance.current + '.';
+  return <div className="guidance-cell">
+    <span className={'badge' + (a.confirmed ? ' warn' : ' info')} title={why + (a.sends_levels ? ' Its calls sent Levels in the last 6 hours, a hint that its code may follow version 2.' : '')}>{label}</span>
+    {a.sends_levels && <small className="muted">Sends Levels</small>}
+    <CopyButton text={guidance.instruction} label="Copy refresh instruction"/>
+  </div>;
+}
+
 /** A short cause for an Issue, for the Applications list. */
 const shortCause = (i: Issue) => i.cause === 'unknown_model' ? 'Unknown model ' + i.subject : i.cause === 'failing_connection' ? 'Failing Connection ' + i.subject : i.cause === 'level_unmapped' ? 'Unmapped Level ' + i.subject : isCatalogChange(i) ? 'Catalog change ' + i.subject : i.summary;
 
@@ -144,8 +174,8 @@ function RejectedRow({x, onDone}: {x: Rejected; onDone: () => void}) {
 /* The Applications list: waiting pairings first (always shown), then the
    approved Applications; rejected ones only behind the filter. Selecting an
    Application makes the wizard follow it. */
-function ApplicationsList({origins, targets, pairings, rejected, calls, issues, explain, onExplained, agents, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue}: {
-  origins: Origin[]; targets: Target[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; explain: ExplainStatus | null; onExplained: () => void; agents: CodingAgents; app: string; onAgent: (id: string) => void;
+function ApplicationsList({origins, targets, pairings, rejected, calls, issues, guidance, explain, onExplained, agents, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue}: {
+  origins: Origin[]; targets: Target[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; guidance: Guidance | null; explain: ExplainStatus | null; onExplained: () => void; agents: CodingAgents; app: string; onAgent: (id: string) => void;
   onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void; onIssue: (i: Issue) => void;
 }) {
   const [filter, setFilter] = useState<Filter>('approved');
@@ -168,7 +198,7 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, issues, 
       <PairingList pairings={pairings} targets={targets} onDone={onDone}/>
     </div>}
     {showApproved && origins.length > 0 && <div className="apps-table"><table aria-label="Approved applications">
-      <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Issues</th><th title="Coding agent for Agent runs">Agent</th><th>Onboarding</th></tr></thead>
+      <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Issues</th><th title="The aiport guidance version its coding agent last confirmed">Guidance</th><th title="Coding agent for Agent runs">Agent</th><th>Onboarding</th></tr></thead>
       <tbody>{origins.map(o => {
         const done = progress(o, {handed: true, waiting: false, seen: calls.at[o.id], adapting, mcp: mcpCopied(o.id), agents}).filter(Boolean).length;
         const selected = app === o.id, own = issues[o.id] || [], open = !!shown[o.id] && own.length > 0;
@@ -181,11 +211,12 @@ function ApplicationsList({origins, targets, pairings, rejected, calls, issues, 
               title={own.map(shortCause).join('\n')}>
               <ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/><span className="badge warn">{own.length}</span> {own.length === 1 ? shortCause(own[0]) : own.length + ' Issues'}</button>
             : <span className="muted">None</span>}</td>
+          <td><GuidanceCell id={o.id} guidance={guidance}/></td>
           <td>{(() => { const id = effectiveAgent(o, agents), connected = agentConnected(o, agents);
             return <button type="button" className="text-button" onClick={() => onAgent(o.id)} aria-label={(connected ? 'Change the coding agent of ' : 'Connect a coding agent to ') + o.name}
               title={connected ? agentName(id, agents) + (o.agent ? '' : ' (default)') + ' in ' + o.repository : 'Connect a coding agent (onboarding step 6)'}>{connected ? agentName(id, agents) : 'Connect'}</button>; })()}</td>
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
-        </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={7}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}</React.Fragment>;
+        </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={8}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}</React.Fragment>;
       })}</tbody>
     </table></div>}
     {showRejected && rejected.length > 0 && <div className="apps-table rejected-table"><table aria-label="Rejected applications">
@@ -302,6 +333,7 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
   const [rejected, refreshRejected] = useRejected(tick);
   const calls = useLastCalls(origins.map(o => o.id), tick);
   const {issues, explain, reload: reloadIssues} = useIssues(tick);
+  const guidance = useGuidance(tick);
   const [agents] = useCodingAgents(tick);
   // The wizard starts collapsed once an Application exists; null = not chosen yet.
   const [wizardOpen, setWizardOpen] = useState<boolean | null>(null);
@@ -344,7 +376,7 @@ export default function IntegratePage({origins, targets, tick, onChange, onManua
 
   return <div className="integrate-layout">
     <div className="integrate-main">
-      <ApplicationsList origins={origins} targets={targets} pairings={pairings} rejected={rejected} calls={calls} issues={issues} explain={explain} onExplained={reloadIssues} agents={agents} app={app} adapting={doc.adapting}
+      <ApplicationsList origins={origins} targets={targets} pairings={pairings} rejected={rejected} calls={calls} issues={issues} guidance={guidance} explain={explain} onExplained={reloadIssues} agents={agents} app={app} adapting={doc.adapting}
         onSelect={follow} onAgent={followAgent} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue}/>
       <div ref={wizardRef}>
         <Wizard origins={origins} app={app} setApp={setApp} pairings={pairings} seen={app ? calls.at[app] : null} off={calls.off} adapting={doc.adapting} agents={agents}

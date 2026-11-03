@@ -102,3 +102,9 @@ The requester argues for a scope; the Owner decides it.
 A program the Owner adds that takes part in deciding about Change requests,
 for example a policy that refuses some kinds or a guardrail that checks a
 Change before it is applied. Extensions are not part of aiport's core.
+
+**Guidance version**
+The number of the guidance aiport gives coding agents (briefs, the AGENTS.md
+line, MCP instructions), raised when agents must act on a change, with a
+short change log. aiport keeps the version each Application's coding agent
+last confirmed; an Application is behind while that is older (or unknown).

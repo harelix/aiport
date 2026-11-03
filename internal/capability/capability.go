@@ -85,6 +85,16 @@ type Capabilities struct {
 	// X-Aiport-Catalog on every answer) and when it last changed; read
 	// what changed at /v1/aiport/catalog.
 	Catalog CatalogState `json:"catalog"`
+	// Guidance is aiport's current guidance version for coding agents and
+	// the one this Application's coding agent last confirmed (nil: never);
+	// while confirmed is behind, read /v1/aiport/guidance.
+	Guidance GuidanceState `json:"guidance"`
+}
+
+// GuidanceState is aiport's guidance version and the confirmed one.
+type GuidanceState struct {
+	Current   int  `json:"current"`
+	Confirmed *int `json:"confirmed"`
 }
 
 // CatalogState is the version of an Application's Catalog and the time of
