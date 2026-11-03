@@ -216,7 +216,10 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 	}
 	// The model and effort are known now: a Level or a client alias may
 	// pick another connection, and a per-effort model another model.
-	effort, _ := effortOf(r.URL.Path, r.Header, meta)
+	effort, source := effortOf(r.URL.Path, r.Header, meta)
+	if o := observation(r); o != nil {
+		o.Event.Effort, o.Event.EffortSource = effort, source
+	}
 	if model != "" {
 		route, ref = rt.resolveAt(origin, protocol, model, effort)
 	}
@@ -261,6 +264,13 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 			fail(refusal.AmbiguousModel)
 			return
 		}
+	}
+	if o := observation(r); o != nil && model != "" {
+		served := model
+		if to, ok := route.Rewrite[model]; ok {
+			served = to
+		}
+		o.Event.ResolvedModel = served
 	}
 	base, err := url.Parse(t.URL())
 	if err != nil {

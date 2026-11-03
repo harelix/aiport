@@ -91,8 +91,8 @@ func TestADatabaseFromBeforeTheMigrationsWereFoldedStillOpens(t *testing.T) {
 }
 
 func TestANewDatabaseHasEveryTable(t *testing.T) {
-	if SchemaVersion() != 9 {
-		t.Fatalf("want 9 migrations, have %d", SchemaVersion())
+	if SchemaVersion() != 10 {
+		t.Fatalf("want 10 migrations, have %d", SchemaVersion())
 	}
 	db, err := Open(filepath.Join(t.TempDir(), "aiport.yaml.db"))
 	if err != nil {

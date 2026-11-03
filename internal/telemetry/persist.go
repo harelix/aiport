@@ -27,7 +27,7 @@ const (
 	retentionEvery  = time.Hour
 )
 
-const columns = `id, started_at_ms, origin_id, target_id, provider, protocol, route, method, http_status, outcome, latency_ms, ttfb_ms, requested_model, usage_status, cost_status, compression, compression_status, bytes_before, bytes_after, feedback, refusal_code, upstream_error_type, connection_error`
+const columns = `id, started_at_ms, origin_id, target_id, provider, protocol, route, method, http_status, outcome, latency_ms, ttfb_ms, requested_model, usage_status, cost_status, compression, compression_status, bytes_before, bytes_after, feedback, refusal_code, upstream_error_type, connection_error, effort, effort_source, resolved_model`
 
 // flush writes pending events in one transaction. A batch that still fails
 // after one retry is dropped and counted; nothing is spilled to disk.
@@ -59,13 +59,13 @@ func insert(db *sql.DB, batch []Event) error {
 	if err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare(`INSERT INTO requests (` + columns + `) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`)
+	stmt, err := tx.Prepare(`INSERT INTO requests (` + columns + `) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
 	}
 	for _, e := range batch {
-		if _, err = stmt.Exec(e.ID, e.StartedAt, e.Origin, e.Target, e.Provider, e.Protocol, e.Route, e.Method, e.Status, e.Outcome, e.LatencyMS, e.TTFBMS, e.RequestedModel, e.UsageStatus, e.CostStatus, e.Compression, e.CompressionStatus, e.BytesBefore, e.BytesAfter, e.Feedback, e.RefusalCode, e.UpstreamErrorType, e.ConnectionError); err != nil {
+		if _, err = stmt.Exec(e.ID, e.StartedAt, e.Origin, e.Target, e.Provider, e.Protocol, e.Route, e.Method, e.Status, e.Outcome, e.LatencyMS, e.TTFBMS, e.RequestedModel, e.UsageStatus, e.CostStatus, e.Compression, e.CompressionStatus, e.BytesBefore, e.BytesAfter, e.Feedback, e.RefusalCode, e.UpstreamErrorType, e.ConnectionError, e.Effort, e.EffortSource, e.ResolvedModel); err != nil {
 			_ = stmt.Close()
 			_ = tx.Rollback()
 			return err
@@ -100,7 +100,7 @@ func (c *Collector) query(q Query) ([]Event, error) {
 		where = append(where, "started_at_ms <= ?")
 		args = append(args, q.To)
 	}
-	for _, f := range []struct{ col, val string }{{"origin_id", q.Origin}, {"target_id", q.Target}, {"provider", q.Provider}, {"outcome", q.Outcome}} {
+	for _, f := range []struct{ col, val string }{{"origin_id", q.Origin}, {"target_id", q.Target}, {"provider", q.Provider}, {"outcome", q.Outcome}, {"requested_model", q.Model}} {
 		if f.val != "" {
 			where = append(where, f.col+" = ?")
 			args = append(args, f.val)
@@ -126,7 +126,7 @@ func (c *Collector) read(query string, args ...any) ([]Event, error) {
 		var ttfb sql.NullInt64
 		var model sql.NullString
 		var feedback sql.NullFloat64
-		if err := rows.Scan(&e.ID, &e.StartedAt, &e.Origin, &e.Target, &e.Provider, &e.Protocol, &e.Route, &e.Method, &e.Status, &e.Outcome, &e.LatencyMS, &ttfb, &model, &e.UsageStatus, &e.CostStatus, &e.Compression, &e.CompressionStatus, &e.BytesBefore, &e.BytesAfter, &feedback, &e.RefusalCode, &e.UpstreamErrorType, &e.ConnectionError); err != nil {
+		if err := rows.Scan(&e.ID, &e.StartedAt, &e.Origin, &e.Target, &e.Provider, &e.Protocol, &e.Route, &e.Method, &e.Status, &e.Outcome, &e.LatencyMS, &ttfb, &model, &e.UsageStatus, &e.CostStatus, &e.Compression, &e.CompressionStatus, &e.BytesBefore, &e.BytesAfter, &feedback, &e.RefusalCode, &e.UpstreamErrorType, &e.ConnectionError, &e.Effort, &e.EffortSource, &e.ResolvedModel); err != nil {
 			return nil, err
 		}
 		if ttfb.Valid {

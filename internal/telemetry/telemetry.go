@@ -23,8 +23,15 @@ type Event struct {
 	LatencyMS      int64   `json:"latency_ms"`
 	TTFBMS         *int64  `json:"ttfb_ms"`
 	RequestedModel *string `json:"requested_model"`
-	UsageStatus    string  `json:"usage_status"`
-	CostStatus     string  `json:"cost_status"`
+	// What the name was asked at and what served it (model calls only):
+	// the effort (low, medium, high), where it came from (header, field,
+	// default) and the model aiport sent upstream, empty when the request
+	// was not forwarded. Names only, never body content.
+	Effort        string `json:"effort,omitempty"`
+	EffortSource  string `json:"effort_source,omitempty"`
+	ResolvedModel string `json:"resolved_model,omitempty"`
+	UsageStatus   string `json:"usage_status"`
+	CostStatus    string `json:"cost_status"`
 	// Opt-in request compression (empty when not requested). Sizes are
 	// request-body bytes; token savings are estimated from them.
 	Compression       string `json:"compression,omitempty"`

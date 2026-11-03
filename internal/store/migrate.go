@@ -229,6 +229,15 @@ var migrations = []string{
 		version         INTEGER NOT NULL,
 		confirmed_at_ms INTEGER NOT NULL
 	);`,
+	// 10: what a model call asked for and what served it: its effort (low,
+	// medium, high), where the effort came from (header, field, default)
+	// and the model sent upstream. Names only, never body content. The
+	// index serves Activity's filter by the name sent. Additive: older rows
+	// read as empty.
+	`ALTER TABLE requests ADD COLUMN effort TEXT NOT NULL DEFAULT '';
+	ALTER TABLE requests ADD COLUMN effort_source TEXT NOT NULL DEFAULT '';
+	ALTER TABLE requests ADD COLUMN resolved_model TEXT NOT NULL DEFAULT '';
+	CREATE INDEX requests_model ON requests(requested_model, started_at_ms);`,
 }
 
 // preRelease maps the schema version of a database written by a pre-release

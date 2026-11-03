@@ -93,8 +93,9 @@ listens on and Sign out (or "Authentication off" when it is turned off).
   distribution and the latest requests. When something waits for your
   decision, one line here links to Changes.
 - **Activity**: every recorded request, filtered by period, Application
-  ("Origin"), Connection ("Target") and outcome, with a details view per
-  request. Only metadata is recorded: time, route, model, status, latency.
+  ("Origin"), Connection ("Target"), outcome and the name sent, with a
+  details view per request. Only metadata is recorded: time, route, model,
+  effort, status, latency.
 - **Providers**: your Connections, grouped Local and Remote.
 - **Routing**: protocol defaults and the Applications table.
 - **Integrate**: your Applications (waiting, approved and rejected),
@@ -533,7 +534,8 @@ call comes from, in this order:
 As with every Alias, only the `model` field is replaced: the request,
 including its effort field, reaches the provider unchanged. Per-effort models
 are listed in the Catalog (`effort` on a task name), and changing them is a
-Catalog change.
+Catalog change. Activity shows the effort of each call and where it came
+from (see below).
 
 ## The Catalog
 
@@ -642,6 +644,18 @@ records in memory for that session.
 
 Every response carries `X-Aiport-Request-Id`. When an application logs it,
 you can find the exact call in Activity.
+
+**What was asked and what served it.** For each model call Activity keeps
+the name the Application sent (a Level, a task name or a model id), its
+effort and where that came from (the `X-Aiport-Effort` header, the
+provider's effort field, or neither, so `medium`), and the Connection and
+model aiport sent it to. The Model column shows `balanced` with
+`chat/completions → gpt-4o-mini · low` beneath it; **Details** says it in a
+sentence, for example "Asked for balanced at low effort (from the
+X-Aiport-Effort header); served by hosted with gpt-4o-mini." A refused call
+has no serving model. The **Name** filter shows only calls that sent one
+name, so you can check a Level or per-effort mapping works and compare the
+models behind it. Older records, from before this was kept, show none of it.
 
 **Why a request failed.** For a failed request, Activity shows the reason
 next to the status, for example `503 · Refused: no Connection for the

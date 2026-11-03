@@ -81,7 +81,7 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 		return true
 	}
 	q := r.URL.Query()
-	allowed := map[string]bool{"hours": true, "origin": true, "target": true, "provider": true, "outcome": true, "cursor": true, "limit": true, "from_ms": true, "to_ms": true}
+	allowed := map[string]bool{"hours": true, "origin": true, "target": true, "provider": true, "outcome": true, "model": true, "cursor": true, "limit": true, "from_ms": true, "to_ms": true}
 	for key, values := range q {
 		if !allowed[key] || len(values) != 1 || len(values[0]) > 256 {
 			fail(400, "invalid_filter", "Unknown or invalid filter")
@@ -116,7 +116,7 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 	}
 	rows := []telemetry.Event{}
 	if h.collector != nil {
-		rows = h.collector.Find(telemetry.Query{From: from, To: until, Origin: q.Get("origin"), Target: q.Get("target"), Provider: q.Get("provider"), Outcome: q.Get("outcome")})
+		rows = h.collector.Find(telemetry.Query{From: from, To: until, Origin: q.Get("origin"), Target: q.Get("target"), Provider: q.Get("provider"), Outcome: q.Get("outcome"), Model: q.Get("model")})
 	}
 	if r.URL.Path == "/api/v1/stats" {
 		writeJSON(w, 200, map[string]any{"summary": telemetry.Summary(rows), "telemetry": h.telemetryHealth()})

@@ -194,7 +194,7 @@ func (c Connection) Explain(ctx context.Context, is decide.Issue, emit func(stri
 	model := c.Model
 	started := time.Now()
 	e := telemetry.Event{StartedAt: started.UnixMilli(), Origin: config.BuiltinApplication, Target: c.Connection, Protocol: c.Protocol,
-		Route: "/v1" + path, Method: http.MethodPost, RequestedModel: &model, UsageStatus: "unknown", CostStatus: "unknown", Outcome: "success"}
+		Route: "/v1" + path, Method: http.MethodPost, RequestedModel: &model, ResolvedModel: model, UsageStatus: "unknown", CostStatus: "unknown", Outcome: "success"}
 	defer func() {
 		e.LatencyMS = time.Since(started).Milliseconds()
 		if c.Record != nil {

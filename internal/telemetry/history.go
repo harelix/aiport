@@ -49,12 +49,15 @@ func BucketStart(ts, size int64) int64 { return ts - ts%size }
 type Query struct {
 	From, To                          int64
 	Origin, Target, Provider, Outcome string
-	InferenceOnly                     bool
+	// Model is the name the client sent (requested_model).
+	Model         string
+	InferenceOnly bool
 }
 
 func (q Query) match(e Event) bool {
 	return e.StartedAt >= q.From && (q.To == 0 || e.StartedAt <= q.To) &&
 		(q.Origin == "" || e.Origin == q.Origin) && (q.Target == "" || e.Target == q.Target) &&
 		(q.Provider == "" || e.Provider == q.Provider) && (q.Outcome == "" || e.Outcome == q.Outcome) &&
+		(q.Model == "" || e.RequestedModel != nil && *e.RequestedModel == q.Model) &&
 		(!q.InferenceOnly || IsInference(e.Route))
 }

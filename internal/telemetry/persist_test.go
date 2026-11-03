@@ -22,7 +22,7 @@ func openDB(t *testing.T, path string) Store {
 func event(i int, at int64) Event {
 	model := "gpt-x"
 	ttfb := int64(5)
-	return Event{ID: fmt.Sprintf("%036d", i), StartedAt: at, Origin: "codex", Target: "main", Provider: "openai", Protocol: "openai", Route: "/v1/chat/completions", Method: "POST", Status: 200, Outcome: "success", LatencyMS: 12, TTFBMS: &ttfb, RequestedModel: &model, UsageStatus: "unobserved", CostStatus: "unknown", Compression: "json", CompressionStatus: "applied", BytesBefore: 100, BytesAfter: 80}
+	return Event{ID: fmt.Sprintf("%036d", i), StartedAt: at, Origin: "codex", Target: "main", Provider: "openai", Protocol: "openai", Route: "/v1/chat/completions", Method: "POST", Status: 200, Outcome: "success", LatencyMS: 12, TTFBMS: &ttfb, RequestedModel: &model, UsageStatus: "unobserved", CostStatus: "unknown", Compression: "json", CompressionStatus: "applied", BytesBefore: 100, BytesAfter: 80, Effort: "high", EffortSource: "field", ResolvedModel: "gpt-x-large"}
 }
 
 func TestHistorySurvivesRestart(t *testing.T) {
@@ -43,8 +43,11 @@ func TestHistorySurvivesRestart(t *testing.T) {
 	if len(rows) != 600 || rows[0].ID != fmt.Sprintf("%036d", 599) {
 		t.Fatalf("restart lost history: %d rows", len(rows))
 	}
-	if rows[0].TTFBMS == nil || *rows[0].TTFBMS != 5 || rows[0].RequestedModel == nil || rows[0].Compression != "json" || rows[0].BytesAfter != 80 {
+	if rows[0].TTFBMS == nil || *rows[0].TTFBMS != 5 || rows[0].RequestedModel == nil || rows[0].Compression != "json" || rows[0].BytesAfter != 80 || rows[0].Effort != "high" || rows[0].EffortSource != "field" || rows[0].ResolvedModel != "gpt-x-large" {
 		t.Fatalf("columns not round-tripped: %+v", rows[0])
+	}
+	if len(again.Find(Query{Model: "gpt-x"})) != 600 || len(again.Find(Query{Model: "gpt-x-large"})) != 0 {
+		t.Fatal("the filter by the name sent is wrong in SQLite")
 	}
 	if len(again.Find(Query{Origin: "other"})) != 0 {
 		t.Fatal("origin filter ignored in SQLite")
