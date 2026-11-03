@@ -154,10 +154,7 @@ func ms(n int) time.Duration { return time.Duration(n) * time.Millisecond }
 type Refuse func(refusal.Refusal)
 
 func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string, fail Refuse) {
-	protocol := "openai"
-	if r.URL.Path == "/v1/messages" {
-		protocol = "anthropic"
-	}
+	protocol := config.ProtocolOf(r.URL.Path)
 	g.targetsMu.RLock()
 	rt := g.routes
 	g.targetsMu.RUnlock()
@@ -174,11 +171,10 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 		return false
 	}
 	// Refuse early on the client's own binding, before admitting the body,
-	// unless a model name (its own Alias or a Level) could still route it.
-	// With no Connection at all the model is read first: a Level must be
-	// refused as level_unmapped, naming it, not as a missing Connection.
+	// unless the model must be read first (routes.readFirst): a name could
+	// still route it, or a Level must be refused as level_unmapped.
 	route, ref := rt.resolve(origin, protocol, "")
-	if ref == nil || !rt.named(origin, protocol) && ref.Code != refusal.TargetUnconfigured.Code {
+	if ref == nil || !rt.readFirst(origin, protocol, ref) {
 		if refuse(route, ref) {
 			return
 		}

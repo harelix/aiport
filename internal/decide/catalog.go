@@ -133,12 +133,12 @@ func (q *Queue) usedTakenAway(n CatalogNotice, retention time.Duration) bool {
 // resolves the Issue the reverted Change opened. Called with the lock held.
 func (q *Queue) catalogNotice(n CatalogNotice, retention time.Duration) {
 	if n.RevertOf != "" {
-		if i := q.issueFor(n.Application, CauseCatalogChanged, n.RevertOf); i >= 0 && undecided(q.issues[i].State) {
+		if i := q.issueFor(n.Application, CauseCatalogChanged, n.RevertOf, ""); i >= 0 && undecided(q.issues[i].State) {
 			q.resolve(&q.issues[i], Stopped, n.At)
 			return // back as it was: nothing new to tell
 		}
 	}
-	if !n.takesAway() || q.issueFor(n.Application, CauseCatalogChanged, n.ChangeID) >= 0 {
+	if !n.takesAway() || q.issueFor(n.Application, CauseCatalogChanged, n.ChangeID, "") >= 0 {
 		return
 	}
 	// An Issue's aiport fix for this Application, or its revert, is told by

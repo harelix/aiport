@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"aiport/internal/telemetry"
 )
 
 // An Application that keeps asking for a Level nobody mapped on its
@@ -181,5 +183,72 @@ func TestTheLevelFixStaysOnTheProtocolOfTheCalls(t *testing.T) {
 		if _, ok := c.Level("docs-bot", p, "balanced"); ok {
 			t.Fatalf("balanced was mapped on %s", p)
 		}
+	}
+}
+
+// A Level unmapped on both protocols opens one Issue per protocol, each
+// with its fix on its own protocol, and calls on one protocol never move
+// the other's Issue.
+func TestALevelUnmappedOnBothProtocolsOpensAnIssueForEach(t *testing.T) {
+	f := &issuesFixture{path: filepath.Join(t.TempDir(), "aiport.yaml"), at: time.Now()}
+	f.local = newFakeConnection(t, `{"object":"list","data":[{"id":"llama3:8b"}]}`, true)
+	yaml := "version: 1\nauth: {token_env: ISSUES_MGMT_TOKEN}\ntargets:\n" +
+		"  - {id: local, provider: ollama, base_url: '" + f.local.srv.URL + "/v1'}\n" +
+		"  - {id: claude, provider: acme2, protocol: anthropic, base_url: 'http://127.0.0.1:9/v1'}\n" +
+		"defaults: {openai_target: local, anthropic_target: claude}\norigins:\n" +
+		"  - {id: docs-bot, name: Docs Bot, token_env: ISSUES_DOCS_TOKEN}\n"
+	if err := os.WriteFile(f.path, []byte(yaml), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ISSUES_MGMT_TOKEN", issuesManagement)
+	t.Setenv("ISSUES_DOCS_TOKEN", docsBotToken)
+	f.start(t)
+	f.chat(t, docsBotToken, "best", 5)
+	before := len(f.collector.Find(telemetry.Query{}))
+	for i := 0; i < 5; i++ {
+		w := levelCall(f.h, "/v1/messages", docsBotToken, `{"model":"best","max_tokens":5}`)
+		if w.Code != 400 {
+			t.Fatalf("best on Anthropic: %d %s", w.Code, w.Body)
+		}
+	}
+	for deadline := time.Now().Add(2 * time.Second); len(f.collector.Find(telemetry.Query{})) < before+5; time.Sleep(2 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("request history did not record the Anthropic calls")
+		}
+	}
+	f.detect()
+	f.detect()
+	byProtocol := map[string]map[string]any{}
+	for _, is := range f.issues(t, "?state=all") {
+		if is["cause"] != "level_unmapped" || is["subject"] != "best" {
+			t.Fatalf("unexpected Issue: %v", is)
+		}
+		byProtocol[fmt.Sprint(is["protocol"])] = is
+	}
+	if len(byProtocol) != 2 || byProtocol["openai"] == nil || byProtocol["anthropic"] == nil {
+		t.Fatalf("Issues by protocol: %v", byProtocol)
+	}
+	for p, target := range map[string]string{"openai": "local", "anthropic": "claude"} {
+		is := byProtocol[p]
+		if got := m(m(is["fix"])["proposal"])["target"]; got != target {
+			t.Fatalf("%s Issue proposes %v, want %s", p, got, target)
+		}
+		if m(is["evidence"])["count"] != float64(5) {
+			t.Fatalf("%s Issue counts %v", p, m(is["evidence"])["count"])
+		}
+	}
+	// Each fix maps the Level on its own protocol only.
+	if code, out := f.decide(t, byProtocol["anthropic"]["id"].(string), `{"action":"accept","target":"claude","model":"claude-sonnet"}`); code != 200 {
+		t.Fatalf("approve the Anthropic fix: %d %v", code, out)
+	}
+	c := liveConfig(t, f.h, issuesManagement)
+	if _, ok := c.Level("docs-bot", "anthropic", "best"); !ok {
+		t.Fatal("best not mapped on Anthropic")
+	}
+	if _, ok := c.Level("docs-bot", "openai", "best"); ok {
+		t.Fatal("the Anthropic fix mapped best on OpenAI")
+	}
+	if is := f.issues(t, "?state=all"); len(is) != 2 {
+		t.Fatalf("Issues after the fix: %v", is)
 	}
 }

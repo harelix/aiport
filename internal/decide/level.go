@@ -25,18 +25,10 @@ func levelUnmapped(e telemetry.Event) bool {
 	return e.Outcome == "rejected" && e.RefusalCode == "level_unmapped" && e.RequestedModel != nil && config.IsLevel(*e.RequestedModel)
 }
 
-// routeProtocol is the protocol of an inference route: a refused call has
-// no Connection to take it from.
-func routeProtocol(route string) string {
-	if route == "/v1/messages" {
-		return "anthropic"
-	}
-	return "openai"
-}
-
-// levelUnmappedSymptoms groups the window's inference calls by Application
-// and Level: the level_unmapped refusals, and the successful calls for that
-// Level. Each proposes the Connection the Application's other calls on that
+// levelUnmappedSymptoms groups the window's inference calls by Application,
+// Level and protocol (of the route: a refused call has no Connection to
+// take it from): the level_unmapped refusals, and the successful calls for
+// that Level on that protocol. Each proposes the Connection the Application's other calls on that
 // protocol go to (its binding, else the protocol default), or none.
 func levelUnmappedSymptoms(c config.Config, history History, at time.Time) []*symptom {
 	th := c.Adapting.LevelUnmapped
@@ -45,7 +37,7 @@ func levelUnmappedSymptoms(c config.Config, history History, at time.Time) []*sy
 	for _, o := range c.Origins {
 		apps[o.ID] = o
 	}
-	groups := map[[2]string]*symptom{}
+	groups := map[[3]string]*symptom{}
 	events := history.Find(telemetry.Query{From: from.UnixMilli(), To: at.UnixMilli(), InferenceOnly: true})
 	sort.SliceStable(events, func(i, j int) bool { return events[i].StartedAt < events[j].StartedAt })
 	for _, e := range events {
@@ -56,10 +48,11 @@ func levelUnmappedSymptoms(c config.Config, history History, at time.Time) []*sy
 		if !refused && !telemetry.Succeeded(e.Outcome) {
 			continue
 		}
-		key := [2]string{e.Origin, *e.RequestedModel}
+		protocol := config.ProtocolOf(e.Route)
+		key := [3]string{e.Origin, *e.RequestedModel, protocol}
 		g := groups[key]
 		if g == nil {
-			g = &symptom{cause: CauseLevelUnmapped, app: e.Origin, subject: *e.RequestedModel}
+			g = &symptom{cause: CauseLevelUnmapped, app: e.Origin, subject: *e.RequestedModel, protocol: protocol}
 			groups[key] = g
 		}
 		if !refused {
@@ -67,17 +60,15 @@ func levelUnmappedSymptoms(c config.Config, history History, at time.Time) []*sy
 			continue
 		}
 		g.errors = append(g.errors, e)
-		g.protocol = routeProtocol(e.Route)
 	}
 	out := make([]*symptom, 0, len(groups))
 	for _, g := range groups {
-		if g.protocol == "" {
-			g.protocol = "openai"
-		}
 		g.proposedConnection = levelConnection(c, apps[g.app], g.protocol)
 		out = append(out, g)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].app+"\x00"+out[i].subject < out[j].app+"\x00"+out[j].subject })
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].app+"\x00"+out[i].subject+"\x00"+out[i].protocol < out[j].app+"\x00"+out[j].subject+"\x00"+out[j].protocol
+	})
 	return out
 }
 
@@ -87,10 +78,7 @@ func levelUnmappedSymptoms(c config.Config, history History, at time.Time) []*sy
 func levelConnection(c config.Config, app config.Origin, protocol string) string {
 	id := app.Target
 	if id == "" {
-		id = c.Defaults.OpenAITarget
-		if protocol == "anthropic" {
-			id = c.Defaults.AnthropicTarget
-		}
+		id = c.Defaults.Target(protocol)
 	}
 	if t, ok := c.Connection(id); ok && !t.Disabled && t.Protocol == protocol {
 		return id
@@ -120,7 +108,7 @@ func levelChange(c config.Config, it Item, p Proposal, scope Scope) (config.Edit
 		}
 		edits[i] = e
 	}
-	return each(edits), "Level " + p.Alias + " (" + protocolName(t.Protocol) + ") → " + p.Target + "/" + p.Model + " for " + who, nil
+	return each(edits), "Level " + p.Alias + " (" + config.ProtocolName(t.Protocol) + ") → " + p.Target + "/" + p.Model + " for " + who, nil
 }
 
 // onIssueProtocol refuses an aiport fix for an Issue on a protocol
@@ -131,33 +119,25 @@ func onIssueProtocol(c config.Config, is Issue, p Proposal) error {
 		return nil
 	}
 	if t, ok := c.Connection(p.Target); ok && t.Protocol != is.Protocol {
-		return Invalid{"choose a Connection of the " + protocolName(is.Protocol) + " protocol: " + is.Application + "'s calls for " + is.Subject + " are refused there, and Connection " + p.Target + " speaks " + protocolName(t.Protocol)}
+		return Invalid{"choose a Connection of the " + config.ProtocolName(is.Protocol) + " protocol: " + is.Application + "'s calls for " + is.Subject + " are refused there, and Connection " + p.Target + " speaks " + config.ProtocolName(t.Protocol)}
 	}
 	return nil
 }
 
-// protocolName is how a protocol is named to people.
-func protocolName(protocol string) string {
-	if protocol == "anthropic" {
-		return "Anthropic"
-	}
-	return "OpenAI"
-}
-
 func levelUnmappedSummary(is Issue, p Proposal) string {
 	ev := is.Evidence
-	s := is.Application + " asked for the Level \"" + is.Subject + "\" " + strconv.Itoa(ev.Count) + " times in the last " + strconv.Itoa(ev.WindowMinutes) + " minutes, and it is not mapped on the " + protocolName(is.Protocol) + " protocol (level_unmapped each time)."
+	s := is.Application + " asked for the Level \"" + is.Subject + "\" " + strconv.Itoa(ev.Count) + " times in the last " + strconv.Itoa(ev.WindowMinutes) + " minutes, and it is not mapped on the " + config.ProtocolName(is.Protocol) + " protocol (level_unmapped each time)."
 	if p.Target != "" {
-		return s + " Map it for " + is.Application + ": choose the model on Connection \"" + p.Target + "\" or another " + protocolName(is.Protocol) + " Connection."
+		return s + " Map it for " + is.Application + ": choose the model on Connection \"" + p.Target + "\" or another " + config.ProtocolName(is.Protocol) + " Connection."
 	}
-	return s + " Map it for " + is.Application + ": choose a " + protocolName(is.Protocol) + " Connection and model."
+	return s + " Map it for " + is.Application + ": choose a " + config.ProtocolName(is.Protocol) + " Connection and model."
 }
 
 // levelUnmappedFix is the Application fix for an unmapped Level, in the
 // same shape as unknownModelFix.
 func levelUnmappedFix(is Issue) string {
 	var b strings.Builder
-	app, level, proto := is.Application, strconv.Quote(is.Subject), protocolName(is.Protocol)
+	app, level, proto := is.Application, strconv.Quote(is.Subject), config.ProtocolName(is.Protocol)
 	ev := is.Evidence
 	b.WriteString("aiport Issue " + is.ID + ": calls from the Application " + app + " for the Level " + level + " are refused with 400 level_unmapped.\n\n")
 	b.WriteString("What is wrong: no Connection and model are mapped to the Level " + level + " on the " + proto + " protocol, neither for " + app + " nor shared. aiport never picks another model instead.\n\n")

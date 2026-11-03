@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -23,13 +24,23 @@ var Levels = []string{"fast", "balanced", "best"}
 var Protocols = []string{"openai", "anthropic"}
 
 // IsLevel reports whether name is one of the Levels.
-func IsLevel(name string) bool {
-	for _, l := range Levels {
-		if l == name {
-			return true
-		}
+func IsLevel(name string) bool { return slices.Contains(Levels, name) }
+
+// ProtocolOf is the protocol of an inference route: Anthropic Messages
+// (/v1/messages) speaks anthropic, every other route openai.
+func ProtocolOf(route string) string {
+	if route == "/v1/messages" {
+		return "anthropic"
 	}
-	return false
+	return "openai"
+}
+
+// ProtocolName is how a protocol is named to people.
+func ProtocolName(protocol string) string {
+	if protocol == "anthropic" {
+		return "Anthropic"
+	}
+	return "OpenAI"
 }
 
 // LevelMapping is where one Level goes on one protocol for one Application.

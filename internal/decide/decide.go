@@ -307,11 +307,13 @@ func (q *Queue) submit(it Item, at int64) Item {
 }
 
 // latest returns the index of the newest item like it (same source, kind,
-// Application and subject) with one of statuses (any status when none), or -1.
+// Application and subject, and the same Issue when both fix one: one
+// Level unmapped on two protocols has two Issues, each with its own fix)
+// with one of statuses (any status when none), or -1.
 func (q *Queue) latest(it Item, statuses ...Status) int {
 	for i := len(q.items) - 1; i >= 0; i-- {
 		c := q.items[i]
-		if c.Source != it.Source || c.Kind != it.Kind || c.Application != it.Application || c.Subject != it.Subject {
+		if c.Source != it.Source || c.Kind != it.Kind || c.Application != it.Application || c.Subject != it.Subject || c.Issue != "" && it.Issue != "" && c.Issue != it.Issue {
 			continue
 		}
 		if len(statuses) == 0 {

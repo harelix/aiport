@@ -441,10 +441,13 @@ func (q *Queue) issueIndex(id string) int {
 	return -1
 }
 
-func (q *Queue) issueFor(app string, cause Cause, subject string) int {
+// issueFor is the latest Issue of app for cause and subject, and for a
+// Cause kept per protocol (causeRules.onProtocol) on protocol; -1 if none.
+func (q *Queue) issueFor(app string, cause Cause, subject, protocol string) int {
+	perProtocol := causes[cause].onProtocol
 	for i := len(q.issues) - 1; i >= 0; i-- {
 		is := q.issues[i]
-		if is.Application == app && is.Cause == cause && is.Subject == subject {
+		if is.Application == app && is.Cause == cause && is.Subject == subject && (!perProtocol || is.Protocol == protocol) {
 			return i
 		}
 	}
@@ -641,7 +644,7 @@ var causes = map[Cause]causeRules{
 		summary:        levelUnmappedSummary,
 		applicationFix: levelUnmappedFix,
 		counts: func(e telemetry.Event, is hintIssue) bool {
-			return levelUnmapped(e) && *e.RequestedModel == is.subject
+			return levelUnmapped(e) && *e.RequestedModel == is.subject && config.ProtocolOf(e.Route) == is.protocol
 		},
 		onProtocol: true,
 	},
@@ -672,7 +675,7 @@ func (q *Queue) track(c config.Config, cause Cause, symptoms []*symptom, succeed
 	var offered []Item
 	seen := map[int]*symptom{}
 	for _, s := range symptoms {
-		i := q.issueFor(s.app, cause, s.subject)
+		i := q.issueFor(s.app, cause, s.subject, s.protocol)
 		if i >= 0 {
 			seen[i] = s
 		}
@@ -681,6 +684,9 @@ func (q *Queue) track(c config.Config, cause Cause, symptoms []*symptom, succeed
 		}
 		if i < 0 {
 			q.issues = append(q.issues, Issue{ID: newID(), Application: s.app, Cause: cause, Subject: s.subject, State: IssueOpen, SinceMS: now, CreatedAt: now})
+			if r.onProtocol {
+				q.issues[len(q.issues)-1].Protocol = s.protocol
+			}
 			i = len(q.issues) - 1
 			seen[i] = s
 		}

@@ -125,6 +125,15 @@ type Defaults struct {
 	OpenAITarget    string `yaml:"openai_target,omitempty" json:"openai_target,omitempty"`
 	AnthropicTarget string `yaml:"anthropic_target,omitempty" json:"anthropic_target,omitempty"`
 }
+
+// Target is the default Connection of protocol ("" when none).
+func (d Defaults) Target(protocol string) string {
+	if protocol == "anthropic" {
+		return d.AnthropicTarget
+	}
+	return d.OpenAITarget
+}
+
 type Alias struct {
 	Target string `yaml:"target" json:"target"`
 	Alias  string `yaml:"alias" json:"alias"`

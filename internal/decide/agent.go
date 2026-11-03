@@ -120,6 +120,7 @@ func (q *Queue) HintIssue(app string, e telemetry.Event) (string, bool) {
 type hintIssue struct {
 	id, subject string
 	cause       Cause
+	protocol    string   // for a Cause kept per protocol
 	names       []string // a Catalog change's removed task names
 }
 
@@ -131,7 +132,7 @@ func (q *Queue) publishHints() {
 	for i := len(q.issues) - 1; i >= 0; i-- {
 		is := q.issues[i]
 		if is.State == IssueOpen || is.State == IssueResolving {
-			h := hintIssue{id: is.ID, subject: is.Subject, cause: is.Cause}
+			h := hintIssue{id: is.ID, subject: is.Subject, cause: is.Cause, protocol: is.Protocol}
 			if is.Catalog != nil {
 				h.names = is.Catalog.removedNames()
 			}
