@@ -102,6 +102,9 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	for _, id := range secrets.MissingKeys {
 		fmt.Fprintf(errOut, "aiport: connection %q has no API key yet; add it in the dashboard (Providers). Requests to it return 503 until then.\n", id)
 	}
+	for _, id := range secrets.MissingTokens {
+		fmt.Fprintf(errOut, "aiport: Application %q has no token; issue one on the Integrate page. Its calls are refused until then.\n", id)
+	}
 	// check explains each Alias that is a Level now; serve says it once, so a
 	// deliberate Level mapping does not repeat a long notice on every start.
 	if notices := config.LevelNotices(c); len(notices) > 0 {

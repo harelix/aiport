@@ -209,6 +209,33 @@ func itoa(n int) string {
 	return string(b[i:])
 }
 
+// createOrigin adds Application o (o.ID "" = one made from its name) with a
+// new token, saved before the configuration change so the reference resolves
+// the moment the Application is live. It returns the id and token, or an
+// HTTP status, error code and message.
+func (h *Handler) createOrigin(what string, o config.Origin) (id, token string, status int, code, msg string) {
+	current := h.snapshot()
+	taken := func(id string) bool {
+		_, ok := current.Application(id)
+		return ok
+	}
+	if o.ID == "" {
+		o.ID = clientID(o.Name, taken)
+	} else if taken(o.ID) {
+		return "", "", 409, "client_exists", "A client with this id already exists"
+	}
+	token = randomString(32)
+	o.TokenEnv = tokenEnv(o.ID)
+	if err := h.keys.SetLocal(o.TokenEnv, token); err != nil {
+		return "", "", 500, "token_save_failed", "Could not save the application's token: " + err.Error()
+	}
+	if _, _, err := h.live.Change(what+" "+o.ID, config.AddOrigin(o)); err != nil {
+		_ = h.keys.SetLocal(o.TokenEnv, "")
+		return "", "", 400, "invalid_client", err.Error()
+	}
+	return o.ID, token, 0, "", ""
+}
+
 // tokenEnv is the credential reference for a paired client.
 func tokenEnv(id string) string {
 	return "AIPORT_APP_" + strings.ToUpper(strings.ReplaceAll(id, "-", "_")) + "_TOKEN"
@@ -426,29 +453,9 @@ func (h *Handler) pairingsRoute(w http.ResponseWriter, r *http.Request, fail fun
 		fail(400, problem, why)
 		return true
 	}
-	current := h.snapshot()
-	taken := func(id string) bool {
-		_, ok := current.Application(id)
-		return ok
-	}
-	id := strings.TrimSpace(in.ID)
-	if id == "" {
-		id = clientID(x.Name, taken)
-	} else if taken(id) {
-		fail(409, "client_exists", "A client with this id already exists")
-		return true
-	}
-	token := randomString(32)
-	ref := tokenEnv(id)
-	// Save the token first, so the new client's reference resolves the moment
-	// the configuration change makes it live.
-	if err := config.SetCredential(h.keys.File, ref, token); err != nil {
-		fail(500, "token_save_failed", "Could not save the application's token")
-		return true
-	}
-	if _, _, err := h.live.Change("pair application "+id, config.AddOrigin(config.Origin{ID: id, Name: x.Name, TokenEnv: ref, Target: strings.TrimSpace(in.Target), MayRequestChanges: in.MayRequestChanges, Agent: agent, Repository: repository})); err != nil {
-		_ = config.SetCredential(h.keys.File, ref, "")
-		fail(400, "invalid_client", err.Error())
+	id, token, status, code, msg := h.createOrigin("pair application", config.Origin{ID: strings.TrimSpace(in.ID), Name: x.Name, Target: strings.TrimSpace(in.Target), MayRequestChanges: in.MayRequestChanges, Agent: agent, Repository: repository})
+	if code != "" {
+		fail(status, code, msg)
 		return true
 	}
 	x.Status, x.OriginID, x.token, x.doneAt = "approved", id, token, now

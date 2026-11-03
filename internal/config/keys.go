@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"errors"
+	"os"
+)
 
 // Where a connection's API key comes from. Values are never shown anywhere.
 const (
@@ -18,11 +21,40 @@ const (
 type Keys struct {
 	File string              // private credential file; "" = none
 	Env  func(string) string // the process environment (os.Getenv in production)
+	// Setenv changes the process environment (os.Setenv in production); nil
+	// in tests that pass a fixed Env.
+	Setenv func(string, string) error
+}
+
+// ErrTokenFromEnvironment: a local token is set in aiport's own environment
+// by whoever started it, so the dashboard cannot replace or delete it.
+var ErrTokenFromEnvironment = errors.New("this token is set in aiport's environment where it was started; change it there and restart aiport")
+
+// SetLocal saves (value "" deletes) a local token, an Application's, in the
+// credential file and in the process environment, where startup copied it
+// and where Lookup looks first. A token the environment held before startup
+// (it differs from the saved one) is refused with ErrTokenFromEnvironment.
+func (k Keys) SetLocal(name, value string) error {
+	if k.File == "" {
+		return ErrReadOnly
+	}
+	if current := k.env(name); current != "" && current != k.saved()[name] {
+		return ErrTokenFromEnvironment
+	}
+	if err := SetCredential(k.File, name, value); err != nil {
+		return err
+	}
+	// Only a token startup copied into the environment is there to update;
+	// otherwise Lookup already falls through to the file.
+	if k.Setenv != nil && k.env(name) != "" {
+		return k.Setenv(name, value)
+	}
+	return nil
 }
 
 // EnvKeys reads the real environment and the credential file next to configPath.
 func EnvKeys(configPath string) Keys {
-	k := Keys{Env: os.Getenv}
+	k := Keys{Env: os.Getenv, Setenv: os.Setenv}
 	if configPath != "" {
 		k.File = CredentialFile(configPath)
 	}

@@ -36,6 +36,7 @@ type Handler struct {
 	credMu           sync.RWMutex
 	credentials      []config.Credential // guarded by credMu; refreshed on config changes
 	tokenRefs        string              // guarded by credMu: the references credentials were resolved from
+	missingTokens    []string            // guarded by credMu: Applications without a token
 	telemetryEnabled bool
 	gateway          *proxy.Gateway
 	collector        *telemetry.Collector
@@ -86,7 +87,7 @@ type Handler struct {
 }
 
 func New(c config.Config, s config.Secrets) http.Handler {
-	h := &Handler{guidance: openGuidance(nil), auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
+	h := &Handler{guidance: openGuidance(nil), auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, credentials: append([]config.Credential(nil), s.Credentials...), missingTokens: s.MissingTokens, telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
 	h.gateway.SetClock(h.clock)
 	h.initKeySources(c, s)
 	h.setRequesters(c)
@@ -156,15 +157,30 @@ func (h *Handler) applyLive(c config.Config) {
 	h.refreshKeys(c)
 	// Re-resolve local tokens only when clients or their token references
 	// changed (a client added, removed or renamed), not on every edit.
+	h.resolveTokens(c, false)
+}
+
+// resolveTokens re-reads the local tokens clients authenticate with: when
+// clients or their token references changed, or always when force is set
+// (a token was issued or deleted under an unchanged reference).
+func (h *Handler) resolveTokens(c config.Config, force bool) {
 	refs := tokenRefs(c)
 	h.credMu.Lock()
 	defer h.credMu.Unlock()
-	if refs == h.tokenRefs {
+	if refs == h.tokenRefs && !force {
 		return
 	}
 	if s, err := c.Resolve(h.keys.Lookup(c)); err == nil {
 		h.credentials, h.tokenRefs = s.Credentials, refs
+		h.missingTokens = s.MissingTokens
 	}
+}
+
+// missingTokenList is the Applications that have no token, for the dashboard.
+func (h *Handler) missingTokenList() []string {
+	h.credMu.RLock()
+	defer h.credMu.RUnlock()
+	return append([]string{}, h.missingTokens...)
 }
 
 func tokenRefs(c config.Config) string {

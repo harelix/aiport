@@ -477,6 +477,10 @@ type Secrets struct {
 	// MissingKeys lists enabled targets whose API key is not set yet. The server
 	// still starts so the key can be entered in the dashboard.
 	MissingKeys []string
+	// MissingTokens lists Applications that have no token (one removed and
+	// then brought back by a revert, for example). They cannot call aiport
+	// until the Owner issues one on the Integrate page.
+	MissingTokens []string
 }
 
 func (c Config) Resolve(lookup func(string) string) (Secrets, error) {
@@ -484,6 +488,10 @@ func (c Config) Resolve(lookup func(string) string) (Secrets, error) {
 	seen := map[[32]byte]bool{}
 	add := func(ref, origin string, management bool) error {
 		token := lookup(ref)
+		if token == "" && !management {
+			s.MissingTokens = append(s.MissingTokens, origin)
+			return nil
+		}
 		if token == "" && c.Auth.Disabled {
 			return nil
 		}

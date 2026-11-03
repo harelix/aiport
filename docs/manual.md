@@ -295,6 +295,38 @@ Unapproved requests expire after 10 minutes. The Applications table on
 Routing lists every Application with its client id, Connection, own Aliases,
 and the **May request changes** toggle.
 
+### Issuing a token yourself, and removing an Application
+
+You can also skip pairing and hand an application its token yourself, for
+example when its coding agent is not running, or you would rather paste the
+token into the application's private `.env`:
+
+- **Add with a token** (Integrate, next to *Onboard a new application*): name
+  the Application and optionally choose a Connection. aiport adds it and shows
+  its token once, as the two lines to paste into its `.env`:
+  `AIPORT_BASE_URL` (this gateway's address) and `AIPORT_APP_TOKEN`.
+- **New token** (the Token column of an Application's row): after you confirm,
+  aiport issues a new token and shows it once the same way. The old token
+  stops working at once, whether it came from pairing or from here. Issuing a
+  token changes no configuration, so it is not listed in Changes.
+- **Remove** (same column): names what goes with the Application (its own
+  Aliases, its binding, its coding agent settings, its permission to request
+  changes), then removes it as one Change and deletes its token, which stops
+  working at once. Its activity history is kept. Reverting that Change in
+  **Changes** brings the Application back **without a token**: its row shows
+  *No token* and its calls are refused until you **Issue token**. `serve` and
+  `aiport check` name such Applications too.
+
+A token set in aiport's own environment when it was started (exported in
+the shell rather than kept in the private credential file) cannot be
+replaced or deleted from the dashboard: change it where aiport is started and
+restart it.
+
+The same is available with the management token: `POST /api/v1/origins`
+with `{name, target?}`, `POST /api/v1/origins/{id}/token` and
+`DELETE /api/v1/origins/{id}` (send `X-Aiport-CSRF: 1` with each).
+A token is in the response once and is never shown again.
+
 A request you **Reject** is remembered: the Application learns it was
 rejected, and aiport keeps its name, description, code and the time (never a
 token), the newest 100, across restarts. See them on the Integrate page with

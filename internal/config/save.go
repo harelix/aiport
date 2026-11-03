@@ -419,6 +419,25 @@ func AddOrigin(o Origin) Edit {
 	}
 }
 
+// RemoveOrigin takes one Application out of the configuration, with its own
+// Aliases, binding and Coding agent settings. Its token is the caller's to
+// delete from the credential file.
+func RemoveOrigin(id string) Edit {
+	return func(root *yaml.Node) error {
+		seq := mappingValue(root, "origins")
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return errors.New("Application not found in configuration")
+		}
+		for i, item := range seq.Content {
+			if item.Kind == yaml.MappingNode && scalarValue(item, "id") == id {
+				seq.Content = append(seq.Content[:i:i], seq.Content[i+1:]...)
+				return nil
+			}
+		}
+		return errors.New("Application not found in configuration")
+	}
+}
+
 // SetMayRequestChanges allows or forbids one Application to file Change
 // requests. Forbidding removes the key, so the file only says what differs
 // from the default.

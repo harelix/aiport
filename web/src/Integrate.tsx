@@ -1,7 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {HelpLink} from './help';
-import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, Plus, Terminal} from 'lucide-react';
-import {forgetRejected, MayRequestToggle, Origin, Pairing, PairingList, Rejected, Target, usePairings, useRejected} from './Applications';
+import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, KeyRound, Plus, Terminal, Trash2} from 'lucide-react';
+import {AddApplicationForm, forgetRejected, type IssuedToken, issueToken, MayRequestToggle, Origin, Pairing, PairingList, Rejected, RemoveApplication, Target, TokenReveal, useMissingTokens, usePairings, useRejected} from './Applications';
 import {ApplicationFix, CatalogChange, isCatalogChange, type ExplainStatus, explainOf, type FixStatus, type Issue, IssueExplanation, IssueFix, issueAnchor} from './Changes';
 import {Inline} from './markdown';
 import {AppCatalog} from './RoutingMap';
@@ -189,10 +189,19 @@ function RejectedRow({x, onDone}: {x: Rejected; onDone: () => void}) {
 /* The Applications list: waiting pairings first (always shown), then the
    approved Applications; rejected ones only behind the filter. Selecting an
    Application makes the wizard follow it. */
-function ApplicationsList({origins, targets, providers, pairings, rejected, calls, issues, guidance, explain, onExplained, agents, levels, onLevels, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue}: {
+function ApplicationsList({origins, targets, providers, pairings, rejected, calls, issues, guidance, explain, onExplained, agents, levels, onLevels, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue, missing}: {
   origins: Origin[]; targets: Target[]; providers: ProviderSpec[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; guidance: Guidance | null; explain: ExplainStatus | null; onExplained: () => void; agents: CodingAgents; levels: LevelsDoc | null; onLevels: () => void; app: string; onAgent: (id: string) => void;
-  onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void; onIssue: (i: Issue) => void;
+  onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void; onIssue: (i: Issue) => void; missing: string[];
 }) {
+  const [adding, setAdding] = useState(false), [removing, setRemoving] = useState(''), [replacing, setReplacing] = useState('');
+  // A token just issued or created, shown once under its row (or under the form for a new one).
+  const [issued, setIssued] = useState<(IssuedToken & {name: string; replaced: boolean}) | null>(null);
+  const [tokenBusy, setTokenBusy] = useState(''), [tokenError, setTokenError] = useState<Record<string, string>>({});
+  async function reissue(o: Origin) {
+    setReplacing(''); setTokenBusy(o.id); setTokenError(x => ({...x, [o.id]: ''}));
+    try { const r = await issueToken(o.id); setIssued({id: o.id, token: r.token, name: o.name, replaced: !missing.includes(o.id)}); onDone(); }
+    catch (e) { setTokenError(x => ({...x, [o.id]: (e as Error).message})); } finally { setTokenBusy(''); }
+  }
   const [filter, setFilter] = useState<Filter>('approved');
   const [shown, setShown] = useState<Record<string, boolean>>({});
   const [levelsShown, setLevelsShown] = useState<Record<string, boolean>>({});
@@ -210,12 +219,15 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
           {FILTERS.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={filter === value} className={filter === value ? 'on' : ''} onClick={() => setFilter(value)}>{label} <span className="count">{counts[value]}</span></button>)}
         </div>
         <button type="button" className="secondary with-icon" onClick={onNew} aria-pressed={app === NEW}><Plus size={14} aria-hidden/> Onboard a new application</button>
+        <button type="button" className="secondary with-icon" onClick={() => setAdding(x => !x)} aria-expanded={adding} title="Create an application and its token yourself, without pairing, and paste the token into its .env"><KeyRound size={14} aria-hidden/> Add with a token</button>
       </div>
     </div>
     {pairings.length > 0 && <div className="waiting" role="region" aria-label="Pairing requests waiting">
       <h3 className="waiting-heading"><span className="dot amber" aria-hidden/> {pairings.length === 1 ? '1 pairing waiting for approval' : pairings.length + ' pairings waiting for approval'}</h3>
       <PairingList pairings={pairings} targets={targets} onDone={onDone}/>
     </div>}
+    {adding && <AddApplicationForm targets={targets} onCancel={() => setAdding(false)} onAdded={(t, name) => { setAdding(false); setIssued({...t, name, replaced: false}); onDone(); }}/>}
+    {issued && !origins.some(o => o.id === issued.id) && <TokenReveal name={issued.name} issued={issued} replaced={issued.replaced} onClose={() => setIssued(null)}/>}
     {showApproved && origins.length > 0 && <div className="apps-table"><table aria-label="Approved applications">
       <thead><tr><th>Application</th><th>Connection</th><th title="May request changes">Changes</th><th>Last call</th><th>Issues</th><th title="The aiport guidance version its coding agent last confirmed">Guidance</th><th title="Coding agent for Agent runs">Agent</th><th>Onboarding</th></tr></thead>
       <tbody>{origins.map(o => {
@@ -226,7 +238,12 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
             <span className="app-toggles"><button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={catalogOpen} aria-controls={'app-catalog-' + o.id} onClick={() => setCatalogShown(x => ({...x, [o.id]: !x[o.id]}))}
               title={'What ' + o.name + ' can send, what serves it, and its recent Catalog changes'}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Catalog</button>
             <button type="button" className="text-button issue-count app-catalog-toggle" aria-expanded={levelsOpen} aria-controls={'app-levels-' + o.id} disabled={!levels} onClick={() => setLevelsShown(x => ({...x, [o.id]: !x[o.id]}))}
-              title={o.name + '\'s own mapping of fast, balanced and best, before the shared one: ' + appLevelsLabel(levels, o.id)}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Levels</button></span></td>
+              title={o.name + '\'s own mapping of fast, balanced and best, before the shared one: ' + appLevelsLabel(levels, o.id)}><ChevronRight size={14} strokeWidth={2} aria-hidden className="chevron"/> Levels</button>
+            <button type="button" className="text-button issue-count app-catalog-toggle" disabled={tokenBusy === o.id} onClick={() => missing.includes(o.id) ? reissue(o) : setReplacing(x => x === o.id ? '' : o.id)} aria-expanded={missing.includes(o.id) ? undefined : replacing === o.id} aria-label={'Issue a new token for ' + o.name}
+              title={'Issue a new token for ' + o.name + ' to paste into its .env; the current one stops working'}><KeyRound size={13} aria-hidden/> {missing.includes(o.id) ? 'Issue token' : 'New token'}</button>
+            <button type="button" className="text-button issue-count app-catalog-toggle" onClick={() => setRemoving(x => x === o.id ? '' : o.id)} aria-expanded={removing === o.id} aria-label={'Remove ' + o.name}><Trash2 size={13} aria-hidden/> Remove</button></span>
+            {missing.includes(o.id) && <span className="badge warn" title="Its calls are refused until you issue a token">No token</span>}
+            {tokenError[o.id] && <small className="auth-error" role="alert">{tokenError[o.id]}</small>}</td>
           <td>{o.target ? <code>{o.target}</code> : <span className="muted">Protocol default</span>}</td>
           <td><MayRequestToggle o={o} onDone={onDone}/></td>
           <td title={typeof calls.at[o.id] === 'number' ? new Date(calls.at[o.id] as number).toLocaleString() : undefined}>{lastCall(o.id)}</td>
@@ -239,7 +256,12 @@ function ApplicationsList({origins, targets, providers, pairings, rejected, call
             return <button type="button" className="text-button" onClick={() => onAgent(o.id)} aria-label={(connected ? 'Change the coding agent of ' : 'Connect a coding agent to ') + o.name}
               title={connected ? agentName(id, agents) + (o.agent ? '' : ' (default)') + ' in ' + o.repository : 'Connect a coding agent (onboarding step 6)'}>{connected ? agentName(id, agents) : 'Connect'}</button>; })()}</td>
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
-        </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={8}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}
+        </tr>{issued?.id === o.id && <tr className="app-issues-row"><td colSpan={8}><TokenReveal name={o.name} issued={issued} replaced={issued.replaced} onClose={() => setIssued(null)}/></td></tr>}
+          {replacing === o.id && <tr className="app-issues-row"><td colSpan={8}><div className="token-reveal" role="region" aria-label={'New token for ' + o.name}>
+            <p><strong>Issue a new token for {o.name}?</strong> Its current token stops working at once; put the new one in its <code>.env</code>.</p>
+            <div className="pairing-actions"><button type="button" className="primary" disabled={tokenBusy === o.id} onClick={() => reissue(o)}>Issue new token</button><button type="button" className="text-button" onClick={() => setReplacing('')}>Cancel</button></div>
+          </div></td></tr>}
+          {removing === o.id && <tr className="app-issues-row"><td colSpan={8}><RemoveApplication o={o} onCancel={() => setRemoving('')} onRemoved={() => { setRemoving(''); if (issued?.id === o.id) setIssued(null); onDone(); }}/></td></tr>}{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={8}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}
           {catalogOpen && <tr className="app-issues-row" id={'app-catalog-' + o.id}><td colSpan={8}><AppCatalog application={o.id} targets={targets} providers={providers} reload={configKey}/></td></tr>}
           {levelsOpen && <tr className="app-issues-row" id={'app-levels-' + o.id}><td colSpan={8}><AppLevels doc={levels!} application={o.id} onChange={onLevels}/></td></tr>}</React.Fragment>;
       })}</tbody>
@@ -360,6 +382,7 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
   const {issues, explain, reload: reloadIssues} = useIssues(tick);
   const [levels, reloadLevels] = useLevels(tick);
   const guidance = useGuidance(tick);
+  const missing = useMissingTokens(tick);
   const [agents] = useCodingAgents(tick);
   // The wizard starts collapsed once an Application exists; null = not chosen yet.
   const [wizardOpen, setWizardOpen] = useState<boolean | null>(null);
@@ -403,7 +426,7 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
   return <div className="integrate-layout">
     <div className="integrate-main">
       <ApplicationsList origins={origins} targets={targets} providers={providers} pairings={pairings} rejected={rejected} calls={calls} issues={issues} guidance={guidance} explain={explain} onExplained={reloadIssues} agents={agents} levels={levels} onLevels={() => { reloadLevels(); onChange(); }} app={app} adapting={doc.adapting}
-        onSelect={follow} onAgent={followAgent} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue}/>
+        onSelect={follow} onAgent={followAgent} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue} missing={missing}/>
       <div ref={wizardRef}>
         <Wizard origins={origins} app={app} setApp={setApp} pairings={pairings} seen={app ? calls.at[app] : null} off={calls.off} adapting={doc.adapting} agents={agents}
           prompt={doc.agent_prompt} docs={doc.docs} mcp={mcp} setMcp={setMcp} open={open} setOpen={setWizardOpen} onDone={done} onAgentBrief={openAgentBrief}/>
