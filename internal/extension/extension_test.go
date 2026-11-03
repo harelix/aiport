@@ -27,6 +27,18 @@ func script(t *testing.T, dir, name, body string) string {
 	return p
 }
 
+// slow is the deadline of Extensions that are not testing timeouts: the
+// first run of a newly written script can take seconds on a busy machine
+// (macOS checks new executables), more than the 5 s default.
+const slow = 30000
+
+func or(timeout int) int {
+	if timeout == 0 {
+		return slow
+	}
+	return timeout
+}
+
 func policyInput() Input {
 	return Input{Request: &Request{Application: "docs-bot", Kind: "application_alias", Supported: true, Need: "a cheaper model", Scope: "application"}}
 }
@@ -60,7 +72,7 @@ func TestRun(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := script(t, dir, "ext"+string(rune('a'+i)), tt.body)
 			started := time.Now()
-			got := Run(config.Extension{Name: "check", Hook: config.HookPolicy, Path: p, TimeoutMS: tt.timeout}, policyInput())
+			got := Run(config.Extension{Name: "check", Hook: config.HookPolicy, Path: p, TimeoutMS: or(tt.timeout)}, policyInput())
 			if got != tt.want {
 				t.Errorf("Run = %+v, want %+v", got, tt.want)
 			}
@@ -78,7 +90,7 @@ func TestRunCannotStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range []string{filepath.Join(dir, "missing"), notExec, dir} {
-		got := Run(config.Extension{Name: "check", Hook: config.HookPolicy, Path: p}, policyInput())
+		got := Run(config.Extension{Name: "check", Hook: config.HookPolicy, Path: p, TimeoutMS: slow}, policyInput())
 		if got != deny("the Extension could not be started") {
 			t.Errorf("%s: Run = %+v", p, got)
 		}
@@ -106,7 +118,7 @@ pwd -P > pwd.txt
 echo '{"decision":"allow"}'`)
 	in := policyInput()
 	in.Hook, in.Extension = "ignored", "ignored"
-	if got := Run(config.Extension{Name: "recorder", Hook: config.HookPolicy, Path: p, Args: []string{"--mode", "strict mode", "$HOME"}}, in); got.Decision != "allow" {
+	if got := Run(config.Extension{Name: "recorder", Hook: config.HookPolicy, Path: p, Args: []string{"--mode", "strict mode", "$HOME"}, TimeoutMS: slow}, in); got.Decision != "allow" {
 		t.Fatalf("Run = %+v", got)
 	}
 	read := func(name string) string {
@@ -153,10 +165,10 @@ func TestCheck(t *testing.T) {
 		marked int
 	}{
 		{"none listed", nil, config.HookPolicy, nil, 0},
-		{"all allow", []config.Extension{{Name: "first", Hook: config.HookPolicy, Path: mark}, {Name: "second", Hook: config.HookPolicy, Path: allow}}, config.HookPolicy, nil, 1},
-		{"first deny wins, later ones do not run", []config.Extension{{Name: "weekday", Hook: config.HookPolicy, Path: denyWeekend}, {Name: "later", Hook: config.HookPolicy, Path: mark}}, config.HookPolicy, Denied{Extension: "weekday", Hook: config.HookPolicy, Reason: "not on weekends"}, 0},
-		{"other hook is not run", []config.Extension{{Name: "weekday", Hook: config.HookGuardrail, Path: denyWeekend}, {Name: "m", Hook: config.HookPolicy, Path: mark}}, config.HookPolicy, nil, 1},
-		{"guardrail deny", []config.Extension{{Name: "m", Hook: config.HookGuardrail, Path: mark}, {Name: "weekday", Hook: config.HookGuardrail, Path: denyWeekend}}, config.HookGuardrail, Denied{Extension: "weekday", Hook: config.HookGuardrail, Reason: "not on weekends"}, 1},
+		{"all allow", []config.Extension{{Name: "first", Hook: config.HookPolicy, Path: mark, TimeoutMS: slow}, {Name: "second", Hook: config.HookPolicy, Path: allow, TimeoutMS: slow}}, config.HookPolicy, nil, 1},
+		{"first deny wins, later ones do not run", []config.Extension{{Name: "weekday", Hook: config.HookPolicy, Path: denyWeekend, TimeoutMS: slow}, {Name: "later", Hook: config.HookPolicy, Path: mark, TimeoutMS: slow}}, config.HookPolicy, Denied{Extension: "weekday", Hook: config.HookPolicy, Reason: "not on weekends"}, 0},
+		{"other hook is not run", []config.Extension{{Name: "weekday", Hook: config.HookGuardrail, Path: denyWeekend, TimeoutMS: slow}, {Name: "m", Hook: config.HookPolicy, Path: mark, TimeoutMS: slow}}, config.HookPolicy, nil, 1},
+		{"guardrail deny", []config.Extension{{Name: "m", Hook: config.HookGuardrail, Path: mark, TimeoutMS: slow}, {Name: "weekday", Hook: config.HookGuardrail, Path: denyWeekend, TimeoutMS: slow}}, config.HookGuardrail, Denied{Extension: "weekday", Hook: config.HookGuardrail, Reason: "not on weekends"}, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
