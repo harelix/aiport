@@ -133,7 +133,19 @@ func TestTheRoutingMapMatchesEachApplicationsModels(t *testing.T) {
 	f := mapServer(t)
 	_, apps := routingMap(t, f.h, mapManagement, "")
 	tokens := map[string]string{"docs-bot": mapDocs, "review-code": mapReview}
+	if len(apps) != 2 {
+		t.Fatalf("the map lists %d Applications, want 2", len(apps))
+	}
+	// Both halves are compared on real lists: the reached Connections'
+	// models must be in the answer, not just agree on being empty.
+	compared := 0
+	defer func() {
+		if compared == 0 && !t.Failed() {
+			t.Errorf("no listed model was compared")
+		}
+	}()
 	for _, app := range apps {
+		compared += len(app.Models)
 		token := tokens[app.Application]
 		if token == "" {
 			t.Fatalf("unexpected Application %q in the map", app.Application)

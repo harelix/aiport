@@ -146,13 +146,15 @@ function RejectedRow({x, onDone}: {x: Rejected; onDone: () => void}) {
 /* The Applications list: waiting pairings first (always shown), then the
    approved Applications; rejected ones only behind the filter. Selecting an
    Application makes the wizard follow it. */
-function ApplicationsList({origins, targets, providers, tick, pairings, rejected, calls, issues, explain, onExplained, agents, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue}: {
-  origins: Origin[]; targets: Target[]; providers: ProviderSpec[]; tick: number; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; explain: ExplainStatus | null; onExplained: () => void; agents: CodingAgents; app: string; onAgent: (id: string) => void;
+function ApplicationsList({origins, targets, providers, pairings, rejected, calls, issues, explain, onExplained, agents, app, onSelect, onAgent, onNew, adapting, onDone, onForgot, onIssue}: {
+  origins: Origin[]; targets: Target[]; providers: ProviderSpec[]; pairings: Pairing[]; rejected: Rejected[]; calls: Calls; issues: Record<string, Issue[]>; explain: ExplainStatus | null; onExplained: () => void; agents: CodingAgents; app: string; onAgent: (id: string) => void;
   onSelect: (id: string) => void; onNew: () => void; adapting: boolean; onDone: () => void; onForgot: () => void; onIssue: (i: Issue) => void;
 }) {
   const [filter, setFilter] = useState<Filter>('approved');
   const [shown, setShown] = useState<Record<string, boolean>>({});
   const [catalogShown, setCatalogShown] = useState<Record<string, boolean>>({});
+  // An open Catalog is read again when the Applications or Connections change, not on every poll (each read may list models).
+  const configKey = JSON.stringify([origins, targets]);
   const counts: Record<Filter, number> = {approved: origins.length, rejected: rejected.length, all: origins.length + rejected.length};
   const showApproved = filter !== 'rejected', showRejected = filter !== 'approved';
   const lastCall = (id: string) => calls.off ? 'Not recorded' : calls.at[id] === undefined ? '…' : calls.at[id] === null ? 'None in 7 days' : ago(calls.at[id] as number);
@@ -191,7 +193,7 @@ function ApplicationsList({origins, targets, providers, tick, pairings, rejected
               title={connected ? agentName(id, agents) + (o.agent ? '' : ' (default)') + ' in ' + o.repository : 'Connect a coding agent (onboarding step 6)'}>{connected ? agentName(id, agents) : 'Connect'}</button>; })()}</td>
           <td><span className={'progress' + (done === STEPS ? ' complete' : '')} aria-hidden><i style={{width: done / STEPS * 100 + '%'}}/></span> <span className="progress-text"><span className="sr-only">Onboarding steps done: </span>{done}/{STEPS}</span></td>
         </tr>{open && <tr className="app-issues-row" id={'app-issues-' + o.id}><td colSpan={7}><AppIssues issues={own} explain={explain} onOpen={onIssue} onExplained={onExplained}/></td></tr>}
-          {catalogOpen && <tr className="app-issues-row" id={'app-catalog-' + o.id}><td colSpan={7}><AppCatalog application={o.id} targets={targets} providers={providers} reload={tick}/></td></tr>}</React.Fragment>;
+          {catalogOpen && <tr className="app-issues-row" id={'app-catalog-' + o.id}><td colSpan={7}><AppCatalog application={o.id} targets={targets} providers={providers} reload={configKey}/></td></tr>}</React.Fragment>;
       })}</tbody>
     </table></div>}
     {showRejected && rejected.length > 0 && <div className="apps-table rejected-table"><table aria-label="Rejected applications">
@@ -350,7 +352,7 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
 
   return <div className="integrate-layout">
     <div className="integrate-main">
-      <ApplicationsList origins={origins} targets={targets} providers={providers} tick={tick} pairings={pairings} rejected={rejected} calls={calls} issues={issues} explain={explain} onExplained={reloadIssues} agents={agents} app={app} adapting={doc.adapting}
+      <ApplicationsList origins={origins} targets={targets} providers={providers} pairings={pairings} rejected={rejected} calls={calls} issues={issues} explain={explain} onExplained={reloadIssues} agents={agents} app={app} adapting={doc.adapting}
         onSelect={follow} onAgent={followAgent} onNew={() => follow(NEW)} onDone={done} onForgot={refreshRejected} onIssue={openIssue}/>
       <div ref={wizardRef}>
         <Wizard origins={origins} app={app} setApp={setApp} pairings={pairings} seen={app ? calls.at[app] : null} off={calls.off} adapting={doc.adapting} agents={agents}

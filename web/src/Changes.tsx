@@ -86,7 +86,7 @@ export const isCatalogChange = (i: Issue) => i.cause === 'catalog_changed';
 export function CatalogChange({issue}: {issue: Issue}) {
   const n = issue.catalog_change;
   if (!n) return null;
-  const changed = catalogChangeText(n);
+  const changed = catalogChangeText({removed: n.removed, moved: n.moved, routing: n.routing}); // what the Application lost or saw move, as told
   return <>
     <div className="evidence">Catalog change (Change {n.change_id}, {when(n.at_ms)}): {changed.join('; ')}. {issue.application} was told; nothing waits for you.</div>
     <div className="evidence">Still available: {n.available.length ? n.available.map(t => '“' + t.name + '”').join(', ') : 'no task names'}{n.connections.length ? ', and the models of ' + n.connections.join(', ') : ''}.</div>
