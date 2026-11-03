@@ -228,7 +228,8 @@ shared task names of the Connections it reaches, the Levels mapped for it
 name**, which goes unchanged to its binding or to the protocol default
 (with the number of models that Connection lists). Each row shows the
 protocol, the Connection with its provider's logo, and the model aiport
-sends upstream. For example, docs-bot sending `fast` on the OpenAI protocol
+sends upstream, with its per-effort models under it when it has any. For
+example, docs-bot sending `fast` on the OpenAI protocol
 reaches the local Connection with `llama3:8b`. Choose an Application or a
 provider to narrow the map.
 
@@ -301,6 +302,13 @@ narrow screen the strip moves below).
   none). Select it to list them under the row: each with its summary, **Open
   in Changes** (opens that Issue on the Changes page, where you approve or
   dismiss it) and **Copy fix for the Coding agent** (see Changes, Issues).
+- **Guidance** shows whether the Application's coding agent follows
+  aiport's current guidance (see Guidance versions below): **Up to date**,
+  **Behind v1 → v2**, or **Unknown** when it never confirmed one (every
+  Application integrated before guidance versions existed). While it is not
+  up to date, **Copy refresh instruction** copies one paragraph to paste to
+  that coding agent. "Sends Levels" is only a hint that its code may already
+  use Levels; it never counts as confirming.
 - **Catalog** shows, under the row, the Application's Catalog: every name it
   can send with the Connection and model that serve it (as on the Routing
   map), the models its Connections list, and its recent Catalog changes
@@ -339,8 +347,8 @@ a tile to see its steps and snippets, each with its own **Copy**.
   project MCP entry (which reads the token from `${AIPORT_APP_TOKEN}`, never
   the value), the line for the repository's `AGENTS.md` (which tells later
   sessions to check `aiport_catalog` and `aiport_my_issues` at the start),
-  the tools `aiport_capabilities`, `aiport_catalog`,
-  `aiport_request_change`, `aiport_my_requests`, `aiport_my_issues` and
+  the tools `aiport_capabilities`, `aiport_catalog`, `aiport_guidance`,
+  `aiport_guidance_done`, `aiport_request_change`, `aiport_my_requests`, `aiport_my_issues` and
   `aiport_issue_fixed` and their HTTP equivalents, checking the Catalog
   (and re-reading it when `X-Aiport-Catalog` changes) and Issues at the
   start of a session, naming tasks rather than providers, how to write a
@@ -348,6 +356,27 @@ a tile to see its steps and snippets, each with its own **Copy**.
   hints.
 
 `/_connect?format=handover` returns both, one after the other.
+
+### Guidance versions
+
+aiport numbers the guidance it gives coding agents (the briefs, the
+`AGENTS.md` line and the MCP instructions) and raises the number when that
+guidance changes in a way agents must act on; each version has a short
+change log. Version 2 is Levels and effort. For each Application aiport
+remembers the version its coding agent last confirmed (in the database
+next to the configuration; none for Applications integrated earlier).
+
+While an Application is behind, its coding agent is told without you: the
+MCP `initialize` instructions start with a one-line reminder, every aiport
+MCP tool answer ends with it, and `aiport_capabilities` shows
+`guidance: {current, confirmed}`. The agent calls `aiport_guidance`
+(`GET /v1/aiport/guidance`) for what changed since its version, the current
+`AGENTS.md` line and the steps, does them, then calls
+`aiport_guidance_done` (`POST /v1/aiport/guidance/done`). Both take the
+Application's own token and only ever show or change that Application's
+state. The Integrate page shows each Application's state in the
+**Guidance** column, and **Overview** shows one quiet line while any
+Application has not confirmed the current version.
 
 ### Onboarding an application, step by step
 
@@ -498,6 +527,41 @@ for a replacement Connection of the same protocol.
 
 If your configuration already had an Alias called `fast`, `balanced` or
 `best`, it is now that Level's mapping on its Connection's protocol.
+
+### Effort
+
+An Application may also say how hard one call is: `low`, `medium` or
+`high`. aiport uses effort only to pick the model, so `balanced` with high
+effort can go to a stronger model than `balanced` with low effort. Any Alias,
+a Level or a task name, shared or an Application's own, may carry optional
+per-effort models on its own Connection:
+
+```yaml
+aliases:
+  - {target: hosted, alias: balanced, model: gpt-4o, effort: {low: gpt-4o-mini, high: gpt-4.1}}
+origins:
+  - id: docs-bot
+    # ...
+    aliases:
+      - {alias: summarize, target: local, model: 'llama3:8b', effort: {high: 'llama3:70b'}}
+```
+
+An effort without its own model uses the Alias's `model`. The effort of a
+call comes from, in this order:
+
+1. The `X-Aiport-Effort` header (`low`, `medium` or `high`). It is never
+   sent on to the provider. A value that is not an effort counts as none.
+2. The provider's own effort field, which aiport reads but never changes:
+   `reasoning_effort` on OpenAI Chat Completions, `reasoning.effort` on OpenAI
+   Responses, `output_config.effort` on Anthropic Messages. `none`, `minimal`
+   and `low` count as low, `medium` as medium, `high`, `xhigh` and `max` as
+   high. Numeric thinking budgets (`budget_tokens`) are never translated.
+3. Otherwise `medium`.
+
+As with every Alias, only the `model` field is replaced: the request,
+including its effort field, reaches the provider unchanged. Per-effort models
+are listed in the Catalog (`effort` on a task name), and changing them is a
+Catalog change.
 
 ## The Catalog
 

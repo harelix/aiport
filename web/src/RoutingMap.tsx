@@ -11,7 +11,7 @@ type Target = {id: string; provider?: string; location?: string};
 /** One row of the Routing map (server.Route): a name an Application can send on a protocol and what serves it.
  *  kind "default" is any other model name, sent unchanged to that Connection (name and model empty). Whatever
  *  else the Catalog gives a task name (such as per-effort models) arrives on the row as it is. */
-export type Route = TaskName & {kind: 'task_name' | 'level' | 'default'; protocol: string; [more: string]: unknown};
+export type Route = TaskName & {kind: 'task_name' | 'level' | 'default'; protocol: string};
 /** One Application in the Routing map (server.RoutingEntry): its Catalog, routes and, alone, recent Catalog changes. */
 export type RoutingEntry = {
   application: string; name: string; version: string; binding?: string; defaults?: Record<string, string>;
@@ -35,12 +35,10 @@ export function useRoutingMap(application: string | null, reload: unknown): {ent
 const protocolName = (p: string) => p === 'anthropic' ? 'Anthropic' : 'OpenAI';
 const kindName = (r: Route) => r.kind === 'level' ? 'Level' : r.kind === 'default' ? 'Protocol default' : r.shared ? 'Shared task name' : 'Own task name';
 
-/** Effort-specific models a row may carry (added by per-effort mappings), shown as "low → model". */
+/** The per-effort models a row carries (config.EffortModels: low, medium, high on the same Connection), in effort order. */
 function effortOf(r: Route): [string, string][] {
-  const e = r.effort;
-  if (!e || typeof e !== 'object') return [];
-  return Object.entries(e as Record<string, unknown>).filter(([, v]) => typeof v === 'string' && v || v && typeof v === 'object' && 'model' in (v as object))
-    .map(([k, v]) => [k, typeof v === 'string' ? v : String((v as {model: unknown}).model)]);
+  const e = r.effort || {};
+  return (['low', 'medium', 'high'] as const).filter(k => e[k]).map(k => [k, e[k]!]);
 }
 
 function Served({r, targets, providers}: {r: Route; targets: Target[]; providers: ProviderSpec[]}) {

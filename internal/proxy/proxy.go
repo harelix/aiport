@@ -206,9 +206,7 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 		}
 		return
 	}
-	var meta struct {
-		Model string `json:"model"`
-	}
+	var meta requestMeta
 	model := ""
 	if json.Unmarshal(body, &meta) == nil && len(meta.Model) > 0 && len(meta.Model) <= 256 && !strings.ContainsAny(meta.Model, "\r\n\x00") {
 		model = meta.Model
@@ -216,10 +214,11 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 			o.Event.RequestedModel = &model
 		}
 	}
-	// The model is known now: a Level or a client alias may pick another
-	// connection.
-	if model != "" && (len(rt.originAliases[origin]) > 0 || config.IsLevel(model)) {
-		route, ref = rt.resolve(origin, protocol, model)
+	// The model and effort are known now: a Level or a client alias may
+	// pick another connection, and a per-effort model another model.
+	effort, _ := effortOf(r.URL.Path, r.Header, meta)
+	if model != "" {
+		route, ref = rt.resolveAt(origin, protocol, model, effort)
 	}
 	if refuse(route, ref) {
 		return

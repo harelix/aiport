@@ -263,3 +263,31 @@ func TestOneApplicationsViewCarriesItsRecentCatalogChanges(t *testing.T) {
 		t.Fatalf("an unknown Application: %d %s", w.Code, w.Body)
 	}
 }
+
+// Per-effort models a task name carries reach its row on the map unchanged.
+func TestTheRoutingMapShowsPerEffortModels(t *testing.T) {
+	f := mapServer(t)
+	edit := config.AddOriginAlias("docs-bot", config.OriginAlias{Alias: "review", Target: "hosted", Model: "gpt-4o", Effort: config.EffortModels{Low: "gpt-4o-mini"}})
+	if _, _, err := f.h.live.Change("add review", edit); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "http://127.0.0.1:8787/api/v1/routing?application=docs-bot", nil)
+	r.Header.Set("Authorization", "Bearer "+mapManagement)
+	w := httptest.NewRecorder()
+	f.h.ServeHTTP(w, r)
+	var out struct {
+		Applications []struct {
+			Routes []struct {
+				Name   string            `json:"name"`
+				Effort map[string]string `json:"effort"`
+			} `json:"routes"`
+		} `json:"applications"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || len(out.Applications) != 1 {
+		t.Fatalf("GET /api/v1/routing?application=docs-bot: %d %s", w.Code, w.Body)
+	}
+	got := out.Applications[0].Routes[0]
+	if got.Name != "review" || got.Effort["low"] != "gpt-4o-mini" || len(got.Effort) != 1 {
+		t.Fatalf("the review row: %+v", got)
+	}
+}

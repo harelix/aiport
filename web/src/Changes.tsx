@@ -48,7 +48,9 @@ export type Issue = {
 };
 
 /** A task name in a Catalog (catalog.TaskName): a Level carries level and the protocol it is mapped on. */
-export type TaskName = {name: string; connection: string; model: string; shared: boolean; level?: boolean; protocol?: string};
+export type TaskName = {name: string; connection: string; model: string; shared: boolean; level?: boolean; protocol?: string;
+  /** Per-effort models on the same Connection, when set. */
+  effort?: {low?: string; medium?: string; high?: string}};
 
 /** A Catalog change as aiport keeps it (catalog.Record). */
 export type CatalogRecord = {

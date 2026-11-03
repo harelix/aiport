@@ -200,6 +200,8 @@ type Dependent struct {
 	Alias       string        `json:"alias,omitempty"`
 	// Model is the model the item asks the Connection for, when it names one.
 	Model string `json:"model,omitempty"`
+	// Effort are an Alias's or Level mapping's per-effort models there.
+	Effort EffortModels `json:"effort,omitzero"`
 }
 
 // Dependents lists everything in c that uses Connection id: protocol
@@ -227,9 +229,9 @@ func Dependents(c Config, id string) []Dependent {
 		switch {
 		case a.Target != id:
 		case IsLevel(a.Alias):
-			out = append(out, Dependent{ID: "level:" + a.Alias + ":" + protocol, Kind: DependentLevel, Protocol: protocol, Alias: a.Alias, Model: a.Model})
+			out = append(out, Dependent{ID: "level:" + a.Alias + ":" + protocol, Kind: DependentLevel, Protocol: protocol, Alias: a.Alias, Model: a.Model, Effort: a.Effort})
 		default:
-			out = append(out, Dependent{ID: "alias:" + a.Alias, Kind: DependentAlias, Alias: a.Alias, Model: a.Model})
+			out = append(out, Dependent{ID: "alias:" + a.Alias, Kind: DependentAlias, Alias: a.Alias, Model: a.Model, Effort: a.Effort})
 		}
 	}
 	for _, o := range c.Origins {
@@ -237,9 +239,9 @@ func Dependents(c Config, id string) []Dependent {
 			switch {
 			case a.Target != id:
 			case IsLevel(a.Alias):
-				out = append(out, Dependent{ID: "application_level:" + o.ID + ":" + a.Alias + ":" + protocol, Kind: DependentApplicationLevel, Protocol: protocol, Application: o.ID, Alias: a.Alias, Model: a.Model})
+				out = append(out, Dependent{ID: "application_level:" + o.ID + ":" + a.Alias + ":" + protocol, Kind: DependentApplicationLevel, Protocol: protocol, Application: o.ID, Alias: a.Alias, Model: a.Model, Effort: a.Effort})
 			default:
-				out = append(out, Dependent{ID: "application_alias:" + o.ID + ":" + a.Alias, Kind: DependentApplicationAlias, Application: o.ID, Alias: a.Alias, Model: a.Model})
+				out = append(out, Dependent{ID: "application_alias:" + o.ID + ":" + a.Alias, Kind: DependentApplicationAlias, Application: o.ID, Alias: a.Alias, Model: a.Model, Effort: a.Effort})
 			}
 		}
 	}

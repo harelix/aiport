@@ -76,12 +76,15 @@ type Handler struct {
 	// catalogLog keeps every Application's Catalog changes (nil for a
 	// handler without a configuration file).
 	catalogLog *catalogLog
-	assets     http.Handler
-	auth       *localauth.Manager
+	// guidance keeps the guidance version each Application's coding agent
+	// last confirmed.
+	guidance *guidanceBook
+	assets   http.Handler
+	auth     *localauth.Manager
 }
 
 func New(c config.Config, s config.Secrets) http.Handler {
-	h := &Handler{auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
+	h := &Handler{guidance: openGuidance(nil), auth: localauth.New(c.Auth, nil), live: config.NewLive("", c), tokenRefs: tokenRefs(c), assets: dashboard.Handler(), secretStatus: map[string]bool{}, credentials: append([]config.Credential(nil), s.Credentials...), telemetryEnabled: c.Telemetry.Enabled, gateway: proxy.New(c, s)}
 	h.gateway.SetClock(h.clock)
 	h.initKeySources(c, s)
 	h.setRequesters(c)
@@ -313,6 +316,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == CatalogPath {
 		h.serveCatalog(w, r, originID, fail)
+		return
+	}
+	if r.URL.Path == GuidancePath || r.URL.Path == GuidancePath+"/done" {
+		h.serveGuidance(w, r, originID, fail)
 		return
 	}
 	if r.URL.Path == MCPPath {

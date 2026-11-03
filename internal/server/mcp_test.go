@@ -169,7 +169,12 @@ func sameJSON(t *testing.T, res map[string]any, httpBody []byte) {
 		return string(b)
 	}
 	content, _ := res["content"].([]any)
-	if len(content) != 1 {
+	// A second block may only be the guidance reminder.
+	if len(content) == 2 {
+		if b, _ := content[1].(map[string]any); b["type"] != "text" || !strings.HasPrefix(b["text"].(string), "aiport's guidance for coding agents") {
+			t.Fatalf("unexpected second content block: %v", res)
+		}
+	} else if len(content) != 1 {
 		t.Fatalf("want one content block: %v", res)
 	}
 	block := content[0].(map[string]any)
@@ -196,7 +201,7 @@ func TestMCPListsItsTools(t *testing.T) {
 		}
 		names[tool["name"].(string)] = true
 	}
-	if len(names) != 6 || !names["aiport_catalog"] || !names["aiport_capabilities"] || !names["aiport_request_change"] || !names["aiport_my_requests"] || !names["aiport_my_issues"] || !names["aiport_issue_fixed"] {
+	if len(names) != 8 || !names["aiport_guidance"] || !names["aiport_guidance_done"] || !names["aiport_catalog"] || !names["aiport_capabilities"] || !names["aiport_request_change"] || !names["aiport_my_requests"] || !names["aiport_my_issues"] || !names["aiport_issue_fixed"] {
 		t.Fatalf("tools: %v", names)
 	}
 }

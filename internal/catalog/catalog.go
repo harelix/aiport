@@ -35,6 +35,9 @@ type TaskName struct {
 	// mapped on, and only there.
 	Level    bool   `json:"level,omitempty"`
 	Protocol string `json:"protocol,omitempty"`
+	// Effort are its per-effort models on Connection (low, medium, high);
+	// an effort without one goes to Model.
+	Effort config.EffortModels `json:"effort,omitzero"`
 }
 
 // Model is a model a reached Connection listed.
@@ -100,14 +103,14 @@ func For(c config.Config, application string, models Models) Catalog {
 	for _, a := range app.Aliases {
 		if !seen[a.Alias] && !config.IsLevel(a.Alias) {
 			seen[a.Alias] = true
-			own = append(own, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model})
+			own = append(own, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model, Effort: a.Effort})
 		}
 	}
 	shared := []TaskName{}
 	for _, a := range c.Aliases {
 		if !seen[a.Alias] && !config.IsLevel(a.Alias) && contains(cat.Connections, a.Target) {
 			seen[a.Alias] = true
-			shared = append(shared, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model, Shared: true})
+			shared = append(shared, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model, Shared: true, Effort: a.Effort})
 		}
 	}
 	byName := func(s []TaskName) { sort.Slice(s, func(i, j int) bool { return s[i].Name < s[j].Name }) }
@@ -118,7 +121,7 @@ func For(c config.Config, application string, models Models) Catalog {
 		for _, p := range config.Protocols {
 			if m, ok := c.Level(application, p, l); ok {
 				seen[l] = true
-				cat.TaskNames = append(cat.TaskNames, TaskName{Name: l, Connection: m.Connection, Model: m.Model, Shared: m.Shared, Level: true, Protocol: p})
+				cat.TaskNames = append(cat.TaskNames, TaskName{Name: l, Connection: m.Connection, Model: m.Model, Shared: m.Shared, Level: true, Protocol: p, Effort: m.Effort})
 			}
 		}
 	}
@@ -151,9 +154,13 @@ func version(cat Catalog) string {
 	for _, t := range cat.TaskNames {
 		if t.Level {
 			field("level", t.Name, t.Protocol, t.Connection, t.Model, strconv.FormatBool(t.Shared))
-			continue
+		} else {
+			field("task", t.Name, t.Connection, t.Model, strconv.FormatBool(t.Shared))
 		}
-		field("task", t.Name, t.Connection, t.Model, strconv.FormatBool(t.Shared))
+		// Only when set, so a Catalog without them keeps its version.
+		if !t.Effort.IsZero() {
+			field("effort", t.Effort.Low, t.Effort.Medium, t.Effort.High)
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))[:12]
 }

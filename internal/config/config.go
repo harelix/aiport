@@ -118,6 +118,8 @@ type OriginAlias struct {
 	Alias  string `yaml:"alias" json:"alias"`
 	Target string `yaml:"target" json:"target"`
 	Model  string `yaml:"model" json:"model"`
+	// Effort are optional per-effort models on the same Connection.
+	Effort EffortModels `yaml:"effort,omitempty" json:"effort,omitzero"`
 }
 type Defaults struct {
 	OpenAITarget    string `yaml:"openai_target,omitempty" json:"openai_target,omitempty"`
@@ -127,6 +129,8 @@ type Alias struct {
 	Target string `yaml:"target" json:"target"`
 	Alias  string `yaml:"alias" json:"alias"`
 	Model  string `yaml:"model" json:"model"`
+	// Effort are optional per-effort models on the same Connection.
+	Effort EffortModels `yaml:"effort,omitempty" json:"effort,omitzero"`
 }
 type Telemetry struct {
 	Enabled         bool `yaml:"enabled" json:"enabled"`
@@ -362,7 +366,7 @@ func (c Config) Validate() error {
 			if !ok {
 				return fmt.Errorf("origin %q alias references a missing target", o.ID)
 			}
-			if !boundedModel(a.Alias) || !boundedModel(a.Model) {
+			if !boundedModel(a.Alias) || !boundedModel(a.Model) || !a.Effort.valid() {
 				return errors.New("alias and model must contain 1–256 non-control bytes")
 			}
 			// A Level may be mapped once per protocol; any other name once.
@@ -383,7 +387,7 @@ func (c Config) Validate() error {
 		if !ok {
 			return errors.New("alias references a missing target")
 		}
-		if !boundedModel(a.Alias) || !boundedModel(a.Model) {
+		if !boundedModel(a.Alias) || !boundedModel(a.Model) || !a.Effort.valid() {
 			return errors.New("alias and model must contain 1–256 non-control bytes")
 		}
 		key := a.Target + "\x00" + a.Alias
