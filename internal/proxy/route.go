@@ -12,9 +12,11 @@ import (
 // client, and how model names are rewritten. It is rebuilt whole on every
 // config change and read without locks once taken.
 type routes struct {
-	targets       map[string]config.Target
-	origins       map[string]string                        // origin → bound target
-	aliases       map[string]map[string]string             // target → alias → model
+	targets map[string]config.Target
+	origins map[string]string // origin → bound target
+	// aliases are the shared Aliases' models by effort, then target and
+	// alias: each effort's per-effort model, else the Alias's model.
+	aliases       map[string]map[string]map[string]string
 	originAliases map[string]map[string]config.OriginAlias // origin → alias → mapping
 	// levels are the Level mappings each Application gets (own, else
 	// shared), by origin then protocol and Level; origin "" holds the
@@ -26,7 +28,7 @@ type routes struct {
 type levelKey struct{ protocol, level string }
 
 func buildRoutes(c config.Config) routes {
-	rt := routes{targets: map[string]config.Target{}, origins: map[string]string{}, aliases: map[string]map[string]string{}, originAliases: map[string]map[string]config.OriginAlias{}, levels: map[string]map[levelKey]config.LevelMapping{}, defaults: c.Defaults}
+	rt := routes{targets: map[string]config.Target{}, origins: map[string]string{}, aliases: map[string]map[string]map[string]string{}, originAliases: map[string]map[string]config.OriginAlias{}, levels: map[string]map[levelKey]config.LevelMapping{}, defaults: c.Defaults}
 	for _, t := range c.Targets {
 		rt.targets[t.ID] = t
 	}
@@ -63,10 +65,15 @@ func buildRoutes(c config.Config) routes {
 		if config.IsLevel(a.Alias) {
 			continue // a Level mapping: see levels
 		}
-		if rt.aliases[a.Target] == nil {
-			rt.aliases[a.Target] = map[string]string{}
+		for _, e := range config.Efforts {
+			if rt.aliases[e] == nil {
+				rt.aliases[e] = map[string]map[string]string{}
+			}
+			if rt.aliases[e][a.Target] == nil {
+				rt.aliases[e][a.Target] = map[string]string{}
+			}
+			rt.aliases[e][a.Target][a.Alias] = a.Effort.For(e, a.Model)
 		}
-		rt.aliases[a.Target][a.Alias] = a.Model
 	}
 	return rt
 }
@@ -128,8 +135,15 @@ type Route struct {
 // shared one; refused with level_unmapped when neither maps it), then the
 // client's own alias for model, then its bound connection, then the
 // protocol default. Global aliases of the chosen connection apply unless a
-// Level or client alias matched.
+// Level or client alias matched. Every name goes to the model it has at
+// the default effort; resolveAt chooses another effort.
 func (rt routes) resolve(origin, protocol, model string) (Route, *refusal.Refusal) {
+	return rt.resolveAt(origin, protocol, model, config.EffortDefault)
+}
+
+// resolveAt is resolve at effort (one of config.Efforts): a Level or Alias
+// with a per-effort model for it goes to that model, on its own Connection.
+func (rt routes) resolveAt(origin, protocol, model, effort string) (Route, *refusal.Refusal) {
 	var route Route
 	if config.IsLevel(model) {
 		m, ok := rt.level(origin, protocol, model)
@@ -141,13 +155,13 @@ func (rt routes) resolve(origin, protocol, model string) (Route, *refusal.Refusa
 		if !ok {
 			return Route{}, &refusal.TargetUnconfigured
 		}
-		route = Route{Target: t, Rewrite: map[string]string{model: m.Model}}
+		route = Route{Target: t, Rewrite: map[string]string{model: m.Effort.For(effort, m.Model)}}
 	} else if a, ok := rt.originAliases[origin][model]; ok && model != "" {
 		t, ok := rt.targets[a.Target]
 		if !ok {
 			return Route{}, &refusal.TargetUnconfigured
 		}
-		route = Route{Target: t, Rewrite: map[string]string{model: a.Model}}
+		route = Route{Target: t, Rewrite: map[string]string{model: a.Effort.For(effort, a.Model)}}
 	} else {
 		id := rt.origins[origin]
 		if id == "" {
@@ -161,7 +175,11 @@ func (rt routes) resolve(origin, protocol, model string) (Route, *refusal.Refusa
 		if !ok {
 			return Route{}, &refusal.TargetUnconfigured
 		}
-		route = Route{Target: t, Rewrite: rt.aliases[id]}
+		aliases, ok := rt.aliases[effort]
+		if !ok {
+			aliases = rt.aliases[config.EffortDefault]
+		}
+		route = Route{Target: t, Rewrite: aliases[id]}
 	}
 	if route.Target.Disabled {
 		return route, &refusal.TargetDisabled
