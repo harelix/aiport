@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"sync"
 
@@ -42,26 +43,64 @@ func (h *Handler) catalogVersion(application string) string {
 // Connections it reaches (cached lists are reused; a list that cannot be
 // read contributes nothing).
 func (h *Handler) catalogFor(r *http.Request, c config.Config, application string) catalog.Catalog {
-	reached := catalog.For(c, application, nil).Connections
-	lists := make([][]string, len(reached))
+	return catalog.For(c, application, h.modelLists(r.Context(), catalog.For(c, application, nil).Connections))
+}
+
+// modelLists reads the model lists of Connections ids in parallel (cached
+// lists are reused). A list that cannot be read is left out.
+func (h *Handler) modelLists(ctx context.Context, ids []string) catalog.Models {
+	lists := make([][]string, len(ids))
 	var wg sync.WaitGroup
-	for i, id := range reached {
+	for i, id := range ids {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if l := h.gateway.Models(r.Context(), id, false); l.Listed {
+			if l := h.gateway.Models(ctx, id, false); l.Listed {
 				lists[i] = l.Models
 			}
 		}()
 	}
 	wg.Wait()
 	models := catalog.Models{}
-	for i, id := range reached {
+	for i, id := range ids {
 		if lists[i] != nil {
 			models[id] = lists[i]
 		}
 	}
-	return catalog.For(c, application, models)
+	return models
+}
+
+// listedName is one name an Application's /v1/models lists on a protocol: a
+// task name or Level (connection "", owned by aiport) or a model a reached
+// Connection listed.
+type listedName struct {
+	id, connection string
+	level          bool
+}
+
+// listedOn are the names cat lists on protocol, in /v1/models order: task
+// names (Levels included) whose Connection speaks protocol, then the models
+// of the reached Connections that speak it. The Routing map is built with
+// the same rule (speaks), so the two never disagree.
+func listedOn(c config.Config, cat catalog.Catalog, protocol string) []listedName {
+	var list []listedName
+	for _, t := range cat.TaskNames {
+		if speaks(c, t.Connection, protocol) {
+			list = append(list, listedName{t.Name, "", t.Level})
+		}
+	}
+	for _, m := range cat.Models {
+		if speaks(c, m.Connection, protocol) {
+			list = append(list, listedName{m.ID, m.Connection, false})
+		}
+	}
+	return list
+}
+
+// speaks reports whether Connection id exists in c and speaks protocol.
+func speaks(c config.Config, id, protocol string) bool {
+	t, ok := c.Connection(id)
+	return ok && t.Protocol == protocol
 }
 
 // serveModels answers GET /v1/models with the calling Application's Catalog:
@@ -85,23 +124,7 @@ func (h *Handler) serveModels(w http.ResponseWriter, r *http.Request, applicatio
 	if r.Header.Get("anthropic-version") != "" {
 		protocol = "anthropic"
 	}
-	speaks := func(id string) bool { t, ok := c.Connection(id); return ok && t.Protocol == protocol }
-	cat := h.catalogFor(r, c, application)
-	type entry struct {
-		id, connection string
-		level          bool
-	}
-	var list []entry
-	for _, t := range cat.TaskNames {
-		if speaks(t.Connection) {
-			list = append(list, entry{t.Name, "", t.Level})
-		}
-	}
-	for _, m := range cat.Models {
-		if speaks(m.Connection) {
-			list = append(list, entry{m.ID, m.Connection, false})
-		}
-	}
+	list := listedOn(c, h.catalogFor(r, c, application), protocol)
 	if protocol == "anthropic" {
 		data := []map[string]any{}
 		for _, e := range list {

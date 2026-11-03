@@ -31,7 +31,7 @@ export type Decision = {
 
 /** An Issue: a problem aiport keeps seeing for one Application, as GET /api/v1/issues lists it. */
 export type Issue = {
-  id: string; application: string; cause: string; subject: string;
+  id: string; application: string; cause: string; subject: string; protocol?: string;
   state: 'open' | 'resolving' | 'resolved' | 'dismissed';
   summary: string; needs_owner: boolean; application_fix: string;
   evidence: {count: number; from_ms: number; to_ms: number; window_minutes: number; status?: number; error?: string; examples?: string[]; connections?: string[]};
@@ -47,7 +47,31 @@ export type Issue = {
   catalog_change?: CatalogNotice;
 };
 
-type TaskName = {name: string; connection: string; model: string; shared: boolean};
+/** A task name in a Catalog (catalog.TaskName): a Level carries level and the protocol it is mapped on. */
+export type TaskName = {name: string; connection: string; model: string; shared: boolean; level?: boolean; protocol?: string;
+  /** Per-effort models on the same Connection, when set. */
+  effort?: {low?: string; medium?: string; high?: string}};
+
+/** A Catalog change as aiport keeps it (catalog.Record). */
+export type CatalogRecord = {
+  change_id: string; at_ms: number; revert_of?: string; application: string; before: string; after: string;
+  removed: TaskName[]; added: TaskName[]; moved: {name: string; from: TaskName; to: TaskName}[];
+  routing: {of: string; before: string; after: string}[]; connections_removed: string[]; connections_added: string[];
+};
+
+/** One line per part of a Catalog change: what was removed, moved or added, and routing that switched. */
+export function catalogChangeText(n: {removed: TaskName[]; added?: TaskName[]; moved: {name: string; from: TaskName; to: TaskName}[]; routing: {of: string; before: string; after: string}[]; connections_removed?: string[]; connections_added?: string[]}): string[] {
+  const via = (t: TaskName) => t.connection + '/' + t.model + (t.level && t.protocol ? ' on ' + (t.protocol === 'openai' ? 'OpenAI' : 'Anthropic') : '');
+  const routing = (of: string) => of === 'binding' ? 'Binding' : of === 'openai' ? 'OpenAI default' : of === 'anthropic' ? 'Anthropic default' : of;
+  return [
+    ...n.removed.map(t => '“' + t.name + '” removed (was ' + via(t) + ')'),
+    ...n.moved.map(m => '“' + m.name + '” now ' + via(m.to) + ' (was ' + via(m.from) + ')'),
+    ...(n.added || []).map(t => '“' + t.name + '” added (' + via(t) + ')'),
+    ...n.routing.map(s => routing(s.of) + ' now ' + (s.after || 'none') + (s.before ? ' (was ' + s.before + ')' : '')),
+    ...(n.connections_removed || []).map(c => 'no longer reaches ' + c),
+    ...(n.connections_added || []).map(c => 'now reaches ' + c),
+  ];
+}
 
 /** A Catalog change an Application was told about (decide.CatalogNotice): no Owner decision. */
 export type CatalogNotice = {
@@ -64,13 +88,7 @@ export const isCatalogChange = (i: Issue) => i.cause === 'catalog_changed';
 export function CatalogChange({issue}: {issue: Issue}) {
   const n = issue.catalog_change;
   if (!n) return null;
-  const via = (t: TaskName) => t.connection + '/' + t.model;
-  const routing = (of: string) => of === 'binding' ? 'Binding' : of === 'openai' ? 'OpenAI default' : of === 'anthropic' ? 'Anthropic default' : of;
-  const changed = [
-    ...n.removed.map(t => '“' + t.name + '” removed (was ' + via(t) + ')'),
-    ...n.moved.map(m => '“' + m.name + '” now ' + via(m.to) + ' (was ' + via(m.from) + ')'),
-    ...n.routing.map(s => routing(s.of) + ' now ' + (s.after || 'none') + (s.before ? ' (was ' + s.before + ')' : '')),
-  ];
+  const changed = catalogChangeText({removed: n.removed, moved: n.moved, routing: n.routing}); // what the Application lost or saw move, as told
   return <>
     <div className="evidence">Catalog change (Change {n.change_id}, {when(n.at_ms)}): {changed.join('; ')}. {issue.application} was told; nothing waits for you.</div>
     <div className="evidence">Still available: {n.available.length ? n.available.map(t => '“' + t.name + '”').join(', ') : 'no task names'}{n.connections.length ? ', and the models of ' + n.connections.join(', ') : ''}.</div>
@@ -357,8 +375,8 @@ const AUTOMATIC = 'aiport (automatic)';
  * says it fixed the Issue (resolving); Dismiss is there for any Issue still open or resolving.
  */
 function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Issue; targets: string[]; explain: ExplainStatus | null; onDecided: (message: string) => void; onExplained: () => void}) {
-  const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection';
-  const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || issue.subject);
+  const fix = issue.fix, ev = issue.evidence, binds = issue.cause === 'failing_connection', level = issue.cause === 'level_unmapped';
+  const [target, setTarget] = useState(fix?.proposal.target || ''), [model, setModel] = useState(fix?.proposal.model || (level ? '' : issue.subject));
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [blocked, setBlocked] = useState<Blocked | null>(null);
   const automatic = fix?.state === 'applied' && fix.by === AUTOMATIC && !!fix.change_id;
   const revert = async () => {
@@ -377,7 +395,7 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
     try {
       await send('POST', 'issues/' + encodeURIComponent(issue.id), action !== 'accept' ? {action} : binds ? {action, target} : {action, target, model});
       onDecided(action === 'accept'
-        ? 'Approved for only ' + issue.application + (binds ? ': bound to ' + target : ': the alias “' + issue.subject + '” → ' + target + '/' + model) + '. The Issue resolves itself when its calls succeed; you can revert the Change below.'
+        ? 'Approved for only ' + issue.application + (binds ? ': bound to ' + target : level ? ': the Level “' + issue.subject + '” → ' + target + '/' + model : ': the alias “' + issue.subject + '” → ' + target + '/' + model) + '. The Issue resolves itself when its calls succeed; you can revert the Change below.'
         : 'Dismissed. aiport stays quiet about this Issue for 7 days unless the evidence doubles.');
     } catch (e) {
       const err = e as Error & {code?: string; extension?: string; reason?: string};
@@ -405,12 +423,12 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
             {targets.filter(t => t !== issue.subject).map(t => <option key={t}>{t}</option>)}
           </select></label>
         : <>
-          <label>Fix in aiport: alias for only {issue.application}<input value={issue.subject} readOnly spellCheck={false}/></label>
+          <label>{level ? 'Fix in aiport: map the Level (' + (issue.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI') + ' protocol) for only ' + issue.application : 'Fix in aiport: alias for only ' + issue.application}<input value={issue.subject} readOnly spellCheck={false}/></label>
           <label>Connection<select value={target} onChange={e => setTarget(e.target.value)}>
             {!target && <option value="">Choose a Connection</option>}
             {targets.map(t => <option key={t}>{t}</option>)}
           </select></label>
-          <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} spellCheck={false} autoComplete="off"/></label>
+          <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} spellCheck={false} autoComplete="off" placeholder={level ? 'A model the Connection serves' : undefined}/></label>
         </>}
       <div className="actions">
         <button className="primary" disabled={!!busy || !target || (!binds && !model.trim())}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
