@@ -140,6 +140,15 @@ type Alias struct {
 	Model  string `yaml:"model" json:"model"`
 	// Effort are optional per-effort models on the same Connection.
 	Effort EffortModels `yaml:"effort,omitempty" json:"effort,omitzero"`
+	// Everywhere makes a shared task name usable by every Application,
+	// whichever Connection its calls otherwise go to: the name routes to
+	// Target, like a Level. Without it the name applies only to calls that
+	// reach Target anyway.
+	Everywhere bool `yaml:"everywhere,omitempty" json:"everywhere,omitempty"`
+	// Reasoning, when set (low, medium or high), is the reasoning effort
+	// aiport sends the provider for this name on every call whose body sets
+	// none of its own, whatever effort the client stated.
+	Reasoning string `yaml:"reasoning,omitempty" json:"reasoning,omitempty"`
 }
 type Telemetry struct {
 	Enabled         bool `yaml:"enabled" json:"enabled"`
@@ -407,6 +416,7 @@ func (c Config) Validate() error {
 	}
 	aliases := map[string]bool{}
 	levels := map[string]bool{}
+	everywhere := map[string]bool{}
 	for _, a := range c.Aliases {
 		t, ok := targets[a.Target]
 		if !ok {
@@ -420,6 +430,20 @@ func (c Config) Validate() error {
 			return errors.New("duplicate target/model alias")
 		}
 		aliases[key] = true
+		if a.Reasoning != "" {
+			if _, ok := Effort(a.Reasoning); !ok || a.Reasoning != strings.ToLower(strings.TrimSpace(a.Reasoning)) {
+				return fmt.Errorf("task name %q: reasoning must be low, medium or high", a.Alias)
+			}
+		}
+		if a.Everywhere {
+			if IsLevel(a.Alias) {
+				return fmt.Errorf("%q is a Level: Levels already route everywhere", a.Alias)
+			}
+			if everywhere[a.Alias] {
+				return fmt.Errorf("task name %q is set to everywhere twice", a.Alias)
+			}
+			everywhere[a.Alias] = true
+		}
 		// A shared Level mapping chooses the Connection: one per protocol.
 		if IsLevel(a.Alias) {
 			if levels[aliasKey(a.Alias, t)] {

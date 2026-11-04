@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -22,6 +23,8 @@ type levelMapping struct {
 //	PUT    /api/v1/levels/{protocol}/{level}       {application?, connection, model, effort?}
 //	DELETE /api/v1/levels/{protocol}/{level}       {application?} (body optional)
 //	PUT    /api/v1/aliases/effort                  {application?, alias, connection?, effort} (serveAliasEffort)
+//	PUT    /api/v1/task-names/{name}               {connection, model, effort?, everywhere?, reasoning?} (serveTaskName)
+//	DELETE /api/v1/task-names/{name}               {connection}
 //
 // application "" (or left out) is the shared mapping, otherwise that
 // Application's own, which comes before the shared one. PUT on a Level sets
@@ -40,6 +43,9 @@ func (h *Handler) levelsRoute(w http.ResponseWriter, r *http.Request, fail func(
 			return true
 		}
 		writeJSON(w, 200, levelsOf(h.snapshot()))
+		return true
+	case strings.HasPrefix(r.URL.Path, TaskNamesPath+"/"):
+		h.serveTaskName(w, r, strings.TrimPrefix(r.URL.Path, TaskNamesPath+"/"), fail)
 		return true
 	case r.URL.Path == "/api/v1/aliases/effort":
 		h.serveAliasEffort(w, r, fail)
@@ -217,4 +223,58 @@ func levelsOf(c config.Config) map[string]any {
 		connections = append(connections, connection{ID: t.ID, Provider: t.Provider, Protocol: t.Protocol, Location: t.Location, Disabled: t.Disabled})
 	}
 	return map[string]any{"levels": config.Levels, "protocols": config.Protocols, "efforts": config.Efforts, "shared": list(c.Aliases), "applications": applications, "connections": connections}
+}
+
+// TaskNamesPath is where the Owner adds, changes and removes shared task
+// names.
+const TaskNamesPath = "/api/v1/task-names"
+
+// serveTaskName handles PUT and DELETE /api/v1/task-names/{name}: a shared
+// task name on one Connection, optionally usable by every Application
+// (everywhere) and with a fixed reasoning effort. Each edit is one revertable
+// Change.
+func (h *Handler) serveTaskName(w http.ResponseWriter, r *http.Request, name string, fail func(int, string, string)) {
+	if r.Method != http.MethodPut && r.Method != http.MethodDelete {
+		w.Header().Set("Allow", "PUT, DELETE")
+		fail(405, "method_not_allowed", "Use PUT or DELETE")
+		return
+	}
+	var in struct {
+		Connection string               `json:"connection"`
+		Model      string               `json:"model"`
+		Effort     *config.EffortModels `json:"effort"`
+		Everywhere bool                 `json:"everywhere"`
+		Reasoning  string               `json:"reasoning"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in); err != nil {
+		fail(400, "invalid_request", "Send {connection, model, effort?, everywhere?, reasoning?} as JSON")
+		return
+	}
+	if r.Method == http.MethodDelete {
+		in.Model = ""
+	} else if in.Connection == "" || in.Model == "" {
+		fail(400, "invalid_request", "Send connection and model (DELETE removes a task name)")
+		return
+	}
+	edit, err := config.SetTaskName(h.snapshot(), config.TaskNameEdit{Name: name, Connection: in.Connection, Model: in.Model, Effort: in.Effort, Everywhere: in.Everywhere, Reasoning: in.Reasoning})
+	if err != nil {
+		fail(400, "invalid_task_name", err.Error())
+		return
+	}
+	what := "remove task name " + name + " from " + in.Connection
+	if in.Model != "" {
+		what = "task name " + name + " to " + in.Model + " on " + in.Connection
+		if in.Everywhere {
+			what += ", for every Application"
+		}
+		if in.Reasoning != "" {
+			what += ", reasoning always " + in.Reasoning
+		}
+	}
+	_, change, err := h.live.Change(what, edit)
+	if err != nil {
+		fail(400, "invalid_task_name", err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "change_id": change.ID})
 }

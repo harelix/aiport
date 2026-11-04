@@ -19,6 +19,7 @@ type routes struct {
 	// alias: each effort's per-effort model, else the Alias's model.
 	aliases       map[string]map[string]map[string]string
 	originAliases map[string]map[string]named // origin → alias → where it goes
+	everywhere    map[string]named            // shared task names every Application can send
 	// ownOn are the protocols each origin's own Aliases are served on.
 	ownOn map[string]map[string]bool
 	// levels are the Level mappings each Application gets (own, else
@@ -33,8 +34,9 @@ type levelKey struct{ protocol, level string }
 // named is where one model name (a Level or an Application's own Alias)
 // goes: its Connection, and the rewrite of the name at each effort.
 type named struct {
-	target  string
-	rewrite map[string]map[string]string // effort → {name: model}
+	target    string
+	rewrite   map[string]map[string]string // effort → {name: model}
+	reasoning string                       // the reasoning effort always sent, "" for none
 }
 
 // rewrites are name's rewrite maps at each effort: its per-effort model,
@@ -56,7 +58,7 @@ func (n named) at(effort string) map[string]string {
 }
 
 func buildRoutes(c config.Config) routes {
-	rt := routes{targets: map[string]config.Target{}, origins: map[string]string{}, aliases: map[string]map[string]map[string]string{}, originAliases: map[string]map[string]named{}, ownOn: map[string]map[string]bool{}, levels: map[string]map[levelKey]named{}, defaults: c.Defaults}
+	rt := routes{targets: map[string]config.Target{}, origins: map[string]string{}, aliases: map[string]map[string]map[string]string{}, originAliases: map[string]map[string]named{}, ownOn: map[string]map[string]bool{}, everywhere: map[string]named{}, levels: map[string]map[levelKey]named{}, defaults: c.Defaults}
 	for _, t := range c.Targets {
 		rt.targets[t.ID] = t
 	}
@@ -97,6 +99,9 @@ func buildRoutes(c config.Config) routes {
 		if config.IsLevel(a.Alias) {
 			continue // a Level mapping: see levels
 		}
+		if a.Everywhere {
+			rt.everywhere[a.Alias] = named{target: a.Target, rewrite: rewrites(a.Alias, a.Model, a.Effort), reasoning: a.Reasoning}
+		}
 		for _, e := range config.Efforts {
 			if rt.aliases[e] == nil {
 				rt.aliases[e] = map[string]map[string]string{}
@@ -136,7 +141,7 @@ func (rt routes) levelsOf(origin string) map[levelKey]named {
 // nothing could route it: it is refused before a slot is taken or its
 // body read.
 func (rt routes) readFirst(origin, protocol string, ref *refusal.Refusal) bool {
-	return rt.ownOn[origin][protocol] || len(rt.levelsOf(origin)) > 0 || ref.Code == refusal.TargetDisabled.Code
+	return rt.ownOn[origin][protocol] || len(rt.levelsOf(origin)) > 0 || len(rt.everywhere) > 0 || ref.Code == refusal.TargetDisabled.Code
 }
 
 // Route is where one request goes.
@@ -146,6 +151,9 @@ type Route struct {
 	// upstream; empty means the body is forwarded unchanged. It belongs to
 	// the routing table and is shared by every request: never modified.
 	Rewrite map[string]string
+	// Reasoning is the reasoning effort sent to the provider on every call
+	// whose body sets none ("" leaves it to the client's X-Aiport-Effort).
+	Reasoning string
 }
 
 // resolve decides where a request from origin, on protocol ("openai" or
@@ -183,6 +191,12 @@ func (rt routes) resolveAt(origin, protocol, model, effort string) (Route, *refu
 			return Route{}, &refusal.TargetUnconfigured
 		}
 		route = Route{Target: t, Rewrite: n.at(effort)}
+	} else if n, ok := rt.everywhere[model]; ok && model != "" {
+		t, ok := rt.targets[n.target]
+		if !ok {
+			return Route{}, &refusal.TargetUnconfigured
+		}
+		route = Route{Target: t, Rewrite: n.at(effort), Reasoning: n.reasoning}
 	} else {
 		id := rt.origins[origin]
 		if id == "" {

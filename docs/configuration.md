@@ -109,6 +109,27 @@ origins:
       - {alias: summarize, target: local, model: 'llama3:8b', effort: {high: 'llama3:70b'}}
 ```
 
+A shared task name normally applies only to calls that already go to its
+Connection. `everywhere: true` makes it usable by every Application, whichever
+Connection its calls otherwise go to: the name then routes to its own
+Connection, like a Level (one `everywhere` entry per name; an Application's
+own task name of the same name still comes first). `reasoning: low|medium|high`
+makes aiport send that reasoning effort to the provider on every call for the
+name whose body sets none of its own (`reasoning_effort`, `reasoning.effort` or
+`output_config.effort`), whatever `X-Aiport-Effort` says. The Owner adds,
+changes and removes shared task names with `PUT` and `DELETE
+/api/v1/task-names/{name}` (`{connection, model, effort?, everywhere?,
+reasoning?}`), each a revertable Change.
+
+```yaml
+aliases:
+  - {target: hosted-cheap, alias: classify, model: small-model, everywhere: true, reasoning: high}
+```
+
+Without `reasoning`, an effort stated only with `X-Aiport-Effort` is also sent
+to the provider in its own field when aiport chose the model (a Level, task
+name or Alias) and the body has none.
+
 Upgrade note: an Alias entry named `fast`, `balanced` or `best`, shared or an
 Application's own, is a Level mapping on its Connection's protocol. A shared
 one chooses the Connection for every Application's calls for that name on

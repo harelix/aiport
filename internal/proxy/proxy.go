@@ -267,8 +267,14 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 	// its own reasoning setting, when aiport chose the model (a Level, task
 	// name or alias) and the body has no effort of its own, which is never
 	// changed.
-	if source == EffortFromHeader && effortField(r.URL.Path, meta) == nil && model != "" && route.Rewrite[model] != "" {
-		body = withEffort(r.URL.Path, body, effort)
+	// A task name with a fixed reasoning effort sends that one instead.
+	if effortField(r.URL.Path, meta) == nil && model != "" && route.Rewrite[model] != "" {
+		switch {
+		case route.Reasoning != "":
+			body = withEffort(r.URL.Path, body, route.Reasoning)
+		case source == EffortFromHeader:
+			body = withEffort(r.URL.Path, body, effort)
+		}
 	}
 	base, err := url.Parse(t.URL())
 	if err != nil {

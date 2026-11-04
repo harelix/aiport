@@ -38,6 +38,9 @@ type TaskName struct {
 	// Effort are its per-effort models on Connection (low, medium, high);
 	// an effort without one goes to Model.
 	Effort config.EffortModels `json:"effort,omitzero"`
+	// Reasoning is the reasoning effort aiport always sends for this name
+	// when the call's body sets none (low, medium or high), "" for none.
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 // Model is a model a reached Connection listed.
@@ -108,9 +111,9 @@ func For(c config.Config, application string, models Models) Catalog {
 	}
 	shared := []TaskName{}
 	for _, a := range c.Aliases {
-		if !seen[a.Alias] && !config.IsLevel(a.Alias) && contains(cat.Connections, a.Target) {
+		if !seen[a.Alias] && !config.IsLevel(a.Alias) && (a.Everywhere || contains(cat.Connections, a.Target)) {
 			seen[a.Alias] = true
-			shared = append(shared, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model, Shared: true, Effort: a.Effort})
+			shared = append(shared, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model, Shared: true, Effort: a.Effort, Reasoning: a.Reasoning})
 		}
 	}
 	byName := func(s []TaskName) { sort.Slice(s, func(i, j int) bool { return s[i].Name < s[j].Name }) }
