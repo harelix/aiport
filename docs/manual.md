@@ -591,6 +591,21 @@ Changes: approving a Suggestion or Change request of kind
 list its own Aliases with `GET /v1/aiport/capabilities`, and every task name
 it can use with `GET /v1/models` (see The Catalog).
 
+### Task names for every Application, with a fixed reasoning effort
+
+A shared Alias normally applies only to calls that already go to its
+Connection. Set `everywhere: true` on it and every Application can send the
+name, whichever Connection its calls otherwise go to: the name routes to its
+own Connection, like a Level. Set `reasoning: low`, `medium` or `high` and
+aiport sends that reasoning effort to the provider on every call for the name
+whose body sets none of its own, whatever `X-Aiport-Effort` says. A typical use
+is a cheaper model for routine work (`classify`, `tldr`, `extract`) at a fixed
+effort, while the Levels stay on the models for harder work. Add, change and
+remove these with `PUT` and `DELETE /api/v1/task-names/{name}`
+(`{connection, model, effort?, everywhere?, reasoning?}`); each is a
+revertable Change, and each Application's Catalog lists the name with its
+`reasoning`.
+
 ## Levels
 
 Every aiport shares three model names, the **Levels** `fast`, `balanced` and
@@ -822,6 +837,27 @@ removal dialog shows which Applications it will affect (see
 
 All of the Catalog works with adapting turned off: it is information, not a
 Change. Only the Catalog-change Issues follow the adapting switch.
+
+## Feedback
+
+Every integration names the section of the application each model call is
+for with the `X-Aiport-Task` header (`tldr`, `classify`, `analysis`,
+`insights`...) and gives every LLM answer shown to a person a thumbs up and a
+thumbs down. On a vote the application sends `POST /v1/aiport/feedback` with
+`{"request_id": "<X-Aiport-Request-Id of the answer>", "vote": "up"}` or
+`"down"` (or a `score` from 0 to 1; `task` names the section when the call did
+not). Guidance version 4 asks every connected application's coding agent to add
+both; prompts and answers are never sent.
+
+The **Feedback** page shows, for the last 7, 30 or 90 days, each
+Application's votes per section, and inside each section per name sent (a
+Level, task name or model id), model and effort: calls, votes, and the share
+of up-votes as a bar (green from 75%, amber from 50%, red below). A section with
+fewer than 5 votes is marked "few votes": too few to judge. With two or more
+judged sections the page names the best and the weakest; change the weakest
+section's Level, task name or effort under Routing and watch its share. The
+same report is `GET /api/v1/feedback?hours=N`. Votes need request history
+(`telemetry.enabled`) and count only calls still retained.
 
 ## Activity and history
 

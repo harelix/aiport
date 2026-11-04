@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Activity, Bot, Boxes, History, LayoutDashboard, ListTodo, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plug, Route, Settings, ShieldOff, Shrink, Sun, type LucideIcon} from 'lucide-react';
+import {Activity, Bot, Boxes, History, LayoutDashboard, ListTodo, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plug, Route, Settings, ShieldOff, Shrink, Sun, ThumbsUp, type LucideIcon} from 'lucide-react';
 
 export type Appearance = 'light' | 'dark' | 'system';
 const APPEARANCE_KEY = 'aiport.appearance';
@@ -48,7 +48,7 @@ export function ThemeSwitch({appearance, onAppearance}: {appearance: Appearance;
 // Ordered by how often the Owner needs them: watch and decide first, then set up.
 // Changes sits with the daily pages; it stays quiet, with a badge only when something needs a decision.
 const trafficPages: [string, LucideIcon][] = [['Overview', LayoutDashboard], ['Activity', Activity], ['Changes', History]];
-const gatewayPages: [string, LucideIcon][] = [['Integrate', Plug], ['Providers', Boxes], ['Routing', Route], ['Agents', Bot], ['Compression', Shrink]];
+const gatewayPages: [string, LucideIcon][] = [['Integrate', Plug], ['Providers', Boxes], ['Routing', Route], ['Agents', Bot], ['Compression', Shrink], ['Feedback', ThumbsUp]];
 const utilityPages: [string, LucideIcon][] = [['Tasks', ListTodo], ['Settings', Settings]];
 
 type Props = {
