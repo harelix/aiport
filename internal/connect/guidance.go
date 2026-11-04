@@ -48,7 +48,7 @@ var guidanceLog = []GuidanceChange{
 		"Read the communication standard (/_connect?format=standard on this gateway): it lists every rule with a checklist; the actions below are the new ones.",
 		"List the application's LLM features (for example tldr, classify, extract, analysis, insights) and give each one a module name: lower case, a–z, 0–9, '.', '_' or '-', at most 64. Send it as the X-Aiport-Module header on every model call of that feature, through the SDK's extra headers.",
 		"Keep the X-Aiport-Request-Id response header with each answer the application shows.",
-		"Add a thumbs up and a thumbs down to every place the application shows an LLM answer to a person. On a vote, POST /v1/aiport/feedback with the Application's token and {\"request_id\":\"<id>\",\"vote\":\"up\"} or \"down\" (the feedback snippet in the application brief); a changed vote is sent again. Never send the prompt or the answer.",
+		"If the application has a user interface, build a thumbs up and a thumbs down into it, next to every LLM answer it shows a person, in its own style; if it has none (a service, batch job or CLI), offer the vote where a person sees the answer, or tell the Owner that no person does and skip votes. On a vote, POST /v1/aiport/feedback with the Application's token and {\"request_id\":\"<id>\",\"vote\":\"up\"} or \"down\" (the feedback snippet in the application brief); a changed vote is sent again. Never send the prompt or the answer.",
 		"Replace the aiport line in AGENTS.md with agents_line from this answer (it now names X-Aiport-Module and the votes); keep one aiport line only.",
 		"Then call aiport_guidance_done.",
 	}},

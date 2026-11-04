@@ -130,7 +130,7 @@ func TestTheCommunicationStandardHasEveryRule(t *testing.T) {
 	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/markdown") {
 		t.Fatalf("standard: %d %s", w.Code, w.Header())
 	}
-	mustContain(t, "standard", w.Body.String(), ".aiport", ".gitignore", "New token", "Never a provider's model id", "X-Aiport-Module", "X-Aiport-Effort", "X-Aiport-Request-Id", "thumbs up", "/v1/aiport/feedback", `"vote":"up"`, "Never send the prompt", "error.fix", "aiport_guidance", "aiport_request_change", "## Checklist", "- [ ]")
+	mustContain(t, "standard", w.Body.String(), ".aiport", ".gitignore", "New token", "Never a provider's model id", "X-Aiport-Module", "X-Aiport-Effort", "X-Aiport-Request-Id", "thumbs up", "/v1/aiport/feedback", `"vote":"up"`, "Never send the prompt", "error.fix", "aiport_guidance", "aiport_request_change", "## Checklist", "- [ ]", "You build it", "No user interface")
 	var doc map[string]any
 	r = httptest.NewRequest("GET", "http://127.0.0.1:9911/_connect", nil)
 	w = httptest.NewRecorder()
