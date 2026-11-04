@@ -370,7 +370,14 @@ func TestAFailingWriterKeepsTheSavedExplanation(t *testing.T) {
 		t.Fatalf("the saved explanation changed: %v", is["explanation"])
 	}
 	from, to := time.Now().Add(-time.Hour).UnixMilli(), time.Now().Add(time.Hour).UnixMilli()
-	_, act := call(f.h, "GET", "/api/v1/requests?origin=aiport&outcome=upstream_error&from_ms="+strconv.FormatInt(from, 10)+"&to_ms="+strconv.FormatInt(to, 10), "", issuesManagement, false)
+	// The collector records on its own goroutine: wait for the failed call.
+	var act map[string]any
+	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		_, act = call(f.h, "GET", "/api/v1/requests?origin=aiport&outcome=upstream_error&from_ms="+strconv.FormatInt(from, 10)+"&to_ms="+strconv.FormatInt(to, 10), "", issuesManagement, false)
+		if rows, _ := act["requests"].([]any); len(rows) > 0 || time.Now().After(deadline) {
+			break
+		}
+	}
 	if rows, _ := act["requests"].([]any); len(rows) != 1 || m(rows[0])["http_status"] != float64(401) {
 		t.Fatalf("Activity: %v", act)
 	}
