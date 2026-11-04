@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,5 +124,32 @@ func TestTheOwnerAddsChangesAndRemovesATaskName(t *testing.T) {
 		if a.Alias == "tldr" {
 			t.Fatalf("tldr is still there: %+v", a)
 		}
+	}
+}
+
+// Every forwarded call says which model answered and why, so the application
+// can keep it with the answer and its vote.
+func TestAForwardedCallNamesTheModelThatAnswered(t *testing.T) {
+	h, _, _ := everywhereServer(t)
+	for _, c := range []struct{ body, module, model, route string }{
+		{`{"model":"classify"}`, "", "small-model", "connection=cheap; name=classify; effort=medium; via=task_name"},
+		{`{"model":"gpt-raw"}`, "", "gpt-raw", "connection=hosted; name=gpt-raw; effort=medium; via=model"},
+	} {
+		w := effortCall(h, "/v1/chat/completions", "", c.body)
+		if w.Code != 200 || w.Header().Get("X-Aiport-Model") != c.model || w.Header().Get("X-Aiport-Route") != c.route {
+			t.Fatalf("%s: %d model %q route %q", c.body, w.Code, w.Header().Get("X-Aiport-Model"), w.Header().Get("X-Aiport-Route"))
+		}
+	}
+	if w, out := call(h, "PUT", "/api/v1/module-routes/docs-bot/insights/classify", `{"connection":"hosted","model":"big-model"}`, lvlManagement, true); w.Code != 200 {
+		t.Fatalf("module route: %d %v", w.Code, out)
+	}
+	r := httptest.NewRequest("POST", "http://127.0.0.1:8787/v1/chat/completions", strings.NewReader(`{"model":"classify"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer "+lvlDocs)
+	r.Header.Set("X-Aiport-Module", "insights")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Header().Get("X-Aiport-Model") != "big-model" || !strings.HasSuffix(w.Header().Get("X-Aiport-Route"), "via=module_route") {
+		t.Fatalf("module route headers: %v", w.Header())
 	}
 }

@@ -2344,13 +2344,15 @@ aiport removes every \`X-Aiport-*\` request header before forwarding.
 | \`X-Aiport-Compress\` | Request | \`whitespace\`, \`json\`, \`dedupe\` or \`all\` (comma-separated), or \`off\`. |
 | \`X-Aiport-CSRF: 1\` | Request | Required on management API requests that change something. |
 | \`X-Aiport-Request-Id\` | Response | aiport's id for the call; keep it with the answer for votes and logs. |
+| \`X-Aiport-Model\` | Response | On every forwarded call: the model that answered, after a Level, task name, per-effort model or module route replaced the name sent. A vote for the same request id counts for this model. |
+| \`X-Aiport-Route\` | Response | On every forwarded call: \`connection=…; name=…; effort=…; via=…\`, where \`via\` is \`level\`, \`task_name\`, \`module_route\` or \`model\`. |
 | \`X-Aiport-Catalog\` | Response | The version of the Application's Catalog (12 hex characters). |
 | \`X-Aiport-Compression\` | Response | The methods, \`status\` (\`applied\`, \`no_gain\` or \`failed\`) and the bytes before and after. |
 | \`X-Aiport-Hint\` | Response | One line: the open Issue a failing call belongs to, the Change request that could fix it, or what to do about a refused token. |
 
 \`X-Aiport-Task\`, \`X-Aiport-Session\` and \`X-Aiport-Version\` (requests) and
-\`X-Aiport-Model\`, \`X-Aiport-Route\` and \`X-Aiport-Source\` (responses) are
-published in \`/_connect\` as planned, not built.
+\`X-Aiport-Source\` (responses) are published in \`/_connect\` as planned, not
+built.
 
 ### Error codes
 

@@ -350,6 +350,24 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 		}
 		w.Header()[key] = append([]string(nil), values...)
 	}
+	// Which model answered, and why: the application keeps these with the
+	// answer (and its vote) without reading the provider's body.
+	if model != "" {
+		served, via := model, "model"
+		if to, ok := route.Rewrite[model]; ok {
+			served = to
+			switch {
+			case route.Module:
+				via = "module_route"
+			case config.IsLevel(model):
+				via = "level"
+			default:
+				via = "task_name"
+			}
+		}
+		w.Header().Set("X-Aiport-Model", served)
+		w.Header().Set("X-Aiport-Route", "connection="+t.ID+"; name="+model+"; effort="+effort+"; via="+via)
+	}
 	w.WriteHeader(response.StatusCode)
 	// An error body is also kept (bounded) to find the provider's error type.
 	var failed *errorBody
