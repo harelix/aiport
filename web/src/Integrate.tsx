@@ -94,7 +94,7 @@ function useIssues(tick: number): {issues: Record<string, Issue[]>; explain: Exp
 
 /** aiport's guidance version for coding agents and, per Application, the
     version its coding agent last confirmed (GET /api/v1/guidance). */
-export type Guidance = {current: number; behind: number; never_confirmed?: number; instruction: string; applications: Record<string, {confirmed: number | null; confirmed_at_ms: number | null; behind: boolean; sends_levels: boolean}>};
+export type Guidance = {current: number; behind: number; never_confirmed?: number; instruction: string; applications: Record<string, {confirmed: number | null; confirmed_at_ms: number | null; behind: boolean; sends_levels: boolean; calls?: boolean; sends_modules?: boolean; sends_votes?: boolean}>};
 
 /* The Overview line: Applications whose coding agent confirmed an older
    guidance version ("behind"), and those whose agent never confirmed any
@@ -128,16 +128,29 @@ function IconCopy({text, label}: {text: string; label: string}) {
   return <button type="button" className="row-action icon" onClick={copy} aria-label={copied ? 'Copied' : label} title={label}>{copied ? <Check size={14} aria-hidden/> : <Copy size={14} aria-hidden/>}</button>;
 }
 
+/** Whether an Application's calls follow the communication standard's two
+    reporting rules (last 7 days): the module of every call, and votes. */
+function StandardChips({a}: {a: Guidance['applications'][string]}) {
+  if (!a.calls) return null;
+  const chip = (ok: boolean | undefined, label: string, yes: string, no: string) =>
+    <span className={'std-chip ' + (ok ? 'good' : 'warn')} title={ok ? yes : no}>{ok ? <Check size={11} aria-hidden/> : '!'} {label}</span>;
+  return <span className="std-chips">
+    {chip(a.sends_modules, 'Modules', 'Its calls name their module (X-Aiport-Module).', 'None of its calls in the last 7 days named a module (X-Aiport-Module): the Feedback page cannot tell its parts apart. Hand its coding agent the communication standard.')}
+    {chip(a.sends_votes, 'Votes', 'Its users\' thumbs up and down arrive.', 'No votes in the last 7 days: add the thumbs up and down the communication standard asks for, or nobody has voted yet.')}
+  </span>;
+}
+
 function GuidanceCell({id, guidance}: {id: string; guidance: Guidance | null}) {
   const a = guidance?.applications[id];
   if (!guidance || !a) return <span className="muted">…</span>;
-  if (!a.behind) return <span className="badge good" title={a.confirmed_at_ms ? 'Confirmed ' + new Date(a.confirmed_at_ms).toLocaleString() : undefined}>Up to date</span>;
+  if (!a.behind) return <div className="guidance-cell"><span className="badge good" title={a.confirmed_at_ms ? 'Confirmed ' + new Date(a.confirmed_at_ms).toLocaleString() : undefined}>Up to date</span><StandardChips a={a}/></div>;
   const label = a.confirmed ? 'Behind v' + a.confirmed + ' → v' + guidance.current : 'Unknown';
   const why = a.confirmed ? 'Its coding agent confirmed guidance version ' + a.confirmed + '; aiport\'s is ' + guidance.current + '.' : 'Its coding agent has never confirmed a guidance version; aiport\'s is ' + guidance.current + '.';
   return <div className="guidance-cell">
     <span className={'badge' + (a.confirmed ? ' warn' : ' info')} title={why + (a.sends_levels ? ' Its calls sent Levels in the last 6 hours, a hint that its code may follow version 2.' : '')}>{label}</span>
     {a.sends_levels && <small className="muted">Sends Levels</small>}
     <IconCopy text={guidance.instruction} label={'Copy the refresh instruction for its coding agent'}/>
+    <StandardChips a={a}/>
   </div>;
 }
 

@@ -81,6 +81,12 @@ func TestVotesAreReportedPerApplicationAndModule(t *testing.T) {
 	if s := got[""]; s.Calls != 1 || s.Rated != 0 || s.UpRatio != nil {
 		t.Fatalf("no module: %+v", s)
 	}
+	// Integrate shows that docs-bot follows the standard's reporting rules.
+	gw, gout := call(h, "GET", "/api/v1/guidance", "", lvlManagement, false)
+	docs, _ := gout["applications"].(map[string]any)["docs-bot"].(map[string]any)
+	if gw.Code != 200 || docs["calls"] != true || docs["sends_modules"] != true || docs["sends_votes"] != true {
+		t.Fatalf("guidance compliance: %d %v", gw.Code, gout["applications"])
+	}
 	if last := app.Modules[len(app.Modules)-1]; last.Module != "" {
 		t.Fatalf("calls without a module are not last: %+v", app.Modules)
 	}

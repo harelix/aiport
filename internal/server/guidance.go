@@ -165,6 +165,12 @@ func (h *Handler) guidanceRoute(w http.ResponseWriter, r *http.Request, fail fun
 		// in the last 6 hours, so its code may already follow version 2. It
 		// never counts as confirmation.
 		SendsLevels bool `json:"sends_levels"`
+		// What the communication standard asks for, from the last 7 days of
+		// model calls: whether there were any, whether any named its module
+		// (X-Aiport-Module) and whether any was voted on.
+		Calls        bool `json:"calls"`
+		SendsModules bool `json:"sends_modules"`
+		SendsVotes   bool `json:"sends_votes"`
 	}
 	c := h.snapshot()
 	// behind counts every Application whose coding agent has not
@@ -193,6 +199,18 @@ func (h *Handler) guidanceRoute(w http.ResponseWriter, r *http.Request, fail fun
 				a.SendsLevels = true
 				apps[e.Origin] = a
 			}
+		}
+	}
+	if h.collector != nil {
+		for _, e := range h.collector.Find(telemetry.Query{From: h.clock().Add(-7 * 24 * time.Hour).UnixMilli(), InferenceOnly: true}) {
+			a, ok := apps[e.Origin]
+			if !ok {
+				continue
+			}
+			a.Calls = true
+			a.SendsModules = a.SendsModules || e.Module != ""
+			a.SendsVotes = a.SendsVotes || e.Feedback != nil
+			apps[e.Origin] = a
 		}
 	}
 	writeJSON(w, 200, map[string]any{
