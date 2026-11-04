@@ -30,10 +30,10 @@ type Event struct {
 	Effort        string `json:"effort,omitempty"`
 	EffortSource  string `json:"effort_source,omitempty"`
 	ResolvedModel string `json:"resolved_model,omitempty"`
-	// Task is the section of the calling application the call was made for
-	// (X-Aiport-Task, or the task sent with its feedback): a short
+	// Module is the module of the calling application the call was made
+	// for (X-Aiport-Module, or the module sent with its feedback): a short
 	// identifier such as tldr or insights, "" when it named none.
-	Task        string `json:"task,omitempty"`
+	Module      string `json:"module,omitempty"`
 	UsageStatus string `json:"usage_status"`
 	CostStatus  string `json:"cost_status"`
 	// Opt-in request compression (empty when not requested). Sizes are
@@ -267,9 +267,9 @@ func Summary(rows []Event) map[string]any {
 }
 
 // SetFeedback records an application's 0–1 quality score for one of its own
-// requests, and task as the section it was made for when the call named
+// requests, and module as the module it was made for when the call named
 // none. It reports whether the request was found.
-func (c *Collector) SetFeedback(id, origin string, score float64, task string) bool {
+func (c *Collector) SetFeedback(id, origin string, score float64, module string) bool {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	found := false
@@ -279,8 +279,8 @@ func (c *Collector) SetFeedback(id, origin string, score float64, task string) b
 			if rows[i].ID == id && rows[i].Origin == origin {
 				s := score
 				rows[i].Feedback = &s
-				if rows[i].Task == "" {
-					rows[i].Task = task
+				if rows[i].Module == "" {
+					rows[i].Module = module
 				}
 				found = true
 			}
@@ -288,7 +288,7 @@ func (c *Collector) SetFeedback(id, origin string, score float64, task string) b
 	}
 	c.mu.Unlock()
 	if c.persisting() {
-		res, err := c.store.DB.Exec(`UPDATE requests SET feedback = ?, task = CASE WHEN task = '' THEN ? ELSE task END WHERE id = ? AND origin_id = ?`, score, task, id, origin)
+		res, err := c.store.DB.Exec(`UPDATE requests SET feedback = ?, module = CASE WHEN module = '' THEN ? ELSE module END WHERE id = ? AND origin_id = ?`, score, module, id, origin)
 		if err == nil {
 			if n, _ := res.RowsAffected(); n > 0 {
 				found = true

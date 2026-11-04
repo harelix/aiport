@@ -13,14 +13,14 @@ import (
 // or high). Like every X-Aiport-* header it never reaches the provider.
 const EffortHeader = "X-Aiport-Effort"
 
-// TaskHeader names the section of the calling application a call is made
+// ModuleHeader names the module of the calling application a call is made
 // for (tldr, classify, insights...), so the Owner can read its votes per
-// section. Recorded, never forwarded.
-const TaskHeader = "X-Aiport-Task"
+// module. Recorded, never forwarded.
+const ModuleHeader = "X-Aiport-Module"
 
-// TaskOf is v as a section name: trimmed and lowercased, 1–64 of a–z, 0–9,
+// ModuleOf is v as a module name: trimmed and lowercased, 1–64 of a–z, 0–9,
 // '.', '_' or '-', starting with a letter or digit; "" otherwise.
-func TaskOf(v string) string {
+func ModuleOf(v string) string {
 	v = strings.ToLower(strings.TrimSpace(v))
 	if v == "" || len(v) > 64 {
 		return ""

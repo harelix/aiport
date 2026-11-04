@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {HelpLink} from './help';
-import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, KeyRound, Plus, Terminal, Trash2} from 'lucide-react';
+import {AppWindow, ArrowUpRight, Bot, Check, ChevronRight, CircleCheck, CircleDashed, Copy, ExternalLink, FileCheck2, KeyRound, Plus, Terminal, Trash2} from 'lucide-react';
 import {AddApplicationForm, forgetRejected, type IssuedToken, issueToken, MayRequestToggle, Origin, Pairing, PairingList, Rejected, RemoveApplication, Target, TokenReveal, useMissingTokens, usePairings, useRejected} from './Applications';
 import {ApplicationFix, CatalogChange, isCatalogChange, type ExplainStatus, explainOf, type FixStatus, type Issue, IssueExplanation, IssueFix, issueAnchor} from './Changes';
 import {Inline} from './markdown';
@@ -18,7 +18,7 @@ import {AppLevels, appLevelsLabel, type LevelsDoc, useLevels} from './Levels';
 type Snippet = {id: string; title: string; language: string; sdk?: string; protocol?: string; available: boolean; code: string};
 type Brief = {for: string; title: string; intro: string; steps: string[]; snippets: Snippet[]; note: string};
 type BriefLink = {for: string; title: string; audience: string; url: string};
-type ConnectDoc = {docs: string; agent_prompt: string; protocols: {name: string; available: boolean}[]; integration: Brief; agent_integration: Brief; briefs: BriefLink[]; adapting: boolean};
+type ConnectDoc = {docs: string; agent_prompt: string; standard: string; standard_prompt: string; protocols: {name: string; available: boolean}[]; integration: Brief; agent_integration: Brief; briefs: BriefLink[]; adapting: boolean};
 type Language = 'python' | 'typescript' | 'curl';
 type Filter = 'approved' | 'rejected' | 'all';
 
@@ -451,10 +451,19 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
       <div className="panel-heading wizard-heading">
         <h2 id="strip-heading"><button type="button" className="group-toggle" aria-expanded={showInstructions} aria-controls="strip-body" onClick={() => setInstructionsOpen(!showInstructions)}>
           <ChevronRight size={16} strokeWidth={2} aria-hidden className="chevron"/>Instructions</button><HelpLink section="The instructions"/></h2>
-        <span className="muted-small">Application brief · Coding agent brief</span>
+        <span className="muted-small">Communication standard · Application brief · Coding agent brief</span>
       </div>
       {showInstructions && <div className="strip-body" id="strip-body">
       <p className="muted-small strip-intro">What the coding agent reads, written by aiport from this gateway's address and protocols ({doc.protocols.map(p => p.name + (p.available ? ' configured' : ' not configured')).join(', ')}). <button type="button" className="text-button" onClick={onManual}>Read the manual</button></p>
+
+      <article className="standard-card" aria-labelledby="standard-heading">
+        <div className="standard-head"><FileCheck2 size={17} strokeWidth={1.75} aria-hidden/><div>
+          <h3 id="standard-heading">Communication standard</h3>
+          <p className="muted-small">Every rule an integration follows, with a checklist: the token in <code>.aiport</code>, Levels and task names, <code>X-Aiport-Effort</code>, <code>X-Aiport-Module</code> naming the module of every call, a thumbs up and down on every answer sent to aiport, and the error fixes. Paste it to the coding agent of a new application, or of one already connected, to bring it in line.</p>
+        </div></div>
+        <blockquote className="agent-prompt">{doc.standard_prompt}</blockquote>
+        <div className="button-row"><CopyButton text={doc.standard_prompt} label="Copy instruction"/><CopyButton text={doc.standard} label="Copy URL only"/><a className="text-button" href={'/_connect?format=standard'} target="_blank" rel="noreferrer">Read the standard <ExternalLink size={12} aria-hidden/></a></div>
+      </article>
 
       <BriefTile id="application" title="Application brief" short="For the agent wiring the application's LLM calls through aiport." icon={<Terminal size={17} strokeWidth={1.75}/>}
         brief={appBrief} link={link('application')} open={appTile} setOpen={setAppTile} picker={picker} snippets={[...appBrief.snippets.filter(s => !s.sdk), ...sdkSnippets]}/>

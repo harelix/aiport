@@ -27,7 +27,7 @@ const (
 	retentionEvery  = time.Hour
 )
 
-const columns = `id, started_at_ms, origin_id, target_id, provider, protocol, route, method, http_status, outcome, latency_ms, ttfb_ms, requested_model, usage_status, cost_status, compression, compression_status, bytes_before, bytes_after, feedback, refusal_code, upstream_error_type, connection_error, effort, effort_source, resolved_model, task`
+const columns = `id, started_at_ms, origin_id, target_id, provider, protocol, route, method, http_status, outcome, latency_ms, ttfb_ms, requested_model, usage_status, cost_status, compression, compression_status, bytes_before, bytes_after, feedback, refusal_code, upstream_error_type, connection_error, effort, effort_source, resolved_model, module`
 
 // flush writes pending events in one transaction. A batch that still fails
 // after one retry is dropped and counted; nothing is spilled to disk.
@@ -65,7 +65,7 @@ func insert(db *sql.DB, batch []Event) error {
 		return err
 	}
 	for _, e := range batch {
-		if _, err = stmt.Exec(e.ID, e.StartedAt, e.Origin, e.Target, e.Provider, e.Protocol, e.Route, e.Method, e.Status, e.Outcome, e.LatencyMS, e.TTFBMS, e.RequestedModel, e.UsageStatus, e.CostStatus, e.Compression, e.CompressionStatus, e.BytesBefore, e.BytesAfter, e.Feedback, e.RefusalCode, e.UpstreamErrorType, e.ConnectionError, e.Effort, e.EffortSource, e.ResolvedModel, e.Task); err != nil {
+		if _, err = stmt.Exec(e.ID, e.StartedAt, e.Origin, e.Target, e.Provider, e.Protocol, e.Route, e.Method, e.Status, e.Outcome, e.LatencyMS, e.TTFBMS, e.RequestedModel, e.UsageStatus, e.CostStatus, e.Compression, e.CompressionStatus, e.BytesBefore, e.BytesAfter, e.Feedback, e.RefusalCode, e.UpstreamErrorType, e.ConnectionError, e.Effort, e.EffortSource, e.ResolvedModel, e.Module); err != nil {
 			_ = stmt.Close()
 			_ = tx.Rollback()
 			return err
@@ -126,7 +126,7 @@ func (c *Collector) read(query string, args ...any) ([]Event, error) {
 		var ttfb sql.NullInt64
 		var model sql.NullString
 		var feedback sql.NullFloat64
-		if err := rows.Scan(&e.ID, &e.StartedAt, &e.Origin, &e.Target, &e.Provider, &e.Protocol, &e.Route, &e.Method, &e.Status, &e.Outcome, &e.LatencyMS, &ttfb, &model, &e.UsageStatus, &e.CostStatus, &e.Compression, &e.CompressionStatus, &e.BytesBefore, &e.BytesAfter, &feedback, &e.RefusalCode, &e.UpstreamErrorType, &e.ConnectionError, &e.Effort, &e.EffortSource, &e.ResolvedModel, &e.Task); err != nil {
+		if err := rows.Scan(&e.ID, &e.StartedAt, &e.Origin, &e.Target, &e.Provider, &e.Protocol, &e.Route, &e.Method, &e.Status, &e.Outcome, &e.LatencyMS, &ttfb, &model, &e.UsageStatus, &e.CostStatus, &e.Compression, &e.CompressionStatus, &e.BytesBefore, &e.BytesAfter, &feedback, &e.RefusalCode, &e.UpstreamErrorType, &e.ConnectionError, &e.Effort, &e.EffortSource, &e.ResolvedModel, &e.Module); err != nil {
 			return nil, err
 		}
 		if ttfb.Valid {

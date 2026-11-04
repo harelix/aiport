@@ -10,17 +10,17 @@ import (
 	"github.com/harelix/aiport/internal/telemetry"
 )
 
-// An Application names the section each call is for (X-Aiport-Task) and
-// votes on answers; the Owner reads the votes per Application, section,
+// An Application names the module each call is for (X-Aiport-Module) and
+// votes on answers; the Owner reads the votes per Application, module,
 // name, model and effort.
-func TestVotesAreReportedPerApplicationAndSection(t *testing.T) {
+func TestVotesAreReportedPerApplicationAndModule(t *testing.T) {
 	h, _, _ := everywhereServer(t)
-	send := func(task, model string) string {
+	send := func(module, model string) string {
 		r := httptest.NewRequest("POST", "http://127.0.0.1:8787/v1/chat/completions", strings.NewReader(`{"model":"`+model+`"}`))
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Authorization", "Bearer "+lvlDocs)
-		if task != "" {
-			r.Header.Set("X-Aiport-Task", task)
+		if module != "" {
+			r.Header.Set("X-Aiport-Module", module)
 		}
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
@@ -39,18 +39,18 @@ func TestVotesAreReportedPerApplicationAndSection(t *testing.T) {
 	}
 	a, b := send("TLDR", "classify"), send("tldr", "classify")
 	c := send("", "gpt-raw")
-	send("Not a section!", "gpt-raw") // an invalid section is recorded as none
+	send("Not a section!", "gpt-raw") // an invalid module is recorded as none
 	deadline := time.Now().Add(2 * time.Second)
 	for len(h.collector.Find(telemetry.Query{})) < 4 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	for body, want := range map[string]int{
-		`{"request_id":"` + a + `","vote":"up"}`:                    200,
-		`{"request_id":"` + b + `","vote":"down"}`:                  200,
-		`{"request_id":"` + c + `","vote":"up","task":"insights"}`:  200, // the section, given with the vote
-		`{"request_id":"` + a + `","vote":"sideways"}`:              400,
-		`{"request_id":"` + a + `","vote":"up","task":"no spaces"}`: 400,
-		`{"request_id":"unknown","vote":"up"}`:                      404,
+		`{"request_id":"` + a + `","vote":"up"}`:                      200,
+		`{"request_id":"` + b + `","vote":"down"}`:                    200,
+		`{"request_id":"` + c + `","vote":"up","module":"insights"}`:  200, // the module, given with the vote
+		`{"request_id":"` + a + `","vote":"sideways"}`:                400,
+		`{"request_id":"` + a + `","vote":"up","module":"no spaces"}`: 400,
+		`{"request_id":"unknown","vote":"up"}`:                        404,
 	} {
 		if got := vote(body); got != want {
 			t.Errorf("%s: %d, want %d", body, got, want)
@@ -67,9 +67,9 @@ func TestVotesAreReportedPerApplicationAndSection(t *testing.T) {
 	if app.Application != "docs-bot" || app.Calls != 4 || app.Rated != 3 || app.Up != 2 || app.Down != 1 {
 		t.Fatalf("docs-bot: %+v", app.Votes)
 	}
-	got := map[string]telemetry.FeedbackSection{}
-	for _, s := range app.Sections {
-		got[s.Task] = s
+	got := map[string]telemetry.FeedbackModule{}
+	for _, s := range app.Modules {
+		got[s.Module] = s
 	}
 	tldr := got["tldr"]
 	if tldr.Rated != 2 || tldr.Up != 1 || tldr.UpRatio == nil || *tldr.UpRatio != 0.5 || len(tldr.Rows) != 1 || tldr.Rows[0].Name != "classify" || tldr.Rows[0].Model != "small-model" || tldr.Rows[0].Effort != "medium" {
@@ -79,9 +79,9 @@ func TestVotesAreReportedPerApplicationAndSection(t *testing.T) {
 		t.Fatalf("insights: %+v", s)
 	}
 	if s := got[""]; s.Calls != 1 || s.Rated != 0 || s.UpRatio != nil {
-		t.Fatalf("no section: %+v", s)
+		t.Fatalf("no module: %+v", s)
 	}
-	if last := app.Sections[len(app.Sections)-1]; last.Task != "" {
-		t.Fatalf("calls without a section are not last: %+v", app.Sections)
+	if last := app.Modules[len(app.Modules)-1]; last.Module != "" {
+		t.Fatalf("calls without a module are not last: %+v", app.Modules)
 	}
 }

@@ -30,7 +30,7 @@ func (h *Handler) serveFeedback(w http.ResponseWriter, r *http.Request, originID
 		RequestID string   `json:"request_id"`
 		Score     *float64 `json:"score"`
 		Vote      string   `json:"vote"`
-		Task      string   `json:"task"`
+		Module    string   `json:"module"`
 	}
 	if decodeJSON(w, r, &in) != nil {
 		in.RequestID = ""
@@ -46,12 +46,12 @@ func (h *Handler) serveFeedback(w http.ResponseWriter, r *http.Request, originID
 	default:
 		in.Score = nil
 	}
-	task := proxy.TaskOf(in.Task)
-	if in.RequestID == "" || len(in.RequestID) > 64 || in.Score == nil || *in.Score < 0 || *in.Score > 1 || in.Task != "" && task == "" {
-		fail(400, "invalid_feedback", "Send request_id (from the X-Aiport-Request-Id response header) and vote (up or down) or score between 0 and 1; task, if sent, is the section's name (a–z, 0–9, . _ -, at most 64)")
+	module := proxy.ModuleOf(in.Module)
+	if in.RequestID == "" || len(in.RequestID) > 64 || in.Score == nil || *in.Score < 0 || *in.Score > 1 || in.Module != "" && module == "" {
+		fail(400, "invalid_feedback", "Send request_id (from the X-Aiport-Request-Id response header) and vote (up or down) or score between 0 and 1; module, if sent, is the module's name (a–z, 0–9, . _ -, at most 64)")
 		return
 	}
-	if h.collector == nil || !h.collector.SetFeedback(in.RequestID, originID, *in.Score, task) {
+	if h.collector == nil || !h.collector.SetFeedback(in.RequestID, originID, *in.Score, module) {
 		fail(404, "request_not_found", "No recorded request with this id for this application (telemetry may be off, or the request is no longer retained)")
 		return
 	}
@@ -170,7 +170,7 @@ func (h *Handler) testEvaluator(w http.ResponseWriter, r *http.Request, fail fun
 const FeedbackReportPath = "/api/v1/feedback"
 
 // feedbackReport handles GET /api/v1/feedback?hours=N (default 30 days):
-// each Application's votes per section, name, model and effort.
+// each Application's votes per module, name, model and effort.
 func (h *Handler) feedbackReport(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
@@ -190,5 +190,5 @@ func (h *Handler) feedbackReport(w http.ResponseWriter, r *http.Request, fail fu
 	if h.collector != nil {
 		rows = h.collector.Find(telemetry.Query{From: h.clock().Add(-time.Duration(hours) * time.Hour).UnixMilli(), InferenceOnly: true})
 	}
-	writeJSON(w, 200, map[string]any{"hours": hours, "applications": telemetry.FeedbackReport(rows), "feedback_path": FeedbackPath, "task_header": proxy.TaskHeader, "telemetry": h.telemetryHealth()})
+	writeJSON(w, 200, map[string]any{"hours": hours, "applications": telemetry.FeedbackReport(rows), "feedback_path": FeedbackPath, "module_header": proxy.ModuleHeader, "telemetry": h.telemetryHealth()})
 }

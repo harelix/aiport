@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -98,9 +100,9 @@ func TestTheCodingAgentBriefTeachesLevelsEffortAndGuidance(t *testing.T) {
 }
 
 // Version 4 and the briefs make votes per section part of every integration:
-// X-Aiport-Task on every model call, and a thumbs up and down sent to
+// X-Aiport-Module on every model call, and a thumbs up and down sent to
 // /v1/aiport/feedback for every answer shown to a person.
-func TestGuidanceVersion4TeachesVotesPerSection(t *testing.T) {
+func TestGuidanceVersion4TeachesVotesPerModule(t *testing.T) {
 	h, _ := requestsServer(t)
 	_, out := call(h, "GET", GuidancePath, "", reqHelper, false)
 	changes, _ := out["changes"].([]any)
@@ -112,8 +114,33 @@ func TestGuidanceVersion4TeachesVotesPerSection(t *testing.T) {
 	if v4["version"] != float64(4) {
 		t.Fatalf("newest change is version %v", v4["version"])
 	}
-	mustContain(t, "version 4 actions", actions, "X-Aiport-Task", "thumbs up", "/v1/aiport/feedback", "X-Aiport-Request-Id", "agents_line", "aiport_guidance_done")
-	mustContain(t, "AGENTS.md line", connect.AgentsLine, "X-Aiport-Task", "thumbs up", "/v1/aiport/feedback")
-	mustContain(t, "application brief", getBrief(t, briefServer(t, ""), "?format=handover&for=application"), "X-Aiport-Task", "thumbs up", `"vote"`, "Feedback page")
-	mustContain(t, "agent prompt", connect.AgentPrompt("http://127.0.0.1:8787/_connect?format=markdown"), "X-Aiport-Task", "thumbs up")
+	mustContain(t, "version 4 actions", actions, "X-Aiport-Module", "thumbs up", "/v1/aiport/feedback", "X-Aiport-Request-Id", "agents_line", "aiport_guidance_done")
+	mustContain(t, "AGENTS.md line", connect.AgentsLine, "X-Aiport-Module", "thumbs up", "/v1/aiport/feedback")
+	mustContain(t, "application brief", getBrief(t, briefServer(t, ""), "?format=handover&for=application"), "X-Aiport-Module", "thumbs up", `"vote"`, "Feedback page")
+	mustContain(t, "agent prompt", connect.AgentPrompt("http://127.0.0.1:8787/_connect?format=markdown"), "X-Aiport-Module", "thumbs up")
+}
+
+// The communication standard is one document with every rule an integration
+// follows, and its prompt hands it to a coding agent.
+func TestTheCommunicationStandardHasEveryRule(t *testing.T) {
+	h := briefServer(t, "")
+	r := httptest.NewRequest("GET", "http://127.0.0.1:9911/_connect?format=standard", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/markdown") {
+		t.Fatalf("standard: %d %s", w.Code, w.Header())
+	}
+	mustContain(t, "standard", w.Body.String(), ".aiport", ".gitignore", "New token", "Never a provider's model id", "X-Aiport-Module", "X-Aiport-Effort", "X-Aiport-Request-Id", "thumbs up", "/v1/aiport/feedback", `"vote":"up"`, "Never send the prompt", "error.fix", "aiport_guidance", "aiport_request_change", "## Checklist", "- [ ]")
+	var doc map[string]any
+	r = httptest.NewRequest("GET", "http://127.0.0.1:9911/_connect", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(doc["standard"].(string), "/_connect?format=standard") {
+		t.Fatalf("standard link: %v", doc["standard"])
+	}
+	mustContain(t, "standard prompt", doc["standard_prompt"].(string), "format=standard", "X-Aiport-Module", "thumbs up", "checklist")
+	mustContain(t, "agent prompt", doc["agent_prompt"].(string), "format=standard")
 }

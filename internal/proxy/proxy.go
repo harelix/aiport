@@ -217,7 +217,7 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 	effort, source := effortOf(r.URL.Path, r.Header, meta)
 	if o := observation(r); o != nil {
 		o.Event.Effort, o.Event.EffortSource = effort, source
-		o.Event.Task = TaskOf(r.Header.Get(TaskHeader))
+		o.Event.Module = ModuleOf(r.Header.Get(ModuleHeader))
 	}
 	if model != "" {
 		route, ref = rt.resolveAt(origin, protocol, model, effort)

@@ -505,6 +505,14 @@ func (h *Handler) serveConnect(w http.ResponseWriter, r *http.Request, fail func
 		}
 		return
 	}
+	if format == connect.StandardFormat {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.WriteHeader(200)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(connect.Standard(doc)))
+		}
+		return
+	}
 	if format == "handover" {
 		// Only the integration briefs, for pasting to a coding agent:
 		// for=application, for=agent, or both.
@@ -521,7 +529,7 @@ func (h *Handler) serveConnect(w http.ResponseWriter, r *http.Request, fail func
 		return
 	}
 	if format != "" && format != "json" {
-		fail(400, "invalid_format", "format must be json, markdown or handover")
+		fail(400, "invalid_format", "format must be json, markdown, handover or standard")
 		return
 	}
 	if r.Method == http.MethodHead {

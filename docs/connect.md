@@ -32,6 +32,19 @@ and `X-Aiport-Version` request headers, and the `X-Aiport-Model`,
 `X-Aiport-Route` and `X-Aiport-Source` response headers) are published early
 so integrators can prepare.
 
+## The communication standard
+
+`GET /_connect?format=standard` is one markdown document, written for an
+application's coding agent, with every rule an integration follows and a
+checklist: the token in `.aiport`, the SDK pointed at aiport, Levels and task
+names, `X-Aiport-Effort`, `X-Aiport-Module` (the module of the application the
+call serves; required, recorded, never forwarded), a thumbs up and down on every
+LLM answer shown to a person sent as `POST /v1/aiport/feedback`
+`{"request_id": "...", "vote": "up"|"down"}`, the error fixes and the MCP tools.
+The JSON document gives its address as `standard` and the prompt that hands it
+to a coding agent as `standard_prompt`; Integrate shows both. The source is
+`internal/connect/standard.go`.
+
 ## Pairing
 
 An application without a token asks for one: `POST /v1/aiport/pair`

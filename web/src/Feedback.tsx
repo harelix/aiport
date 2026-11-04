@@ -3,9 +3,9 @@ import {ThumbsDown, ThumbsUp} from 'lucide-react';
 
 type Votes = {calls: number; rated: number; up: number; down: number; up_ratio: number | null};
 type Row = Votes & {name: string; model: string; effort: string};
-type Section = Votes & {task: string; rows: Row[]};
-type App = Votes & {application: string; sections: Section[]};
-type Report = {hours: number; applications: App[]; feedback_path: string; task_header: string; telemetry: {state: string}};
+type Module = Votes & {module: string; rows: Row[]};
+type App = Votes & {application: string; modules: Module[]};
+type Report = {hours: number; applications: App[]; feedback_path: string; module_header: string; telemetry: {state: string}};
 
 // Below this many ratings a share of up-votes says little: it is shown, muted.
 const FEW = 5;
@@ -36,7 +36,7 @@ function Counts({v}: {v: Votes}) {
 }
 
 function AppPanel({app}: {app: App}) {
-  const rated = app.sections.filter(s => s.task && s.rated >= FEW && s.up_ratio != null);
+  const rated = app.modules.filter(s => s.module && s.rated >= FEW && s.up_ratio != null);
   const best = rated.length > 1 ? rated.reduce((a, b) => (b.up_ratio! > a.up_ratio! ? b : a)) : null;
   const worst = rated.length > 1 ? rated.reduce((a, b) => (b.up_ratio! < a.up_ratio! ? b : a)) : null;
   return <section className="panel feedback-app" aria-label={'Votes of ' + app.application}>
@@ -45,14 +45,14 @@ function AppPanel({app}: {app: App}) {
       <span className="feedback-summary"><Counts v={app}/><Share v={app}/><small>{num(app.rated)} of {num(app.calls)} calls rated</small></span>
     </div>
     {best && worst && best !== worst && <p className="feedback-callout">
-      Best section: <b>{best.task}</b> ({Math.round(best.up_ratio! * 100)}% up). Weakest: <b>{worst.task}</b> ({Math.round(worst.up_ratio! * 100)}% up): try another model or effort for it under Routing.
+      Best module: <b>{best.module}</b> ({Math.round(best.up_ratio! * 100)}% up). Weakest: <b>{worst.module}</b> ({Math.round(worst.up_ratio! * 100)}% up): try another model or effort for it under Routing.
     </p>}
     <table className="feedback-table">
-      <thead><tr><th>Section</th><th>Sent as</th><th>Model</th><th>Effort</th><th className="n">Calls</th><th className="n">Votes</th><th>Up</th></tr></thead>
+      <thead><tr><th>Module</th><th>Sent as</th><th>Model</th><th>Effort</th><th className="n">Calls</th><th className="n">Votes</th><th>Up</th></tr></thead>
       <tbody>
-        {app.sections.map(s => <React.Fragment key={s.task || '(none)'}>
+        {app.modules.map(s => <React.Fragment key={s.module || '(none)'}>
           <tr className={'section-row ' + tone(s)}>
-            <th scope="row" colSpan={4}>{s.task ? <code>{s.task}</code> : <span className="muted">No section named</span>}{s.rows.length > 1 && <small className="muted"> · {s.rows.length} combinations</small>}</th>
+            <th scope="row" colSpan={4}>{s.module ? <code>{s.module}</code> : <span className="muted">No module named</span>}{s.rows.length > 1 && <small className="muted"> · {s.rows.length} combinations</small>}</th>
             <td className="n">{num(s.calls)}</td><td className="n"><Counts v={s}/></td><td><Share v={s}/></td>
           </tr>
           {s.rows.map(r => <tr key={r.name + '|' + r.model + '|' + r.effort} className="combo-row">
@@ -62,7 +62,7 @@ function AppPanel({app}: {app: App}) {
         </React.Fragment>)}
       </tbody>
     </table>
-    {app.sections.some(s => !s.task) && <p className="caption">Calls without a section did not send <code>X-Aiport-Task</code>. Guidance version 4 asks the application's coding agent to add it.</p>}
+    {app.modules.some(s => !s.module) && <p className="caption">Calls without a module did not send <code>X-Aiport-Module</code>. Guidance version 4 asks the application's coding agent to add it.</p>}
   </section>;
 }
 
@@ -86,7 +86,7 @@ export default function Feedback({tick}: {tick: number}) {
           {PERIODS.map(([h, label]) => <button key={h} type="button" className={h === hours ? 'on' : ''} aria-pressed={h === hours} onClick={() => setHours(h)}>{label}</button>)}
         </div>
       </div>
-      <p className="muted feedback-intro">Each application names the section of every call (<code>{report?.task_header || 'X-Aiport-Task'}</code>, such as tldr, classify or insights) and sends its users' thumbs up and down to <code>{report?.feedback_path || '/v1/aiport/feedback'}</code>. Read each section's share of up-votes by the name it sent, the model that served it and the effort; when a section does badly, change its Level, task name or effort under Routing. Sections with fewer than {FEW} votes are too few to judge.</p>
+      <p className="muted feedback-intro">Each application names the module of every call (<code>{report?.module_header || 'X-Aiport-Module'}</code>, such as tldr, classify or insights) and sends its users' thumbs up and down to <code>{report?.feedback_path || '/v1/aiport/feedback'}</code>. Read each module's share of up-votes by the name it sent, the model that served it and the effort; when a module does badly, change its Level, task name or effort under Routing. Modules with fewer than {FEW} votes are too few to judge.</p>
       {error && <div className="notice error feedback-notice" role="alert">{error}</div>}
       {report && report.telemetry.state === 'disabled' && <div className="notice"><span className="dot amber"/>Request history is off, so no calls or votes are kept. Turn it on in Settings.</div>}
       {report && !apps.length && <div className="quiet-empty feedback-empty">No model calls in this period.</div>}

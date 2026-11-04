@@ -28,7 +28,7 @@ func (v *Votes) add(e Event) {
 	v.UpRatio = &r
 }
 
-// FeedbackRow is one combination inside a section: the name the application
+// FeedbackRow is one combination inside a module: the name the application
 // sent (a Level, task name or model id), the model that served it and the
 // effort it was asked at.
 type FeedbackRow struct {
@@ -38,28 +38,28 @@ type FeedbackRow struct {
 	Votes
 }
 
-// FeedbackSection is one section of an application (its X-Aiport-Task, ""
+// FeedbackModule is one module of an application (its X-Aiport-Module, ""
 // when the calls named none).
-type FeedbackSection struct {
-	Task string        `json:"task"`
-	Rows []FeedbackRow `json:"rows"`
+type FeedbackModule struct {
+	Module string        `json:"module"`
+	Rows   []FeedbackRow `json:"rows"`
 	Votes
 }
 
-// FeedbackApp is one application's votes, per section.
+// FeedbackApp is one application's votes, per module.
 type FeedbackApp struct {
-	Application string            `json:"application"`
-	Sections    []FeedbackSection `json:"sections"`
+	Application string           `json:"application"`
+	Modules     []FeedbackModule `json:"modules"`
 	Votes
 }
 
 // FeedbackReport groups the forwarded model calls in rows by application,
-// then section, then name, model and effort, with their votes. Sections and
+// then module, then name, model and effort, with their votes. Modules and
 // rows with the most ratings come first.
 func FeedbackReport(rows []Event) []FeedbackApp {
 	type rowKey struct{ name, model, effort string }
 	apps := map[string]*FeedbackApp{}
-	sections := map[string]map[string]*FeedbackSection{}
+	modules := map[string]map[string]*FeedbackModule{}
 	cells := map[string]map[string]map[rowKey]*FeedbackRow{}
 	for _, e := range rows {
 		if e.ResolvedModel == "" {
@@ -69,24 +69,24 @@ func FeedbackReport(rows []Event) []FeedbackApp {
 		if a == nil {
 			a = &FeedbackApp{Application: e.Origin}
 			apps[e.Origin] = a
-			sections[e.Origin] = map[string]*FeedbackSection{}
+			modules[e.Origin] = map[string]*FeedbackModule{}
 			cells[e.Origin] = map[string]map[rowKey]*FeedbackRow{}
 		}
-		s := sections[e.Origin][e.Task]
+		s := modules[e.Origin][e.Module]
 		if s == nil {
-			s = &FeedbackSection{Task: e.Task}
-			sections[e.Origin][e.Task] = s
-			cells[e.Origin][e.Task] = map[rowKey]*FeedbackRow{}
+			s = &FeedbackModule{Module: e.Module}
+			modules[e.Origin][e.Module] = s
+			cells[e.Origin][e.Module] = map[rowKey]*FeedbackRow{}
 		}
 		name := e.ResolvedModel
 		if e.RequestedModel != nil && *e.RequestedModel != "" {
 			name = *e.RequestedModel
 		}
 		k := rowKey{name, e.ResolvedModel, e.Effort}
-		c := cells[e.Origin][e.Task][k]
+		c := cells[e.Origin][e.Module][k]
 		if c == nil {
 			c = &FeedbackRow{Name: k.name, Model: k.model, Effort: k.effort}
-			cells[e.Origin][e.Task][k] = c
+			cells[e.Origin][e.Module][k] = c
 		}
 		a.add(e)
 		s.add(e)
@@ -103,22 +103,22 @@ func FeedbackReport(rows []Event) []FeedbackApp {
 	}
 	out := make([]FeedbackApp, 0, len(apps))
 	for id, a := range apps {
-		for task, s := range sections[id] {
-			for _, c := range cells[id][task] {
+		for module, s := range modules[id] {
+			for _, c := range cells[id][module] {
 				s.Rows = append(s.Rows, *c)
 			}
 			sort.Slice(s.Rows, func(i, j int) bool {
 				x, y := s.Rows[i], s.Rows[j]
 				return most(x.Votes, y.Votes, x.Name+x.Model+x.Effort, y.Name+y.Model+y.Effort)
 			})
-			a.Sections = append(a.Sections, *s)
+			a.Modules = append(a.Modules, *s)
 		}
-		sort.Slice(a.Sections, func(i, j int) bool {
-			x, y := a.Sections[i], a.Sections[j]
-			if (x.Task == "") != (y.Task == "") {
-				return y.Task == "" // calls without a section last
+		sort.Slice(a.Modules, func(i, j int) bool {
+			x, y := a.Modules[i], a.Modules[j]
+			if (x.Module == "") != (y.Module == "") {
+				return y.Module == "" // calls without a module last
 			}
-			return most(x.Votes, y.Votes, x.Task, y.Task)
+			return most(x.Votes, y.Votes, x.Module, y.Module)
 		})
 		out = append(out, *a)
 	}

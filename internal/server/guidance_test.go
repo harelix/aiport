@@ -23,8 +23,8 @@ func TestGuidanceOfAnApplicationThatNeverConfirmed(t *testing.T) {
 		t.Fatalf("unknown should list every version's changes: %s", w.Body)
 	}
 	newest := changes[len(changes)-1].(map[string]any)
-	if newest["version"] != float64(4) || !strings.Contains(newest["summary"].(string), "X-Aiport-Task") {
-		t.Fatalf("version 4 should be the votes per section guidance: %v", newest)
+	if newest["version"] != float64(4) || !strings.Contains(newest["summary"].(string), "X-Aiport-Module") {
+		t.Fatalf("version 4 should be the votes per module guidance: %v", newest)
 	}
 	if line, _ := out["agents_line"].(string); !strings.Contains(line, "aiport") {
 		t.Fatalf("agents_line missing: %s", w.Body)

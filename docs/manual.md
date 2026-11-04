@@ -451,6 +451,16 @@ a tile to see its steps and snippets, each with its own **Copy**.
 `initialize` instructions an agent gets from aiport say the same as the
 `AGENTS.md` line.
 
+
+**Communication standard.** The first card in Instructions is
+`/_connect?format=standard`: one document with every rule an integration
+follows, and a checklist. It covers the token in `.aiport`, the SDK pointed at
+aiport, Levels and task names instead of provider model ids,
+`X-Aiport-Effort`, `X-Aiport-Module` naming the module of the application each
+call serves, a thumbs up and down on every LLM answer shown to a person sent to
+`/v1/aiport/feedback`, the error fixes, and the MCP tools. **Copy instruction**
+gives the prompt that hands it to a coding agent, for a new application or one
+already connected.
 ### Guidance versions
 
 aiport numbers the guidance it gives coding agents (the briefs, the
@@ -840,22 +850,22 @@ Change. Only the Catalog-change Issues follow the adapting switch.
 
 ## Feedback
 
-Every integration names the section of the application each model call is
-for with the `X-Aiport-Task` header (`tldr`, `classify`, `analysis`,
+Every integration names the module of the application each model call is
+for with the `X-Aiport-Module` header (`tldr`, `classify`, `analysis`,
 `insights`...) and gives every LLM answer shown to a person a thumbs up and a
 thumbs down. On a vote the application sends `POST /v1/aiport/feedback` with
 `{"request_id": "<X-Aiport-Request-Id of the answer>", "vote": "up"}` or
-`"down"` (or a `score` from 0 to 1; `task` names the section when the call did
-not). Guidance version 4 asks every connected application's coding agent to add
+`"down"` (or a `score` from 0 to 1; `module` names it when the call did
+not). The communication standard (below) and guidance version 4 asks every connected application's coding agent to add
 both; prompts and answers are never sent.
 
 The **Feedback** page shows, for the last 7, 30 or 90 days, each
-Application's votes per section, and inside each section per name sent (a
+Application's votes per module, and inside each module per name sent (a
 Level, task name or model id), model and effort: calls, votes, and the share
-of up-votes as a bar (green from 75%, amber from 50%, red below). A section with
+of up-votes as a bar (green from 75%, amber from 50%, red below). A module with
 fewer than 5 votes is marked "few votes": too few to judge. With two or more
-judged sections the page names the best and the weakest; change the weakest
-section's Level, task name or effort under Routing and watch its share. The
+judged modules the page names the best and the weakest; change the weakest
+module's Level, task name or effort under Routing and watch its share. The
 same report is `GET /api/v1/feedback?hours=N`. Votes need request history
 (`telemetry.enabled`) and count only calls still retained.
 

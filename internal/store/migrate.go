@@ -261,6 +261,9 @@ var migrations = []string{
 	// as empty.
 	`ALTER TABLE requests ADD COLUMN task TEXT NOT NULL DEFAULT '';
 	CREATE INDEX requests_task ON requests(origin_id, task, started_at_ms);`,
+	// 13: that column is the call's module (X-Aiport-Module), the word the
+	// briefs and the dashboard use. A rename; the index follows it.
+	`ALTER TABLE requests RENAME COLUMN task TO module;`,
 }
 
 // preRelease maps the schema version of a database written by a pre-release
