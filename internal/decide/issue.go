@@ -157,6 +157,9 @@ type Issue struct {
 	// Catalog is a Catalog-change Issue's change and what the Application
 	// can still use (CauseCatalogChanged only).
 	Catalog *CatalogNotice `json:"catalog_change,omitempty"`
+	// Report is a reported request's failure and the Owner's note
+	// (CauseReportedRequest only).
+	Report *Reported `json:"report,omitempty"`
 	// BranchFix is the latest Fix it run's branch and diff summary
 	// (Queue.RecordBranch); nil until Fix it ran.
 	BranchFix *BranchFix `json:"branch_fix,omitempty"`
@@ -654,6 +657,12 @@ var causes = map[Cause]causeRules{
 	CauseCatalogChanged: {
 		applicationFix: catalogFix,
 		counts:         func(e telemetry.Event, is hintIssue) bool { return sentRemoved(e, is.names) },
+	},
+	// A reported request is opened by the Owner (Report), so it has no
+	// threshold and no aiport fix.
+	CauseReportedRequest: {
+		applicationFix: reportedFix,
+		counts:         func(e telemetry.Event, is hintIssue) bool { return is.report != nil && is.report.mayBeKind(e) },
 	},
 }
 

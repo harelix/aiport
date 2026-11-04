@@ -107,6 +107,12 @@ as the `catalog` feature, the `X-Aiport-Catalog` response header and a
   moved binding or protocol default) opens an Issue of cause
   `catalog_changed` with `catalog_change`; a failing call that sent a removed
   task name carries an `X-Aiport-Hint` naming it.
+- The Owner can report one failed request from Activity to the Application:
+  an Issue of cause `reported_request` with `report` (request id, name sent,
+  module, effort, model, Connection, status, error code, aiport's explanation
+  and the Owner's note). Fix what the note and the failure point at, then
+  call `aiport_issue_fixed`; the next failing call of the same kind carries an
+  `X-Aiport-Hint` naming it.
 
 All of it answers about the calling Application only and holds Application
 ids, task names, model names and Connection ids, never keys or URLs. It works

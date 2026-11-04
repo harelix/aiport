@@ -31,6 +31,8 @@ export type Decision = {
 
 /** An Issue: a problem aiport keeps seeing for one Application, as GET /api/v1/issues lists it. */
 export type Issue = {
+  /** A reported request (cause reported_request): the failure the Owner reported from Activity and the note. */
+  report?: {request_id: string; at_ms: number; route: string; name?: string; model?: string; connection?: string; module?: string; effort?: string; http_status: number; error?: string; note?: string};
   id: string; application: string; cause: string; subject: string; protocol?: string;
   state: 'open' | 'resolving' | 'resolved' | 'dismissed';
   summary: string; needs_owner: boolean; application_fix: string;
@@ -83,6 +85,12 @@ export type CatalogNotice = {
 
 /** Whether an Issue tells an Application about a Catalog change (nothing to explain or approve). */
 export const isCatalogChange = (i: Issue) => i.cause === 'catalog_changed';
+
+/** A reported request's evidence: the failed requests the Owner reported from Activity, and the Owner's note. */
+function ReportedEvidence({issue}: {issue: Issue}) {
+  const r = issue.report!, ev = issue.evidence;
+  return <div className="evidence">You reported {ev.count === 1 ? 'this failed request' : ev.count + ' failed requests of this kind'} from Activity{ev.count > 1 ? ' between ' + when(ev.from_ms) + ' and ' + when(ev.to_ms) : ' at ' + when(r.at_ms)}: <code>{r.request_id}</code>{r.module ? <>, module <code>{r.module}</code></> : null}{r.model ? ', served by ' + r.model + (r.connection ? ' on ' + r.connection : '') : ''}.{r.note && <blockquote className="report-note">{r.note}</blockquote>}</div>;
+}
 
 /** What a Catalog change took away and what is still there, in short lines. */
 export function CatalogChange({issue}: {issue: Issue}) {
@@ -410,7 +418,7 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
       <h3 className="need">{issue.summary}</h3>
       <div className="decision-meta"><span className={'badge' + (issue.state === 'resolving' ? ' good' : ' warn')}>{issue.state === 'resolving' ? 'Resolving' : 'Open'}</span><span className="badge">{issue.application}</span></div>
     </div>
-    {isCatalogChange(issue) ? <CatalogChange issue={issue}/> : <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>}
+    {isCatalogChange(issue) ? <CatalogChange issue={issue}/> : issue.report ? <ReportedEvidence issue={issue}/> : <div className="evidence">Evidence: {times(ev.count)} {ev.status}{ev.error ? ' ' + ev.error : ''} between {when(ev.from_ms)} and {when(ev.to_ms)} (looking back {ev.window_minutes} minutes){ev.connections?.length ? ', sent to ' + ev.connections.join(', ') : ''}.{ev.examples?.length ? ' Example requests: ' + ev.examples.slice(0, 3).join(', ') + '.' : ''}{issue.reopened ? ' Came back ' + times(issue.reopened) + '.' : ''}</div>}
     {issue.diagnosis?.summary && <div className="evidence">Diagnosis: {issue.diagnosis.summary}</div>}
     {automatic && <div className="evidence"><strong>aiport fixed this automatically:</strong> the alias “{fix!.proposal.alias}” → {fix!.proposal.target}/{fix!.proposal.model} for only {issue.application}. <button className="text-button" disabled={!!busy} onClick={revert} aria-label={'Revert the automatic fix for ' + issue.application}><Undo2 size={14} aria-hidden/> {busy === 'revert' ? 'Reverting…' : 'Revert'}</button></div>}
     {issue.state === 'resolving' && !automatic && <div className="evidence">{issue.resolving_by === 'aiport_fix' ? 'The aiport fix is applied' + (fix?.by ? ' (by ' + fix.by + ')' : '') : 'The Application says it fixed this'}: aiport marks the Issue resolved when {issue.application}’s calls {binds ? 'succeed again' : 'for ' + issue.subject + ' succeed'}.</div>}

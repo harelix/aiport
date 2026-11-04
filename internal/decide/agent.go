@@ -43,6 +43,8 @@ type AgentIssue struct {
 	Explanation *Explanation `json:"explanation,omitempty"`
 	// Catalog is a Catalog-change Issue's change and what is still there.
 	Catalog *CatalogNotice `json:"catalog_change,omitempty"`
+	// Report is a reported request's failure and the Owner's note.
+	Report *Reported `json:"report,omitempty"`
 	// AiportFix is the fix in aiport's configuration, if one is offered or
 	// was made: proposed (waiting for the Owner), applied, rejected or
 	// reverted.
@@ -58,7 +60,7 @@ type AgentIssue struct {
 func (is Issue) ForAgent() AgentIssue {
 	a := AgentIssue{
 		ID: is.ID, Application: is.Application, Cause: is.Cause, Subject: is.Subject, State: is.State,
-		Summary: is.Summary, Evidence: is.Evidence, Diagnosis: is.Diagnosis, ApplicationFix: is.ApplicationFix, Explanation: is.Explanation, Catalog: is.Catalog,
+		Summary: is.Summary, Evidence: is.Evidence, Diagnosis: is.Diagnosis, ApplicationFix: is.ApplicationFix, Explanation: is.Explanation, Catalog: is.Catalog, Report: is.Report,
 		ResolvingBy: is.ResolvingBy, Resolution: is.Resolution, SinceMS: is.SinceMS, CreatedAt: is.CreatedAt, UpdatedAt: is.UpdatedAt,
 	}
 	if f := is.Fix; f != nil {
@@ -122,6 +124,7 @@ type hintIssue struct {
 	cause       Cause
 	protocol    string   // for a Cause kept per protocol
 	names       []string // a Catalog change's removed task names
+	report      *Reported
 }
 
 // publishHints swaps in a fresh snapshot of the open and resolving Issues
@@ -136,6 +139,7 @@ func (q *Queue) publishHints() {
 			if is.Catalog != nil {
 				h.names = is.Catalog.removedNames()
 			}
+			h.report = is.Report
 			snap[is.Application] = append(snap[is.Application], h)
 		}
 	}

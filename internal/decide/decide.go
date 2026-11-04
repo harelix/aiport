@@ -694,6 +694,7 @@ func (q *Queue) Detect(at time.Time) []Item {
 	}
 	q.revertedFixes(at.UnixMilli())
 	q.catalogResolutions(at)
+	q.reportResolutions(at)
 	out := q.track(c, CauseUnknownModel, symptoms, nil, at)
 	// Only unknown-model Issues can be fixed automatically: a failing
 	// Connection has no diagnosis, so automaticFixes never picks it.

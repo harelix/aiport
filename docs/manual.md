@@ -915,8 +915,8 @@ top of Changes with its evidence, what aiport found out and the ways to
 resolve it. There is one Issue per Application and cause: repeats update its
 counts and time window, never a second Issue.
 
-aiport opens four kinds of Issue, each from its own threshold under
-`adapting:` in `aiport.yaml`:
+aiport opens four kinds of Issue by itself, each from its own threshold under
+`adapting:` in `aiport.yaml`, and you open the fifth from Activity:
 
 | Cause | Opens when | Fix in aiport | Fix in the Application |
 | --- | --- | --- | --- |
@@ -924,6 +924,7 @@ aiport opens four kinds of Issue, each from its own threshold under
 | Failing Connection (`failing_connection`) | Its calls to one Connection keep failing (`adapting.failing_connection`, default 5 in 60 minutes) | Bind that Application to a working Connection | Back off and handle `5xx` and timeouts |
 | Unmapped Level (`level_unmapped`) | Its calls for one Level keep being refused (`adapting.level_unmapped`, default 5 in 60 minutes) | Map the Level for that Application | Ask for the mapping, or send a mapped name |
 | Catalog change (`catalog_changed`) | A Change takes away something it used | None needed | Send a name that still exists |
+| Reported request (`reported_request`) | You report a failed request from Activity's **Details** | None | Whatever the failure and your note call for; the agent says it fixed it and the next call of that name and module confirms it |
 
 The badge on Changes counts an Issue only while its fix waits for you.
 
@@ -1790,7 +1791,30 @@ never prompts, responses or headers.
 
 Filter it by period, Application ("Origin"), Connection ("Target"), outcome
 and the name sent; **Load older requests** goes further back, and **Details**
-opens one request.
+opens one request right under its row: why it failed and what fixes it, then
+what the Application asked for (name, module, effort), what served it
+(Connection, model, provider, route), the result (outcome, latency, the
+user's vote) and its id and time.
+
+**Hand a failure to the Application's coding agent.** Under a failed request
+from an Application, **Report to <Application>'s coding agent** opens an Issue of cause
+`reported_request` for that Application, with the request's metadata, aiport's
+explanation and your note. Request history keeps no provider messages, so
+paste the error the application showed into the note. The coding agent reads
+the Issue at the start of its next session (`aiport_my_issues`), and its next
+failing call of the same kind (same status, error, name and module) names it
+in `X-Aiport-Hint`. Reporting another failure of that kind adds it to the same
+Issue. aiport cannot talk to a coding agent session that is already running:
+to have aiport run a coding agent on the Issue now, open it in Changes and
+use **Fix it**. The Issue resolves after the agent says it fixed it and the
+next call of that name and module succeeds; another failure of that kind
+reopens it.
+
+**The live gauge.** At the top of every page: **Listening** (green while the
+gateway answers the dashboard), one light per Application (green: called in
+the last two minutes; red: its last call failed; faint: called in the last
+hour) and a level meter that lights with each call as it passes, red at the
+top for a failure. It reads request metadata only.
 
 **Turning it on.** With `telemetry.enabled: true`, aiport records request
 metadata in a private SQLite file next to the configuration (`aiport.yaml.db`,

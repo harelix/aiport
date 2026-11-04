@@ -1086,3 +1086,53 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .table-scroll table{white-space:normal}
 .table-scroll td,.table-scroll th{vertical-align:top;line-height:1.55}
 .table-scroll td code{white-space:nowrap}
+
+/* Live gauge at the top: listener, connected Applications and a level meter (LiveGauge.tsx). */
+.header-side{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;align-self:center}
+.live-gauge{display:flex;align-items:center;gap:10px;padding:5px 10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);font-size:12px;color:var(--text-2)}
+.gauge-pill{display:inline-flex;align-items:center;gap:6px;font-weight:600;white-space:nowrap}
+.gauge-pill .led,.app-led{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--line);flex-shrink:0;transition:background .3s,box-shadow .3s}
+.gauge-pill.on .led{background:var(--good);box-shadow:0 0 0 3px color-mix(in srgb,var(--good) 22%,transparent);animation:gauge-breathe 2.4s ease-in-out infinite}
+.gauge-pill.bad .led{background:var(--bad)}
+.gauge-pill.bad{color:var(--bad)}
+.gauge-apps{display:inline-flex;align-items:center;gap:4px;padding-left:10px;border-left:1px solid var(--line);white-space:nowrap}
+.gauge-apps small{margin-left:4px;color:var(--muted);font-size:11.5px}
+.app-led{width:7px;height:7px}
+.app-led.live{background:var(--good);box-shadow:0 0 6px color-mix(in srgb,var(--good) 60%,transparent)}
+.app-led.failing{background:var(--bad);box-shadow:0 0 6px color-mix(in srgb,var(--bad) 60%,transparent)}
+.app-led.quiet{background:color-mix(in srgb,var(--good) 35%,var(--line))}
+.gauge-meter{display:block;width:120px;height:12px;padding-left:10px;border-left:1px solid var(--line);box-sizing:content-box}
+@keyframes gauge-breathe{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--good) 8%,transparent)}}
+@media (prefers-reduced-motion:reduce){.gauge-pill.on .led{animation:none}}
+@media (max-width:900px){.gauge-meter{width:72px}.gauge-apps small{display:none}}
+
+/* Activity: request details open under their row (Activity.tsx). */
+.details-toggle svg{transition:transform .15s}
+.details-toggle.on svg{transform:rotate(180deg)}
+.activity-table tr.row-open td{border-bottom-color:transparent;background:var(--panel2)}
+.activity-table tr.detail-row>td{padding:0;white-space:normal;background:var(--panel2);border-bottom:1px solid var(--line)}
+.request-detail{padding:4px 24px 20px;border-left:3px solid var(--accent);white-space:normal}
+.request-detail .reason{margin:12px 0 4px}
+.request-detail .served{margin:12px 0 4px;font-size:14px;color:var(--text-2);line-height:1.6}
+.request-detail .served b{color:var(--text);font-weight:600}
+.detail-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}
+.detail-groups section{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px}
+.detail-groups h4,.report-agent h4{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.detail-groups dl{margin:0;display:grid;gap:8px}
+.detail-field{display:grid;grid-template-columns:96px 1fr;gap:8px;align-items:baseline;font-size:13px}
+.detail-field dt{color:var(--muted)}
+.detail-field dd{margin:0;color:var(--text);overflow-wrap:anywhere}
+.detail-field dd small{font-size:11.5px}
+.detail-field code{font-size:12px}
+.vote-chip{display:inline-flex;align-items:center;gap:4px}
+.vote-chip.up{color:var(--good)}
+.vote-chip.down{color:var(--bad)}
+.report-agent{margin-top:12px;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:0 var(--radius-sm) var(--radius-sm) 0;font-size:13px;line-height:1.6;color:var(--text-2)}
+.report-agent p{margin:0 0 8px}
+.report-note-field{display:grid;gap:4px;margin:4px 0 10px}
+.report-note-field textarea{width:100%;box-sizing:border-box;resize:vertical;font:inherit;font-size:13px;padding:8px 10px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:var(--radius-sm)}
+.report-note-field>small{justify-self:end;font-size:11px}
+.report-send{display:inline-flex;width:auto}
+.report-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.report-note{margin:8px 0 0;padding:6px 12px;border-left:3px solid var(--line);color:var(--text-2);white-space:pre-wrap}
+.request-detail .caption{margin:12px 0 0;padding:0}
