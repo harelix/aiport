@@ -204,7 +204,7 @@ func TestMCPListsItsTools(t *testing.T) {
 		}
 		names[tool["name"].(string)] = true
 	}
-	if len(names) != 8 || !names["aiport_guidance"] || !names["aiport_guidance_done"] || !names["aiport_catalog"] || !names["aiport_capabilities"] || !names["aiport_request_change"] || !names["aiport_my_requests"] || !names["aiport_my_issues"] || !names["aiport_issue_fixed"] {
+	if len(names) != 9 || !names["aiport_standard"] || !names["aiport_guidance"] || !names["aiport_guidance_done"] || !names["aiport_catalog"] || !names["aiport_capabilities"] || !names["aiport_request_change"] || !names["aiport_my_requests"] || !names["aiport_my_issues"] || !names["aiport_issue_fixed"] {
 		t.Fatalf("tools: %v", names)
 	}
 }
@@ -276,5 +276,16 @@ func TestMCPChangeRequestsMatchHTTP(t *testing.T) {
 
 	if _, out := mcp(h, reqHelper, rpc(4, "tools/call", map[string]any{"name": "aiport_delete_everything"})); out["error"] == nil {
 		t.Fatalf("an unknown tool was run: %v", out)
+	}
+}
+
+// aiport_standard hands the coding agent the communication standard itself.
+func TestMCPGivesTheCommunicationStandard(t *testing.T) {
+	h, _ := requestsServer(t)
+	out := toolCall(t, h, reqHelper, "aiport_standard", map[string]any{})
+	content := out["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text, "# aiport communication standard") || !strings.Contains(text, "X-Aiport-Module") || !strings.Contains(text, "## Checklist") {
+		t.Fatalf("standard over MCP: %.300s", text)
 	}
 }

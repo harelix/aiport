@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/harelix/aiport/internal/connect"
 	"github.com/harelix/aiport/internal/decide"
 )
 
@@ -24,7 +25,7 @@ var mcpVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 // mcpInstructions explain the loop to a coding agent; they teach what the
 // AGENTS.md line (connect.AgentsLine) does. The guidance tools work with
 // adapting off, so they are here rather than in mcpIssuesInstructions.
-const mcpInstructions = "This Application's LLM calls go through aiport. As the model, send a Level (fast, balanced or best) or a task name from aiport_catalog, never a provider's model id, and say how hard a call is with the X-Aiport-Effort header (low, medium or high). At the start of a session, call aiport_catalog for the names it can use and what changed in them (read it again when the X-Aiport-Catalog header changes) and aiport_guidance for changes to aiport's guidance; after updating the repository to it, call aiport_guidance_done. aiport_capabilities shows what it can use right now; if aiport lacks something it needs, ask the Owner with aiport_request_change instead of working around it. The Owner decides in aiport's dashboard, and aiport_my_requests shows each request's answer and the Change that was made."
+const mcpInstructions = "This Application's LLM calls go through aiport. As the model, send a Level (fast, balanced or best) or a task name from aiport_catalog, never a provider's model id, and say how hard a call is with the X-Aiport-Effort header (low, medium or high). Name the application module of every model call with the X-Aiport-Module header (tldr, classify, insights...), and give every LLM answer shown to a person a thumbs up and down sent to /v1/aiport/feedback; the full rules and a checklist are in aiport_standard. At the start of a session, call aiport_catalog for the names it can use and what changed in them (read it again when the X-Aiport-Catalog header changes) and aiport_guidance for changes to aiport's guidance; after updating the repository to it, call aiport_guidance_done. aiport_capabilities shows what it can use right now; if aiport lacks something it needs, ask the Owner with aiport_request_change instead of working around it. The Owner decides in aiport's dashboard, and aiport_my_requests shows each request's answer and the Change that was made."
 
 // mcpIssuesInstructions are added while aiport adapts.
 const mcpIssuesInstructions = " At the start of a session, also check aiport_my_issues for problems aiport keeps seeing with this Application's calls and their fix; after fixing one in the code, say so with aiport_issue_fixed."
@@ -141,6 +142,12 @@ func (h *Handler) mcpCall(applicationID string, m rpcMessage) (any, *rpcError) {
 // /v1/aiport/issues, so both doors
 // share one implementation and the tool result is exactly the HTTP body.
 func (h *Handler) mcpTool(applicationID, name string, args []byte) (any, *rpcError) {
+	if name == "aiport_standard" {
+		// The communication standard is a document, not a JSON answer.
+		c := h.snapshot()
+		c.Auth = h.auth.Settings()
+		return map[string]any{"content": []map[string]string{{"type": "text", "text": connect.Standard(connect.Describe(c))}}, "isError": false}, nil
+	}
 	var r *http.Request
 	switch name {
 	case "aiport_capabilities":
@@ -254,6 +261,13 @@ var mcpTools = []map[string]any{
 		"name":        "aiport_catalog",
 		"title":       "This Application's Catalog and what changed in it",
 		"description": "The model names this Application can use through aiport: its task names (Aliases, use these first), where each goes, its binding or the protocol defaults it follows, and the models of the Connections it reaches; then its recent Catalog changes, newest first (task names removed, added or moved, routing that changed, each with the Change id and time). Read it at the start of a session and whenever the X-Aiport-Catalog header changes. Same answer as GET " + CatalogPath + ".",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+		"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
+	},
+	{
+		"name":        "aiport_standard",
+		"title":       "aiport's communication standard",
+		"description": "Every rule this application follows to talk to aiport, with a checklist: the token in .aiport, the SDK pointed at aiport, Levels and task names instead of provider model ids, X-Aiport-Effort, X-Aiport-Module naming the application module of every model call, a thumbs up and down on every LLM answer shown to a person sent to /v1/aiport/feedback, the error fixes and these tools. Read it when integrating, and bring the application in line with it. Same document as GET /_connect?format=standard.",
 		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
 		"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
 	},
