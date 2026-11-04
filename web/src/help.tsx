@@ -28,7 +28,7 @@ export const HelpContext = createContext<(section: string) => void>(() => {});
 export const pageHelp: Record<string, string> = {
   Overview: 'A tour of the dashboard', Activity: 'Activity and history', Changes: 'Changes',
   Integrate: 'The Integrate page and the two briefs', Providers: 'Connections and keys', Routing: 'Routing and protocol defaults',
-  Agents: 'A tour of the dashboard', Compression: 'A tour of the dashboard', Tasks: 'A tour of the dashboard', Settings: 'A tour of the dashboard',
+  Agents: 'Agents', Compression: 'Compression', Feedback: 'Feedback', Tasks: 'Tasks', Settings: 'Settings',
 };
 
 /**

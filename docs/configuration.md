@@ -1,6 +1,7 @@
 # Configuration contract
 
-`aiport.yaml` is authoritative. No settings write API or reload exists yet; stop,
+`aiport.yaml` is authoritative. The dashboard and the Owner API change it as
+revertable Changes, applied live without a restart. To edit it by hand: stop,
 edit, run `aiport check`, and restart. Failed startup does not edit the file.
 The file must be regular, at most 1 MiB, and private (0600 or stricter on POSIX).
 Windows file ACL enforcement is not implemented or verified.
@@ -69,7 +70,7 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | --- | --- |
 | `version` | Required; exactly `1` |
 | `listen` | `127.0.0.1:8787`; literal IPv4/IPv6 loopback and port 1–65535 only |
-| `hostnames` | Optional list of local names aiport also answers to on the listen port, for example `[aiport.localhost]`. Each must be lowercase, `localhost` or end in `.localhost`, valid DNS label syntax (letters, digits, inner hyphens), without a port, listed once. aiport accepts `Host`/`Origin` `<name>:<listen port>` next to the listen address and refuses every other name. The first name replaces the IP in every address aiport hands out (`/_connect`, briefs, the dashboard's Connect panel, `aiport serve`); the socket stays on the `listen` IP. A change made through aiport takes effect without a restart; a hand edit needs one |
+| `hostnames` | Optional list of local names aiport also answers to on the listen port, for example `[aiport.localhost]`. Each must be lowercase, `localhost` or end in `.localhost`, valid DNS label syntax (letters, digits, inner hyphens), without a port, listed once. aiport accepts `Host`/`Origin` `<name>:<listen port>` next to the listen address and refuses every other name. The dashboard can be opened under these names, but Applications and coding agents are always given the numeric address (`/_connect`, briefs, tokens, `.aiport`): some resolvers and sandbox proxies refuse `*.localhost`. The socket stays on the `listen` IP. A change made through aiport takes effect without a restart; a hand edit needs one |
 | `auth.token_env` | Required name of the global management/local bearer token environment variable |
 | `targets` | List of `id`, `provider`, and for built-in providers optionally nothing else. `protocol`, `base_url` and `api_key_env` default from the provider preset (required for custom providers). `region` is required by regional providers (Bedrock) and fills `{region}`. `endpoint` picks a provider API surface (Bedrock: `runtime` default, or `mantle`). Optional `disabled` (false) |
 | `origins` | List of `id`, `name`, `token_env`, optional `target`, optional `aliases` (`alias`, `target`, `model`, optional `effort`): models only this client can ask for, checked before global aliases and allowed to pick another connection. An entry whose `alias` is a Level is this client's own mapping of that Level on its `target`'s protocol, at most one per Level and protocol |

@@ -76,8 +76,11 @@ line. The source of truth is
 ## The Catalog
 
 An Application's Catalog is what it can use through aiport: its task names
-(its own Aliases, then the shared Aliases of the Connections it reaches) and
-the models those Connections list, with a version. The document describes it
+(its own Aliases, then the shared Aliases of the Connections it reaches, and
+shared task names set to `everywhere`, marked `everywhere: true`, which go to
+their own Connection), the Levels mapped for it on each protocol, and the
+models its Connections list, with a version. A task name may show a fixed
+`reasoning` effort. The document describes it
 as the `catalog` feature, the `X-Aiport-Catalog` response header and a
 `GET /v1/models` endpoint under each protocol:
 

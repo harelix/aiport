@@ -44,7 +44,7 @@ POST /v1/aiport/feedback
 Scores run from 0 (useless) to 1 (perfect). An application can only score its own
 requests.
 
-The dashboard's **Compression** page (left menu, Gateway) shows savings, a trend of
+The dashboard's **Compression** page (left menu, Configure) shows savings, a trend of
 compressed vs uncompressed traffic (feedback, error rate, size saved) and a verdict
 per method combination:
 

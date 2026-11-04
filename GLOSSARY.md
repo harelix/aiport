@@ -51,8 +51,16 @@ _Avoid_: tier, `<provider>-<tier>` names.
 **Effort**
 How hard one call is (`low`, `medium`, `high`), stated by the client (the
 `X-Aiport-Effort` header, else its provider's own effort field, else
-`medium`) and used only to pick the model: a Level or task name may have a
-model per effort. aiport never changes the effort in the request.
+`medium`). It picks the model when a Level or task name has a model per
+effort, and an effort stated only with the header is also written into the
+provider's own effort field when aiport chose the model. A task name may fix
+its reasoning effort instead. aiport never changes an effort already in the
+request.
+
+**Module**
+The part of an Application a call serves (`tldr`, `classify`, `insights`),
+sent with the `X-Aiport-Module` header. Votes are read per module, and a
+module route can send one module's calls for one name to another model.
 
 **Catalog**
 What one Application can use through aiport: its task names (its own Aliases
