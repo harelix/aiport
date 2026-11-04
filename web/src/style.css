@@ -1079,3 +1079,7 @@ td small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 .module-routes h3{font-size:13px;margin:12px 0 6px;color:var(--muted);font-weight:600}
 .module-routes ul{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13px}
 .module-routes li{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.feedback-table thead th:nth-child(1){width:14%}
+.feedback-table thead th:nth-child(3){width:18%}
+.feedback-table .vote-track{width:64px}
+.feedback-table td:last-child{overflow:visible;white-space:nowrap}
