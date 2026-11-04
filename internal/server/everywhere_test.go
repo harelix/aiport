@@ -61,7 +61,7 @@ func TestATaskNameSetToEverywhereRoutesEveryApplicationToItsConnection(t *testin
 
 	b, _ := json.Marshal(catalogOf(t, h, lvlDocs))
 	got := string(b)
-	if !strings.Contains(got, `{"connection":"cheap","model":"small-model","name":"classify","reasoning":"high","shared":true}`) {
+	if !strings.Contains(got, `{"connection":"cheap","everywhere":true,"model":"small-model","name":"classify","reasoning":"high","shared":true}`) {
 		t.Fatalf("the Catalog lacks classify with its reasoning:\n%s", got)
 	}
 	if strings.Contains(got, `"name":"tidy"`) {

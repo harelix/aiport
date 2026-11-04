@@ -50,7 +50,7 @@ func Standard(d Document) string {
 
 	w("## 3. Model names: say what you need, never which provider\n\n")
 	w("- Send a **Level** (`fast`, `balanced`, `best`) or a **task name** the Owner set up (`classify`, `tldr`...) as the model. Never a provider's model id: the Owner decides what serves each name and changes it without a code change.\n")
-	w("- `GET %s/v1/models` (or the MCP tool `aiport_catalog`) lists the names this application can use. A task name may carry a fixed `reasoning` effort the Owner chose.\n\n", root)
+	w("- `GET %s/v1/models` (or the MCP tool `aiport_catalog`) lists the names this application can use. A task name may carry a fixed `reasoning` effort the Owner chose. One marked `everywhere: true` goes to its own Connection, which may not be among the Catalog's `connections` (where the application's other calls go): that is expected, send the name as it is.\n\n", root)
 
 	w("## 4. Headers on every model call\n\n")
 	w("| Header | Required | Value |\n|---|---|---|\n")

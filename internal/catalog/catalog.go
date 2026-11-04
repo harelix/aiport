@@ -41,6 +41,10 @@ type TaskName struct {
 	// Reasoning is the reasoning effort aiport always sends for this name
 	// when the call's body sets none (low, medium or high), "" for none.
 	Reasoning string `json:"reasoning,omitempty"`
+	// Everywhere is true for a shared task name every Application can send:
+	// it goes to its own Connection even when that is not one this
+	// Application's calls otherwise reach (so not in Connections).
+	Everywhere bool `json:"everywhere,omitempty"`
 }
 
 // Model is a model a reached Connection listed.
@@ -113,7 +117,7 @@ func For(c config.Config, application string, models Models) Catalog {
 	for _, a := range c.Aliases {
 		if !seen[a.Alias] && !config.IsLevel(a.Alias) && (a.Everywhere || contains(cat.Connections, a.Target)) {
 			seen[a.Alias] = true
-			shared = append(shared, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model, Shared: true, Effort: a.Effort, Reasoning: a.Reasoning})
+			shared = append(shared, TaskName{Name: a.Alias, Connection: a.Target, Model: a.Model, Shared: true, Effort: a.Effort, Reasoning: a.Reasoning, Everywhere: a.Everywhere})
 		}
 	}
 	byName := func(s []TaskName) { sort.Slice(s, func(i, j int) bool { return s[i].Name < s[j].Name }) }
