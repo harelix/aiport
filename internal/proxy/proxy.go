@@ -263,6 +263,13 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 			return
 		}
 	}
+	// An effort stated only with X-Aiport-Effort also reaches the provider as
+	// its own reasoning setting, when aiport chose the model (a Level, task
+	// name or alias) and the body has no effort of its own, which is never
+	// changed.
+	if source == EffortFromHeader && effortField(r.URL.Path, meta) == nil && model != "" && route.Rewrite[model] != "" {
+		body = withEffort(r.URL.Path, body, effort)
+	}
 	base, err := url.Parse(t.URL())
 	if err != nil {
 		fail(refusal.TargetInvalid)

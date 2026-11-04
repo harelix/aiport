@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -160,7 +159,13 @@ func sentModel(t *testing.T, f *effortFixture, model, effort string) string {
 		t.Fatalf("%s at %s: %d %s", model, effort, w.Code, w.Body)
 	}
 	_, got := f.hosted.received()
-	return strings.TrimSuffix(strings.TrimPrefix(got, `{"model":"`), `"}`)
+	var sent struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal([]byte(got), &sent); err != nil {
+		t.Fatalf("upstream body %q: %v", got, err)
+	}
+	return sent.Model
 }
 
 func effortEdit(f *effortFixture, method, path, body string) (int, map[string]any) {

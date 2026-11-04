@@ -16,7 +16,8 @@ import (
 // Effort over HTTP: a client says how hard a call is (X-Aiport-Effort, or
 // its provider's own effort field) and aiport picks the per-effort model of
 // the Level or task name it sent. The body is forwarded unchanged apart from
-// the model name, the effort field included.
+// the model name, the effort field included; only an effort stated with
+// X-Aiport-Effort alone is added to the provider's own effort field.
 
 type effortFixture struct {
 	h              *Handler
@@ -242,4 +243,39 @@ func TestTaskNamesHavePerEffortModelsTheSameWay(t *testing.T) {
 	body := bodyOf(chatEffortBody, "summarize", `"minimal"`)
 	w := effortCall(f.h, "/v1/chat/completions", "", body)
 	expectSent(t, w, f.hosted, sentAs(body, "summarize", "gpt-mini"))
+}
+
+// An effort stated only with X-Aiport-Effort reaches the provider as its own
+// effort field, in each API's place; the rest of the body is unchanged.
+func TestTheEffortHeaderAloneBecomesTheProvidersEffort(t *testing.T) {
+	f := effortServer(t)
+	body := `{"model" : "balanced","messages":[]}`
+	w := effortCall(f.h, "/v1/chat/completions", "high", body)
+	expectSent(t, w, f.hosted, `{"model" : "gpt-big","messages":[],"reasoning_effort":"high"}`)
+
+	body = `{"model" : "balanced","input":"hi","reasoning":{"summary":"auto"}}`
+	w = effortCall(f.h, "/v1/responses", "low", body)
+	expectSent(t, w, f.hosted, `{"model" : "gpt-mini","input":"hi","reasoning":{"effort":"low","summary":"auto"}}`)
+
+	body = `{"max_tokens":64, "model" : "balanced","messages":[]}`
+	w = effortCall(f.h, "/v1/messages", "medium", body)
+	expectSent(t, w, f.claude, `{"max_tokens":64, "model" : "claude-mid","messages":[],"output_config":{"effort":"medium"}}`)
+}
+
+// The body's own effort is never changed or doubled, even when the header
+// picks the model; without the header nothing is added; and a model id aiport
+// did not choose (sent as is) gets nothing either.
+func TestTheProvidersEffortIsAddedOnlyWhenTheBodyHasNone(t *testing.T) {
+	f := effortServer(t)
+	body := bodyOf(messagesEffortBody, "balanced", `"high"`)
+	w := effortCall(f.h, "/v1/messages", "low", body)
+	expectSent(t, w, f.claude, sentAs(body, "balanced", "claude-small"))
+
+	body = `{"model" : "balanced","messages":[]}`
+	w = effortCall(f.h, "/v1/chat/completions", "", body)
+	expectSent(t, w, f.hosted, sentAs(body, "balanced", "gpt-mid"))
+
+	body = `{"model" : "gpt-raw","messages":[]}`
+	w = effortCall(f.h, "/v1/chat/completions", "high", body)
+	expectSent(t, w, f.hosted, body)
 }
