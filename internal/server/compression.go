@@ -190,5 +190,13 @@ func (h *Handler) feedbackReport(w http.ResponseWriter, r *http.Request, fail fu
 	if h.collector != nil {
 		rows = h.collector.Find(telemetry.Query{From: h.clock().Add(-time.Duration(hours) * time.Hour).UnixMilli(), InferenceOnly: true})
 	}
-	writeJSON(w, 200, map[string]any{"hours": hours, "applications": telemetry.FeedbackReport(rows), "feedback_path": FeedbackPath, "module_header": proxy.ModuleHeader, "telemetry": h.telemetryHealth()})
+	c := h.snapshot()
+	apps := telemetry.FeedbackReport(rows)
+	routes := map[string][]config.ModuleRoute{}
+	for _, o := range c.Origins {
+		if len(o.ModuleRoutes) > 0 {
+			routes[o.ID] = o.ModuleRoutes
+		}
+	}
+	writeJSON(w, 200, map[string]any{"hours": hours, "applications": apps, "suggestions": suggestRoutes(c, apps), "module_routes": routes, "feedback_path": FeedbackPath, "module_header": proxy.ModuleHeader, "telemetry": h.telemetryHealth()})
 }

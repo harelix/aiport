@@ -44,6 +44,9 @@ func (h *Handler) levelsRoute(w http.ResponseWriter, r *http.Request, fail func(
 		}
 		writeJSON(w, 200, levelsOf(h.snapshot()))
 		return true
+	case strings.HasPrefix(r.URL.Path, ModuleRoutesPath+"/"):
+		h.serveModuleRoute(w, r, strings.TrimPrefix(r.URL.Path, ModuleRoutesPath+"/"), fail)
+		return true
 	case strings.HasPrefix(r.URL.Path, TaskNamesPath+"/"):
 		h.serveTaskName(w, r, strings.TrimPrefix(r.URL.Path, TaskNamesPath+"/"), fail)
 		return true
@@ -274,6 +277,66 @@ func (h *Handler) serveTaskName(w http.ResponseWriter, r *http.Request, name str
 	_, change, err := h.live.Change(what, edit)
 	if err != nil {
 		fail(400, "invalid_task_name", err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "change_id": change.ID})
+}
+
+// ModuleRoutesPath is where the Owner sends one Application module's calls
+// for one name to another model.
+const ModuleRoutesPath = "/api/v1/module-routes"
+
+// serveModuleRoute handles PUT and DELETE
+// /api/v1/module-routes/{application}/{module}/{name} with {connection,
+// model, why?}: why (one line, such as the votes that suggested it) goes into
+// the Change. Each edit is one revertable Change.
+func (h *Handler) serveModuleRoute(w http.ResponseWriter, r *http.Request, rest string, fail func(int, string, string)) {
+	parts := strings.SplitN(rest, "/", 3)
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		fail(404, "not_found", "Use /api/v1/module-routes/{application}/{module}/{name}")
+		return
+	}
+	if r.Method != http.MethodPut && r.Method != http.MethodDelete {
+		w.Header().Set("Allow", "PUT, DELETE")
+		fail(405, "method_not_allowed", "Use PUT or DELETE")
+		return
+	}
+	var in struct {
+		Connection string `json:"connection"`
+		Model      string `json:"model"`
+		Why        string `json:"why"`
+	}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in); err != nil {
+			fail(400, "invalid_request", "Send {connection, model, why?} as JSON")
+			return
+		}
+	}
+	app, module, name := parts[0], parts[1], parts[2]
+	if r.Method == http.MethodDelete {
+		in.Model = ""
+	} else if in.Connection == "" || in.Model == "" {
+		fail(400, "invalid_request", "Send connection and model (DELETE removes the route)")
+		return
+	}
+	edit, err := config.SetModuleRoute(h.snapshot(), app, module, name, in.Connection, in.Model)
+	if err != nil {
+		fail(400, "invalid_module_route", err.Error())
+		return
+	}
+	what := "stop routing module " + module + " of " + app + " for " + name + " separately"
+	if in.Model != "" {
+		what = "route module " + module + " of " + app + " for " + name + " to " + in.Model + " on " + in.Connection
+	}
+	if why := strings.Join(strings.Fields(in.Why), " "); why != "" {
+		if len(why) > 300 {
+			why = strings.ToValidUTF8(why[:300], "")
+		}
+		what += " (" + why + ")"
+	}
+	_, change, err := h.live.Change(what, edit)
+	if err != nil {
+		fail(400, "invalid_module_route", err.Error())
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "change_id": change.ID})

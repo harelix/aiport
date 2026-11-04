@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/harelix/aiport/internal/config"
 )
@@ -18,21 +17,8 @@ const EffortHeader = "X-Aiport-Effort"
 // module. Recorded, never forwarded.
 const ModuleHeader = "X-Aiport-Module"
 
-// ModuleOf is v as a module name: trimmed and lowercased, 1–64 of a–z, 0–9,
-// '.', '_' or '-', starting with a letter or digit; "" otherwise.
-func ModuleOf(v string) string {
-	v = strings.ToLower(strings.TrimSpace(v))
-	if v == "" || len(v) > 64 {
-		return ""
-	}
-	for i, r := range v {
-		ok := r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || i > 0 && (r == '.' || r == '_' || r == '-')
-		if !ok {
-			return ""
-		}
-	}
-	return v
-}
+// ModuleOf is v as a module name (config.ModuleName).
+func ModuleOf(v string) string { return config.ModuleName(v) }
 
 // Where an effort came from.
 const (

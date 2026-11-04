@@ -1,11 +1,14 @@
 import React, {useEffect, useState} from 'react';
-import {ThumbsDown, ThumbsUp} from 'lucide-react';
+import {ArrowRight, ThumbsDown, ThumbsUp, Undo2} from 'lucide-react';
 
 type Votes = {calls: number; rated: number; up: number; down: number; up_ratio: number | null};
-type Row = Votes & {name: string; model: string; effort: string};
+type Row = Votes & {name: string; connection: string; model: string; effort: string};
 type Module = Votes & {module: string; rows: Row[]};
 type App = Votes & {application: string; modules: Module[]};
-type Report = {hours: number; applications: App[]; feedback_path: string; module_header: string; telemetry: {state: string}};
+type Served = {connection: string; model: string};
+type Suggestion = {application: string; module: string; name: string; from: Served; up_ratio: number; rated: number; to: Served; basis: 'evidence' | 'escalation' | 'cheaper'; why: string};
+type ModuleRoute = {module: string; name: string; target: string; model: string};
+type Report = {hours: number; applications: App[]; suggestions: Suggestion[]; module_routes: Record<string, ModuleRoute[]>; feedback_path: string; module_header: string; telemetry: {state: string}};
 
 // Below this many ratings a share of up-votes says little: it is shown, muted.
 const FEW = 5;
@@ -35,7 +38,48 @@ function Counts({v}: {v: Votes}) {
   </span>;
 }
 
-function AppPanel({app}: {app: App}) {
+const BASIS: Record<Suggestion['basis'], [string, string]> = {
+  evidence: ['Better elsewhere', 'Another application or model does clearly better on a module of the same name.'],
+  escalation: ['One Level up', 'No better evidence yet: the next Level\'s model, untested for this module.'],
+  cheaper: ['Cheaper may do', 'Rated very highly: the Level below may do as well for less, untested for this module.'],
+};
+
+async function routeModule(app: string, module: string, name: string, body: object | null) {
+  const r = await fetch(`/api/v1/module-routes/${encodeURIComponent(app)}/${encodeURIComponent(module)}/${encodeURIComponent(name)}`, {
+    method: body ? 'PUT' : 'DELETE', headers: {'Content-Type': 'application/json', 'X-Aiport-CSRF': '1'}, body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => null))?.error?.message || 'HTTP ' + r.status);
+}
+
+function Suggestions({items, onDone}: {items: Suggestion[]; onDone: () => void}) {
+  const [busy, setBusy] = useState(''), [error, setError] = useState('');
+  if (!items.length) return null;
+  const apply = async (s: Suggestion) => {
+    const key = s.application + '/' + s.module + '/' + s.name;
+    setBusy(key); setError('');
+    try { await routeModule(s.application, s.module, s.name, {connection: s.to.connection, model: s.to.model, why: 'from Feedback: ' + s.why}); onDone(); }
+    catch (e) { setError(String((e as Error).message || e)); }
+    finally { setBusy(''); }
+  };
+  return <section className="panel" aria-labelledby="suggest-heading">
+    <div className="panel-heading"><h2 id="suggest-heading">Suggestions from the votes</h2><span>{items.length === 1 ? '1 suggestion' : items.length + ' suggestions'}</span></div>
+    <p className="muted feedback-intro">aiport never moves a module by itself. Apply routes only that module's calls for that name to the suggested model, as a Change you can revert on Changes; then watch the module's share of up-votes here.</p>
+    {error && <div className="notice error feedback-notice" role="alert">{error}</div>}
+    <ul className="suggestions">
+      {items.map(s => { const key = s.application + '/' + s.module + '/' + s.name; return <li key={key} className={'suggestion ' + s.basis}>
+        <div className="suggestion-main">
+          <div className="suggestion-title"><b>{s.application}</b> · <code>{s.module}</code> sending <code>{s.name}</code>
+            <span className={'badge ' + (s.basis === 'cheaper' ? 'good' : s.basis === 'evidence' ? 'info' : 'warn')} title={BASIS[s.basis][1]}>{BASIS[s.basis][0]}</span></div>
+          <div className="suggestion-move">{s.from.model} <small className="muted">on {s.from.connection}</small> <ArrowRight size={14} aria-hidden/> <b>{s.to.model}</b> <small className="muted">on {s.to.connection}</small></div>
+          <p className="muted-small">{s.why}.</p>
+        </div>
+        <button type="button" className="primary" disabled={busy === key} onClick={() => apply(s)}>{busy === key ? 'Applying…' : 'Apply'}</button>
+      </li>; })}
+    </ul>
+  </section>;
+}
+
+function AppPanel({app, routes, onChange}: {app: App; routes: ModuleRoute[]; onChange: () => void}) {
   const rated = app.modules.filter(s => s.module && s.rated >= FEW && s.up_ratio != null);
   const best = rated.length > 1 ? rated.reduce((a, b) => (b.up_ratio! > a.up_ratio! ? b : a)) : null;
   const worst = rated.length > 1 ? rated.reduce((a, b) => (b.up_ratio! < a.up_ratio! ? b : a)) : null;
@@ -62,20 +106,26 @@ function AppPanel({app}: {app: App}) {
         </React.Fragment>)}
       </tbody>
     </table>
+    {routes.length > 0 && <div className="module-routes">
+      <h3>Module routes</h3>
+      <ul>{routes.map(r => <li key={r.module + '/' + r.name}><code>{r.module}</code> sending <code>{r.name}</code> <ArrowRight size={13} aria-hidden/> <b>{r.model}</b> <small className="muted">on {r.target}</small>
+        <button type="button" className="text-button" onClick={() => routeModule(app.application, r.module, r.name, null).then(onChange, () => onChange())}><Undo2 size={13} aria-hidden/> Remove</button></li>)}</ul>
+    </div>}
     {app.modules.some(s => !s.module) && <p className="caption">Calls without a module did not send <code>X-Aiport-Module</code>. Guidance version 4 asks the application's coding agent to add it.</p>}
   </section>;
 }
 
-export default function Feedback({tick}: {tick: number}) {
+export default function Feedback({tick, onChange}: {tick: number; onChange?: () => void}) {
   const [hours, setHours] = useState(720);
   const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(''), [reload, setReload] = useState(0);
+  const changed = () => { setReload(x => x + 1); onChange?.(); };
   useEffect(() => {
     fetch('/api/v1/feedback?hours=' + hours, {headers: {'X-Aiport-CSRF': '1'}})
       .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => null))?.error?.message || 'HTTP ' + r.status); return r.json(); })
       .then((r: Report) => { setReport(r); setError(''); })
       .catch(e => setError(String(e.message || e)));
-  }, [hours, tick]);
+  }, [hours, tick, reload]);
   const apps = report?.applications || [];
   const anyVotes = apps.some(a => a.rated > 0);
   return <>
@@ -92,6 +142,7 @@ export default function Feedback({tick}: {tick: number}) {
       {report && !apps.length && <div className="quiet-empty feedback-empty">No model calls in this period.</div>}
       {report && apps.length > 0 && !anyVotes && <div className="quiet-empty feedback-empty">No votes yet.<br/><small>Applications start sending them once their coding agent follows guidance version 4 (Integrate → Guidance).</small></div>}
     </section>
-    {apps.map(a => <AppPanel key={a.application} app={a}/>)}
+    <Suggestions items={report?.suggestions || []} onDone={changed}/>
+    {apps.map(a => <AppPanel key={a.application} app={a} routes={report?.module_routes?.[a.application] || []} onChange={changed}/>)}
   </>;
 }

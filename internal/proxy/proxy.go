@@ -215,12 +215,13 @@ func (g *Gateway) Forward(w http.ResponseWriter, r *http.Request, origin string,
 	// The model and effort are known now: a Level or a client alias may
 	// pick another connection, and a per-effort model another model.
 	effort, source := effortOf(r.URL.Path, r.Header, meta)
+	module := ModuleOf(r.Header.Get(ModuleHeader))
 	if o := observation(r); o != nil {
 		o.Event.Effort, o.Event.EffortSource = effort, source
-		o.Event.Module = ModuleOf(r.Header.Get(ModuleHeader))
+		o.Event.Module = module
 	}
 	if model != "" {
-		route, ref = rt.resolveAt(origin, protocol, model, effort)
+		route, ref = rt.resolveFor(origin, protocol, model, effort, module)
 	}
 	if refuse(route, ref) {
 		return

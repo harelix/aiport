@@ -112,6 +112,20 @@ type Origin struct {
 	// as the Owner confirmed it; empty when there is none. Agent runs never
 	// work outside it.
 	Repository string `yaml:"repository,omitempty" json:"repository,omitempty"`
+	// ModuleRoutes send this Application's calls for one module (its
+	// X-Aiport-Module) and one name to another model: the most specific
+	// routing there is, set from what its users' votes show.
+	ModuleRoutes []ModuleRoute `yaml:"module_routes,omitempty" json:"module_routes,omitempty"`
+}
+
+// ModuleRoute is where an Application's calls for Module that send Name (a
+// Level or task name) go: Model on Connection Target, ahead of every other
+// route for that name.
+type ModuleRoute struct {
+	Module string `yaml:"module" json:"module"`
+	Name   string `yaml:"name" json:"name"`
+	Target string `yaml:"target" json:"target"`
+	Model  string `yaml:"model" json:"model"`
 }
 
 type OriginAlias struct {
@@ -412,6 +426,22 @@ func (c Config) Validate() error {
 				return fmt.Errorf("origin %q has a duplicate alias %q", o.ID, a.Alias)
 			}
 			seen[key] = true
+		}
+		routes := map[string]bool{}
+		for _, m := range o.ModuleRoutes {
+			if ModuleName(m.Module) != m.Module || m.Module == "" {
+				return fmt.Errorf("origin %q: module %q must be 1–64 of a–z, 0–9, '.', '_' or '-'", o.ID, m.Module)
+			}
+			if _, ok := targets[m.Target]; !ok {
+				return fmt.Errorf("origin %q: module route for %s references a missing target", o.ID, m.Module)
+			}
+			if !boundedModel(m.Name) || !boundedModel(m.Model) {
+				return errors.New("module route name and model must contain 1–256 non-control bytes")
+			}
+			if routes[m.Module+"\x00"+m.Name] {
+				return fmt.Errorf("origin %q routes module %s for %s twice", o.ID, m.Module, m.Name)
+			}
+			routes[m.Module+"\x00"+m.Name] = true
 		}
 	}
 	aliases := map[string]bool{}

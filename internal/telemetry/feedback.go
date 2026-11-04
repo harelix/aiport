@@ -32,9 +32,10 @@ func (v *Votes) add(e Event) {
 // sent (a Level, task name or model id), the model that served it and the
 // effort it was asked at.
 type FeedbackRow struct {
-	Name   string `json:"name"`
-	Model  string `json:"model"`
-	Effort string `json:"effort"`
+	Name       string `json:"name"`
+	Connection string `json:"connection"`
+	Model      string `json:"model"`
+	Effort     string `json:"effort"`
 	Votes
 }
 
@@ -57,7 +58,7 @@ type FeedbackApp struct {
 // then module, then name, model and effort, with their votes. Modules and
 // rows with the most ratings come first.
 func FeedbackReport(rows []Event) []FeedbackApp {
-	type rowKey struct{ name, model, effort string }
+	type rowKey struct{ name, connection, model, effort string }
 	apps := map[string]*FeedbackApp{}
 	modules := map[string]map[string]*FeedbackModule{}
 	cells := map[string]map[string]map[rowKey]*FeedbackRow{}
@@ -82,10 +83,10 @@ func FeedbackReport(rows []Event) []FeedbackApp {
 		if e.RequestedModel != nil && *e.RequestedModel != "" {
 			name = *e.RequestedModel
 		}
-		k := rowKey{name, e.ResolvedModel, e.Effort}
+		k := rowKey{name, e.Target, e.ResolvedModel, e.Effort}
 		c := cells[e.Origin][e.Module][k]
 		if c == nil {
-			c = &FeedbackRow{Name: k.name, Model: k.model, Effort: k.effort}
+			c = &FeedbackRow{Name: k.name, Connection: k.connection, Model: k.model, Effort: k.effort}
 			cells[e.Origin][e.Module][k] = c
 		}
 		a.add(e)

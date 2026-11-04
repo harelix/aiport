@@ -866,7 +866,30 @@ of up-votes as a bar (green from 75%, amber from 50%, red below). A module with
 fewer than 5 votes is marked "few votes": too few to judge. With two or more
 judged modules the page names the best and the weakest; change the weakest
 module's Level, task name or effort under Routing and watch its share. The
-same report is `GET /api/v1/feedback?hours=N`. Votes need request history
+same report is `GET /api/v1/feedback?hours=N`.
+
+**Suggestions from the votes.** Once a module's calls for one name have at
+least 10 votes, aiport reads them against your Levels, and lists what it finds
+under **Suggestions from the votes**:
+
+- **Better elsewhere**: the module is below 60% up, and a module of the same
+  name (in another application, or on another model) gets at least 20 points
+  more on the same protocol. aiport suggests that model.
+- **One Level up**: below 60% up with no such evidence; aiport suggests the
+  next Level's model (`fast` to `balanced`, `balanced` to `best`), untested for
+  this module.
+- **Cheaper may do**: 90% up or more over at least 20 votes on `best` or
+  `balanced`; aiport suggests the Level below, untested for this module.
+
+aiport never moves a module by itself. **Apply** adds a **module route**: that
+application's calls for that module that send that name go to the suggested
+model, ahead of every other route, while its other modules keep theirs. It is
+one Change (reason included) that you can revert on Changes, and each
+application's panel lists its module routes with **Remove**. Then watch the
+module's share of up-votes: the new model shows as its own row. Module routes
+are `origins[].module_routes` in `aiport.yaml`, and `PUT`/`DELETE
+/api/v1/module-routes/{application}/{module}/{name}` (`{connection, model,
+why?}`). Votes need request history
 (`telemetry.enabled`) and count only calls still retained.
 
 ## Activity and history

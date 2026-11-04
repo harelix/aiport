@@ -20,6 +20,7 @@ type routes struct {
 	aliases       map[string]map[string]map[string]string
 	originAliases map[string]map[string]named // origin → alias → where it goes
 	everywhere    map[string]named            // shared task names every Application can send
+	modules       map[string]map[string]named // origin → module+"\x00"+name → where it goes
 	// ownOn are the protocols each origin's own Aliases are served on.
 	ownOn map[string]map[string]bool
 	// levels are the Level mappings each Application gets (own, else
@@ -58,7 +59,7 @@ func (n named) at(effort string) map[string]string {
 }
 
 func buildRoutes(c config.Config) routes {
-	rt := routes{targets: map[string]config.Target{}, origins: map[string]string{}, aliases: map[string]map[string]map[string]string{}, originAliases: map[string]map[string]named{}, ownOn: map[string]map[string]bool{}, everywhere: map[string]named{}, levels: map[string]map[levelKey]named{}, defaults: c.Defaults}
+	rt := routes{targets: map[string]config.Target{}, origins: map[string]string{}, aliases: map[string]map[string]map[string]string{}, originAliases: map[string]map[string]named{}, ownOn: map[string]map[string]bool{}, everywhere: map[string]named{}, modules: map[string]map[string]named{}, levels: map[string]map[levelKey]named{}, defaults: c.Defaults}
 	for _, t := range c.Targets {
 		rt.targets[t.ID] = t
 	}
@@ -76,6 +77,12 @@ func buildRoutes(c config.Config) routes {
 	}
 	for _, o := range c.Origins {
 		rt.origins[o.ID] = o.Target
+		for _, m := range o.ModuleRoutes {
+			if rt.modules[o.ID] == nil {
+				rt.modules[o.ID] = map[string]named{}
+			}
+			rt.modules[o.ID][m.Module+"\x00"+m.Name] = named{target: m.Target, rewrite: rewrites(m.Name, m.Model, config.EffortModels{})}
+		}
 		for _, a := range o.Aliases {
 			if config.IsLevel(a.Alias) {
 				continue // a Level mapping: see levels
@@ -141,7 +148,7 @@ func (rt routes) levelsOf(origin string) map[levelKey]named {
 // nothing could route it: it is refused before a slot is taken or its
 // body read.
 func (rt routes) readFirst(origin, protocol string, ref *refusal.Refusal) bool {
-	return rt.ownOn[origin][protocol] || len(rt.levelsOf(origin)) > 0 || len(rt.everywhere) > 0 || ref.Code == refusal.TargetDisabled.Code
+	return rt.ownOn[origin][protocol] || len(rt.levelsOf(origin)) > 0 || len(rt.everywhere) > 0 || len(rt.modules[origin]) > 0 || ref.Code == refusal.TargetDisabled.Code
 }
 
 // Route is where one request goes.
@@ -154,6 +161,8 @@ type Route struct {
 	// Reasoning is the reasoning effort sent to the provider on every call
 	// whose body sets none ("" leaves it to the client's X-Aiport-Effort).
 	Reasoning string
+	// Module is true when an Application's module route chose it.
+	Module bool
 }
 
 // resolve decides where a request from origin, on protocol ("openai" or
@@ -173,7 +182,29 @@ func (rt routes) resolve(origin, protocol, model string) (Route, *refusal.Refusa
 // resolveAt is resolve at effort (one of config.Efforts): a Level or Alias
 // with a per-effort model for it goes to that model, on its own Connection.
 func (rt routes) resolveAt(origin, protocol, model, effort string) (Route, *refusal.Refusal) {
+	return rt.resolveFor(origin, protocol, model, effort, "")
+}
+
+// resolveFor is resolveAt for a call made for module (X-Aiport-Module, ""
+// for none): the Application's module route for that module and name comes
+// before everything else.
+func (rt routes) resolveFor(origin, protocol, model, effort, module string) (Route, *refusal.Refusal) {
 	var route Route
+	if n, ok := rt.modules[origin][module+"\x00"+model]; ok && module != "" && model != "" {
+		t, ok := rt.targets[n.target]
+		if !ok {
+			return Route{}, &refusal.TargetUnconfigured
+		}
+		// A task name's fixed reasoning effort still applies.
+		route = Route{Target: t, Rewrite: n.at(effort), Module: true, Reasoning: rt.everywhere[model].reasoning}
+		if route.Target.Disabled {
+			return route, &refusal.TargetDisabled
+		}
+		if route.Target.Protocol != protocol {
+			return route, &refusal.IncompatibleProtocol
+		}
+		return route, nil
+	}
 	if config.IsLevel(model) {
 		n, ok := rt.levelsOf(origin)[levelKey{protocol, model}]
 		if !ok {

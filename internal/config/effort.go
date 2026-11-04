@@ -148,3 +148,20 @@ func EffortEdit(application, alias, connection string, effort EffortModels) Edit
 		return errors.New("alias not found in configuration")
 	}
 }
+
+// ModuleName is v as an Application module name (X-Aiport-Module): trimmed
+// and lowercased, 1–64 of a–z, 0–9, '.', '_' or '-', starting with a letter
+// or digit; "" when it is none.
+func ModuleName(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" || len(v) > 64 {
+		return ""
+	}
+	for i, r := range v {
+		ok := r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || i > 0 && (r == '.' || r == '_' || r == '-')
+		if !ok {
+			return ""
+		}
+	}
+	return v
+}
