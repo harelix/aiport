@@ -125,7 +125,7 @@ func applicationBrief(d Document, root string) Integration {
 			"**Model names: a Level or a task name, never a provider's model id.** Every aiport shares three Levels, `fast`, `balanced` and `best`: send one as the model to say how capable the model must be, and the Owner decides which Connection and model serve it on each protocol (and may give this Application its own mapping). A task name (`review-code`, `summarize`) is a name the Owner set up for one kind of work. Either way the Owner can change what serves it without a code change; a provider's model id in the code ties the Application to one provider. `GET " + root + "/v1/models` with the Application's token (see the `models` snippet) lists the names this Application can use on that protocol, in the shape its SDK expects (OpenAI list; Anthropic list when the request carries `anthropic-version`): first the mapped Levels and its task names (marked `owned_by: \"aiport\"`, or \"(aiport Level)\" and \"(aiport task name)\"), then the models of the Connections it reaches. Replace `MODEL` in the snippets with one of these names (`GET " + root + "/v1/aiport/capabilities` also lists its aliases, binding and reachable protocols). A Level the Owner has not mapped on the protocol is refused with `400 level_unmapped` naming the Level and protocol (aiport never picks another model): use a name `/v1/models` lists, or ask the Owner to map it. Other names are forwarded unchanged; the provider decides.",
 			"**Say how hard a call is.** Send `X-Aiport-Effort: low`, `medium` or `high` (see the `level` snippet) where calls differ in difficulty: the Owner may map a Level or task name to a different model per effort, so an easy call can go to a cheaper model. Without the header aiport reads the provider's own effort field if the code already sets one (`reasoning_effort` on Chat Completions, `reasoning.effort` on Responses, `output_config.effort` on Messages), and otherwise uses `medium`. aiport uses effort only to pick the model: the header is never forwarded, and the body, its effort field included, reaches the provider unchanged apart from the model name.",
 			"**Watch `X-Aiport-Catalog`.** Every answer aiport gives this Application, forwarded calls and errors included, carries `X-Aiport-Catalog: <version>`, the version of its Catalog. It changes only when the Owner changes what the Application can use (a Level mapping or task name removed, added or moved, its per-effort models, its binding or a protocol default). When it differs from the last one seen, read `/v1/models` again; `GET " + root + "/v1/aiport/catalog` says what changed and when. The provider's answer is otherwise unchanged.",
-			"**Errors and retries.** A body of `{\"error\":{\"code\":...}}` with a code listed at `" + root + Path + "?format=markdown` came from aiport; anything else is the provider's own error, passed through. Retry only `429 concurrency_limit`, `502` and `504`, with backoff. On `401` the token is missing or no longer valid: pair again, do not retry.",
+			"**Errors and retries.** A body of `{\"error\":{\"code\":...}}` with a code listed at `" + root + Path + "?format=markdown` came from aiport; anything else is the provider's own error, passed through. Retry only `429 concurrency_limit`, `502` and `504`, with backoff. On `401` or `403 application_token_required` the token is missing or no longer valid: follow the error's `fix` (the token goes in `.aiport`; a lost one is replaced with **New token**), do not pair again, and retry only once `.aiport` has the new token.",
 			"**Log `X-Aiport-Request-Id`** from responses next to your own request logs (the snippets read it); the Owner finds the call in aiport's Activity page with it.",
 			"**Optional:** send `X-Aiport-Compress` to shrink large prompts, and `POST /v1/aiport/feedback` with the request id and a 0–1 score so the Owner can see whether compression hurts answers. Do not rely on features marked `planned`.",
 			issuesStep(d, root),
@@ -318,4 +318,40 @@ func render(w func(string, ...any), in Integration, h string) {
 		}
 	}
 	w("\n%s\n", in.Note)
+}
+
+// TokenFixAnchor is the section of /_connect?format=markdown that TokenFix
+// links to.
+const TokenFixAnchor = "if-aiport-refuses-the-token"
+
+// TokenFix is the fix block aiport adds to every refusal of an Application's
+// token (401 unauthorized, 403 application_token_required): what the
+// Application's coding agent does, and when to retry. root is the gateway's
+// address as Applications are given it.
+func TokenFix(root string) map[string]any {
+	return map[string]any{
+		"for":   "the application's coding agent",
+		"steps": tokenFixSteps,
+		"retry": tokenFixRetry,
+		"docs":  root + Path + "?format=markdown#" + TokenFixAnchor,
+	}
+}
+
+var tokenFixSteps = []string{
+	"Check that .aiport exists at the repository root with a line AIPORT_APP_TOKEN=... : the application and the aiport MCP entry read the token from there. An AIPORT_APP_TOKEN set in the environment wins over the file, so unset a stale one.",
+	"If .aiport is missing or the token was lost or revoked, ask the Owner to open the Integrate page of the aiport dashboard, click New token (Issue token when there is none) on this Application's row and paste the copied lines into .aiport. The old token stops working at once. Do not pair again unless the Owner asks, and never look for a token anywhere else.",
+}
+
+const tokenFixRetry = "Once .aiport has the token, retry the same call; nothing else needs to change. Restart the application if it reads .aiport only at startup. Claude Code reads the MCP token when it connects: run /mcp and reconnect aiport, or start a new session."
+
+// tokenFixMarkdown is the /_connect section TokenFix links to.
+func tokenFixMarkdown() string {
+	var b strings.Builder
+	b.WriteString("## If aiport refuses the token\n\n")
+	b.WriteString("A `401 unauthorized` or `403 application_token_required` means aiport did not recognize this Application's token. The error carries a `fix` object (`for`, `steps`, `retry`, `docs`) and an `X-Aiport-Hint` header pointing here.\n\n")
+	for i, s := range tokenFixSteps {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, s)
+	}
+	fmt.Fprintf(&b, "%d. **Retry.** %s\n\n", len(tokenFixSteps)+1, tokenFixRetry)
+	return b.String()
 }

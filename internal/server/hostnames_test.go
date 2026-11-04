@@ -164,3 +164,42 @@ func hostBody(h *Handler, path string) string {
 	h.ServeHTTP(w, r)
 	return w.Body.String()
 }
+
+// A refused Application token carries a fix for the coding agent: the steps,
+// when to retry and a link to the section of /_connect that explains it.
+func TestATokenRefusalSaysWhatTheCodingAgentDoes(t *testing.T) {
+	h := effortServer(t).h
+	for _, c := range []struct{ method, path, token string }{
+		{"GET", "/v1/models", "not-a-real-token"}, // 401 unauthorized
+		{"POST", "/mcp", "not-a-real-token"},      // 401 unauthorized
+		{"GET", "/v1/models", lvlManagement},      // 403 application_token_required
+	} {
+		path := c.path
+		r := httptest.NewRequest(c.method, "http://127.0.0.1:8787"+path, strings.NewReader(`{}`))
+		r.Header.Set("Authorization", "Bearer "+c.token)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 401 && w.Code != 403 {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body)
+		}
+		var out struct {
+			Error struct {
+				Fix struct {
+					Steps []string `json:"steps"`
+					Retry string   `json:"retry"`
+					Docs  string   `json:"docs"`
+				} `json:"fix"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		fix := out.Error.Fix
+		if len(fix.Steps) != 2 || !strings.Contains(fix.Steps[1], "New token") || !strings.Contains(fix.Retry, "/mcp") || !strings.HasSuffix(fix.Docs, "/_connect?format=markdown#if-aiport-refuses-the-token") {
+			t.Fatalf("%s: fix %+v", path, fix)
+		}
+		if hint := w.Header().Get("X-Aiport-Hint"); !strings.Contains(hint, ".aiport") || !strings.Contains(hint, fix.Docs) {
+			t.Fatalf("%s: hint %q", path, hint)
+		}
+	}
+}

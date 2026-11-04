@@ -134,9 +134,9 @@ func Describe(c config.Config) Document {
 			{"X-Aiport-Hint", "one line of text", "On a failing call that is one of an open Issue's failures (a provider 404 for the Issue's model, or a 5xx, timeout or connection error from the Issue's failing Connection) or that sent a task name a Catalog change removed, sent to any Application: the Issue and where to read it. Otherwise, on a provider 404 for the requested model, sent only to Applications allowed to request changes: which change request (kind and endpoint) could fix it. The provider's body is passed through unchanged.", "available"},
 			{"X-Aiport-Source", "gateway or upstream", "Whether an error came from aiport or the provider.", "planned"},
 		},
-		ErrorFormat: `Gateway errors: {"error":{"code":"...","message":"...","request_id":"...","hint":"..."}}. hint is optional: applications allowed to request changes get one on refusals a change could fix (target_unconfigured, target_disabled), naming the change request kind and endpoint. Status and code never depend on it. Provider errors pass through unchanged (status, body, headers).`,
+		ErrorFormat: `Gateway errors: {"error":{"code":"...","message":"...","request_id":"...","hint":"...","fix":{...}}}. fix is on every refusal of an Application's token (what the coding agent does, when to retry, and a docs link). hint is optional: applications allowed to request changes get one on refusals a change could fix (target_unconfigured, target_disabled), naming the change request kind and endpoint. Status and code never depend on it. Provider errors pass through unchanged (status, body, headers).`,
 		Errors: []ErrorCode{
-			{401, "unauthorized", "Missing or invalid application token."},
+			{401, "unauthorized", "Missing or invalid application token. The error's fix object says what the coding agent does and when to retry; see If aiport refuses the token."},
 			{403, "invalid_host", "Host header is not the listen address or a configured hostname on the listen port."},
 			{403, "invalid_origin", "Browser cross-origin requests are refused."},
 			{404, "unsupported_path", "Path is not part of this protocol."},
@@ -148,7 +148,7 @@ func Describe(c config.Config) Document {
 			{404, "pairing_not_found", "The pairing request expired, was collected or never existed; pair again."},
 			{429, "pairing_busy", "Too many pairing requests are waiting; retry after a minute."},
 			{400, "invalid_feedback", "Feedback needs request_id and a score between 0 and 1."},
-			{403, "application_token_required", "This endpoint describes one Application: send that Application's own token, not the Owner's."},
+			{403, "application_token_required", "This endpoint serves one Application and no Application token was recognized (the Owner's token is not one). The error's fix object says what to do; see If aiport refuses the token."},
 			{404, "request_not_found", "No retained request with this id for this application."},
 			{403, "change_requests_not_allowed", "The Owner has not allowed this Application to request changes; the Owner can allow it on the Integrate page of the aiport dashboard."},
 			{400, "invalid_change_request", "The change request is incomplete or too large; error.problems lists every problem as {field, problem}."},
@@ -257,7 +257,8 @@ func Markdown(d Document) string {
 	for _, e := range d.Errors {
 		w("| %d | `%s` | %s |\n", e.Status, e.Code, e.Meaning)
 	}
-	w("\n## Integration briefs\n\nSelf-contained instructions generated from this gateway, to paste to a coding agent:\n\n")
+	w("\n%s", tokenFixMarkdown())
+	w("## Integration briefs\n\nSelf-contained instructions generated from this gateway, to paste to a coding agent:\n\n")
 	for _, br := range d.Briefs {
 		w("- **%s** (`%s`): %s\n", br.Title, br.URL, br.Audience)
 	}

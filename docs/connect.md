@@ -49,7 +49,15 @@ credential file as `AIPORT_APP_<ID>_TOKEN`; the application keeps it as
 `AIPORT_APP_TOKEN=...` in a gitignored `.aiport` file at its repository root,
 which both the application and its coding agent read. On Integrate the Owner
 can also add an Application with a token directly, issue a **New token** (the
-old one stops working) and remove an Application (a revertable Change). The source of truth is
+old one stops working) and remove an Application (a revertable Change).
+
+Every refusal of an Application's token (`401 unauthorized`,
+`403 application_token_required`) carries `error.fix`: `for`, `steps` (check
+`.aiport`, else ask the Owner for **New token**), `retry` (retry the same call
+once `.aiport` has the token; in Claude Code reconnect the MCP server with
+`/mcp`) and `docs`, a link to the "If aiport refuses the token" section of
+`/_connect?format=markdown`. The `X-Aiport-Hint` header says the same in one
+line. The source of truth is
 `internal/connect/connect.go`; bump `Version` on incompatible changes.
 
 ## The Catalog

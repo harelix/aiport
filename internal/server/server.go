@@ -106,6 +106,14 @@ func (h *Handler) clock() time.Time {
 // snapshot returns a copy of the live configuration safe to read without locks.
 func (h *Handler) snapshot() config.Config { return h.live.Config() }
 
+// appRoot is the gateway's address as Applications and agents are given it.
+func (h *Handler) appRoot() string {
+	if h.live == nil {
+		return "http://127.0.0.1:8787"
+	}
+	return "http://" + h.snapshot().AppAddress()
+}
+
 // mayRequestChanges reports whether this Application may request changes
 // now: the Owner allows it and adapting is on. It is cheap enough for the
 // forwarding path.
@@ -212,7 +220,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	fail := func(status int, code, message string) { writeError(w, status, code, message, nil) }
+	fail := func(status int, code, message string) {
+		var extra map[string]any
+		// A refused Application token says what its coding agent does next.
+		if code == "application_token_required" || code == "unauthorized" && !strings.HasPrefix(r.URL.Path, "/api/") {
+			fix := connect.TokenFix(h.appRoot())
+			extra = map[string]any{"fix": fix}
+			w.Header().Set("X-Aiport-Hint", "aiport did not recognize this Application's token: put it in .aiport (New token on the Integrate page), then retry; see "+fix["docs"].(string))
+		}
+		writeError(w, status, code, message, extra)
+	}
 	if !h.acceptsHost(r.Host) {
 		fail(403, "invalid_host", "Host is not the listen address or a configured hostname")
 		return
