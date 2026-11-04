@@ -77,7 +77,7 @@ function draw(c: HTMLCanvasElement, m: Meter) {
 }
 
 export default function LiveGauge({apps, listen}: {apps: App[]; listen?: string}) {
-  const [ok, setOk] = useState<boolean | null>(null);
+  const [ok, setOk] = useState<boolean | null>(null), [signedOut, setSignedOut] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [now, setNow] = useState(Date.now());
   const canvas = useRef<HTMLCanvasElement | null>(null);
@@ -102,8 +102,10 @@ export default function LiveGauge({apps, listen}: {apps: App[]; listen?: string}
       if (stop) return;
       if (!document.hidden) {
         try {
-          const res = await fetch('/api/v1/requests?hours=1&limit=200', {credentials: 'same-origin'});
+          const res = await fetch('/api/v1/requests?hours=1&limit=100', {credentials: 'same-origin'});
+          if (res.status === 401) { setSignedOut(true); setOk(true); timer = window.setTimeout(poll, POLL_MS); return; }
           if (!res.ok) throw new Error(String(res.status));
+          setSignedOut(false);
           const body = await res.json();
           const list: Row[] = body.requests || [];
           setOk(true); setRows(list); setNow(Date.now());
@@ -148,7 +150,7 @@ export default function LiveGauge({apps, listen}: {apps: App[]; listen?: string}
 
   return <div className="live-gauge" role="group" aria-label="Gateway listener, connected applications and live traffic">
     <span className={'gauge-pill' + (ok ? ' on' : ok === false ? ' bad' : '')} role="status" title={ok === false ? 'The dashboard got no answer from the gateway.' : 'aiport is listening' + (listen ? ' on ' + listen : '')}>
-      <span className="led" aria-hidden/>{ok === false ? 'No reply' : ok ? 'Listening' : 'Connecting…'}
+      <span className="led" aria-hidden/>{ok === false ? 'No reply' : signedOut ? 'Signed out' : ok ? 'Listening' : 'Connecting…'}
     </span>
     <span className="gauge-apps" title={states.length ? states.map(s => s.name + ': ' + (s.last ? (s.state === 'failing' ? 'last call failed, ' : '') + ago(s.last.started_at_ms) : 'no call in the last hour')).join('\n') : 'No Applications configured yet'} aria-label={live + ' of ' + states.length + ' applications called in the last two minutes'}>
       {states.slice(0, 8).map(s => <span key={s.id} className={'app-led ' + s.state} aria-hidden/>)}

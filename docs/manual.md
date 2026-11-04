@@ -1797,7 +1797,7 @@ what the Application asked for (name, module, effort), what served it
 user's vote) and its id and time.
 
 **Hand a failure to the Application's coding agent.** Under a failed request
-from an Application, **Report to <Application>'s coding agent** opens an Issue of cause
+from an Application, **Report to the Application's coding agent** opens an Issue of cause
 `reported_request` for that Application, with the request's metadata, aiport's
 explanation and your note. Request history keeps no provider messages, so
 paste the error the application showed into the note. The coding agent reads
