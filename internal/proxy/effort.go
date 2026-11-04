@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/harelix/aiport/internal/config"
 )
@@ -11,6 +12,27 @@ import (
 // EffortHeader is how a client states the effort of one call (low, medium
 // or high). Like every X-Aiport-* header it never reaches the provider.
 const EffortHeader = "X-Aiport-Effort"
+
+// TaskHeader names the section of the calling application a call is made
+// for (tldr, classify, insights...), so the Owner can read its votes per
+// section. Recorded, never forwarded.
+const TaskHeader = "X-Aiport-Task"
+
+// TaskOf is v as a section name: trimmed and lowercased, 1–64 of a–z, 0–9,
+// '.', '_' or '-', starting with a letter or digit; "" otherwise.
+func TaskOf(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" || len(v) > 64 {
+		return ""
+	}
+	for i, r := range v {
+		ok := r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || i > 0 && (r == '.' || r == '_' || r == '-')
+		if !ok {
+			return ""
+		}
+	}
+	return v
+}
 
 // Where an effort came from.
 const (

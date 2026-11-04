@@ -68,7 +68,7 @@ func TestFeedbackBeforeAndAfterFlush(t *testing.T) {
 	for len(c.Find(Query{Origin: ""})) == 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if !c.SetFeedback(event(1, 0).ID, "codex", 0.75) || c.SetFeedback(event(1, 0).ID, "someone-else", 0.1) {
+	if !c.SetFeedback(event(1, 0).ID, "codex", 0.75, "") || c.SetFeedback(event(1, 0).ID, "someone-else", 0.1, "") {
 		t.Fatal("feedback ownership on pending row")
 	}
 	c.Close(time.Second)
@@ -79,7 +79,7 @@ func TestFeedbackBeforeAndAfterFlush(t *testing.T) {
 	if !ok || e.Feedback == nil || *e.Feedback != 0.75 {
 		t.Fatal("feedback on an unflushed row was lost")
 	}
-	if !again.SetFeedback(e.ID, "codex", 0.25) {
+	if !again.SetFeedback(e.ID, "codex", 0.25, "tldr") {
 		t.Fatal("feedback on a persisted-only row not found")
 	}
 	if e, _ = again.Get(e.ID); *e.Feedback != 0.25 {

@@ -30,15 +30,20 @@ type Event struct {
 	Effort        string `json:"effort,omitempty"`
 	EffortSource  string `json:"effort_source,omitempty"`
 	ResolvedModel string `json:"resolved_model,omitempty"`
-	UsageStatus   string `json:"usage_status"`
-	CostStatus    string `json:"cost_status"`
+	// Task is the section of the calling application the call was made for
+	// (X-Aiport-Task, or the task sent with its feedback): a short
+	// identifier such as tldr or insights, "" when it named none.
+	Task        string `json:"task,omitempty"`
+	UsageStatus string `json:"usage_status"`
+	CostStatus  string `json:"cost_status"`
 	// Opt-in request compression (empty when not requested). Sizes are
 	// request-body bytes; token savings are estimated from them.
 	Compression       string `json:"compression,omitempty"`
 	CompressionStatus string `json:"compression_status,omitempty"` // applied, no_gain, failed
 	BytesBefore       int    `json:"request_bytes_before,omitempty"`
 	BytesAfter        int    `json:"request_bytes_after,omitempty"`
-	// Feedback is the application's quality score for the response, 0–1.
+	// Feedback is the application's quality score for the response, 0–1
+	// (a thumbs up is 1, a thumbs down 0).
 	Feedback *float64 `json:"feedback,omitempty"`
 	// Why a request failed, as fixed identifiers only (never message text,
 	// prompts, headers or keys): the code aiport answered with itself (from
@@ -262,8 +267,9 @@ func Summary(rows []Event) map[string]any {
 }
 
 // SetFeedback records an application's 0–1 quality score for one of its own
-// requests. It reports whether the request was found.
-func (c *Collector) SetFeedback(id, origin string, score float64) bool {
+// requests, and task as the section it was made for when the call named
+// none. It reports whether the request was found.
+func (c *Collector) SetFeedback(id, origin string, score float64, task string) bool {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	found := false
@@ -273,13 +279,16 @@ func (c *Collector) SetFeedback(id, origin string, score float64) bool {
 			if rows[i].ID == id && rows[i].Origin == origin {
 				s := score
 				rows[i].Feedback = &s
+				if rows[i].Task == "" {
+					rows[i].Task = task
+				}
 				found = true
 			}
 		}
 	}
 	c.mu.Unlock()
 	if c.persisting() {
-		res, err := c.store.DB.Exec(`UPDATE requests SET feedback = ? WHERE id = ? AND origin_id = ?`, score, id, origin)
+		res, err := c.store.DB.Exec(`UPDATE requests SET feedback = ?, task = CASE WHEN task = '' THEN ? ELSE task END WHERE id = ? AND origin_id = ?`, score, task, id, origin)
 		if err == nil {
 			if n, _ := res.RowsAffected(); n > 0 {
 				found = true

@@ -51,6 +51,10 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, fail func(int, str
 		h.serveRoutingMap(w, r, fail)
 		return true
 	}
+	if r.URL.Path == FeedbackReportPath {
+		h.feedbackReport(w, r, fail)
+		return true
+	}
 	if r.URL.Path == "/api/v1/compression" {
 		h.compressionReport(w, r, fail)
 		return true

@@ -120,7 +120,7 @@ func Describe(c config.Config) Document {
 		},
 		Request: []Header{
 			{"X-Aiport-Effort", "low, medium, high", "How hard this call is; picks the per-effort model of the Level or task name sent, if the Owner set one. Wins over the provider's own effort field (reasoning_effort, reasoning.effort, output_config.effort), which aiport also reads but never changes; neither means medium. Never forwarded.", "available"},
-			{"X-Aiport-Task", "label, up to 64 chars [A-Za-z0-9._-]", "Task kind for activity grouping and routing rules.", "planned"},
+			{"X-Aiport-Task", "section name, up to 64 chars [a-z0-9._-]", "The part of the application the call serves (tldr, classify, insights...). Recorded with the call so votes sent to /v1/aiport/feedback are read per section on the Owner's Feedback page; never forwarded. Required on every model call.", "available"},
 			{"X-Aiport-Session", "opaque id, up to 64 chars", "Groups related calls from one session.", "planned"},
 			{"X-Aiport-Compress", "whitespace, json, dedupe or all (comma-separated); off", "Opt-in request compression of message text. Unknown methods return 400 unknown_compression.", "available"},
 			{"X-Aiport-Version", Version, "aiport Connect version the client expects.", "planned"},
@@ -147,7 +147,7 @@ func Describe(c config.Config) Document {
 			{400, "invalid_pairing", "Pairing needs the application's name (1–128 characters); description at most 500, repository one line of at most 4096."},
 			{404, "pairing_not_found", "The pairing request expired, was collected or never existed; pair again."},
 			{429, "pairing_busy", "Too many pairing requests are waiting; retry after a minute."},
-			{400, "invalid_feedback", "Feedback needs request_id and a score between 0 and 1."},
+			{400, "invalid_feedback", "Feedback needs request_id and vote (up or down) or a score between 0 and 1; task, if sent, is a section name."},
 			{403, "application_token_required", "This endpoint serves one Application and no Application token was recognized (the Owner's token is not one). The error's fix object says what to do; see If aiport refuses the token."},
 			{404, "request_not_found", "No retained request with this id for this application."},
 			{403, "change_requests_not_allowed", "The Owner has not allowed this Application to request changes; the Owner can allow it on the Integrate page of the aiport dashboard."},
@@ -167,7 +167,7 @@ func Describe(c config.Config) Document {
 		Features: []Feature{
 			{"native_forwarding", "available", "Requests and streams are forwarded byte-for-byte to the selected provider, unless the application asks for compression."},
 			{"compression", "available", "X-Aiport-Compress shrinks message text (tools and schemas untouched). Sizes and outcomes are recorded per request to compare against uncompressed traffic."},
-			{"feedback", "available", "POST /v1/aiport/feedback {\"request_id\":\"<X-Aiport-Request-Id>\",\"score\":0..1} scores a response, so the owner can see whether compression hurts quality."},
+			{"feedback", "available", "POST /v1/aiport/feedback {\"request_id\":\"<X-Aiport-Request-Id>\",\"vote\":\"up\"|\"down\"} (or \"score\":0..1, optional \"task\") records a person's rating of an answer, so the Owner sees per section, model and effort whether they suit the work. Required: every LLM answer shown to a person gets a thumbs up and down."},
 			{"model_aliases", "available", "Owner-defined alias -> model, per connection or per application (only the model field is rewritten; an application's own alias may select another connection)."},
 			{"catalog", "available", "An Application's Catalog is what it can use through aiport: its task names (its own Aliases, then the shared ones of the Connections it reaches) and the models those Connections list, with a version. GET /v1/models with the Application's own token (the Owner's token gets 403 application_token_required) lists the names usable on that protocol (OpenAI list shape; Anthropic shape when the request carries anthropic-version): task names first (owned_by \"aiport\", or \"(aiport task name)\" in display_name), then the Connections' models; a Connection whose model list cannot be read adds nothing. Every answer to the Application carries X-Aiport-Catalog: <version>. GET /v1/aiport/catalog (MCP tool aiport_catalog) returns {catalog, changes}: the Catalog (task_names with connection and model, binding or defaults, connections, models, version) and its recent Catalog changes, newest first, each with change_id, at_ms, revert_of (set when it was a revert), before and after (versions), removed, added, moved, routing, connections_removed and connections_added. An Application sees only its own Catalog; never keys, URLs, prompts or tokens. Works with adapting off too."},
 			{"model_allowlist", "planned", "Owner restricts which models an application may request (403 model_not_allowed)."},
@@ -281,7 +281,7 @@ func Markdown(d Document) string {
 // everything the agent needs for both parts.
 func AgentPrompt(docs string) string {
 	return "Read " + docs + " and follow it to connect this application to the aiport gateway on this machine. " +
-		"Do both parts in order: first the section \"Integrate this application with aiport\" (pair the application for its own token, save it in .aiport at the repository root with .aiport added to .gitignore, make the application read .aiport at startup, point its OpenAI or Anthropic SDK at aiport, remove provider keys, make one test call), " +
+		"Do both parts in order: first the section \"Integrate this application with aiport\" (pair the application for its own token, save it in .aiport at the repository root with .aiport added to .gitignore, make the application read .aiport at startup, point its OpenAI or Anthropic SDK at aiport, remove provider keys, send X-Aiport-Task naming the app section on every model call, give every LLM answer shown to a person a thumbs up and down sent to aiport's feedback endpoint, make one test call), " +
 		"then the section \"Ask aiport for changes from this repository\" (add the aiport MCP entry, which reads the token from .aiport, and the AGENTS.md line so later sessions can ask aiport for changes). " +
 		"When pairing shows a code, tell me the code and wait while I approve it in the aiport dashboard. Never commit .aiport or write the token into any committed file. If the token is ever lost or refused (401), ask me for a New token from the Integrate page into .aiport instead of pairing again."
 }

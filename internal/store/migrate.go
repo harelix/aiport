@@ -255,6 +255,12 @@ var migrations = []string{
 		secret_hashes   TEXT NOT NULL,
 		done_at_ms      INTEGER NOT NULL DEFAULT 0
 	);`,
+	// 12: the section of the calling application a model call was made for
+	// (X-Aiport-Task, or the task sent with its feedback), so votes can be
+	// read per section. A short identifier only. Additive: older rows read
+	// as empty.
+	`ALTER TABLE requests ADD COLUMN task TEXT NOT NULL DEFAULT '';
+	CREATE INDEX requests_task ON requests(origin_id, task, started_at_ms);`,
 }
 
 // preRelease maps the schema version of a database written by a pre-release

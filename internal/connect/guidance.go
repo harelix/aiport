@@ -10,7 +10,7 @@ import "fmt"
 // confirmed an older version learns exactly what to do.
 
 // GuidanceVersion is the version of the guidance this build of aiport gives.
-const GuidanceVersion = 3
+const GuidanceVersion = 4
 
 // GuidanceChange is what one guidance version changed: a one-line summary
 // and what an agent in an Application's repository does about it.
@@ -42,6 +42,13 @@ var guidanceLog = []GuidanceChange{
 		"Replace the project MCP entry with the one in the coding-agent brief: it has a headersHelper that reads the token from AIPORT_APP_TOKEN or .aiport, so nothing needs exporting before the agent starts.",
 		"Replace the aiport line in AGENTS.md with agents_line from this answer (it now says where the token is and what to do on 401); keep one aiport line only.",
 		"If aiport answers 401 or the token is missing, ask the Owner for a New token on the Integrate page and paste the copied lines into .aiport; do not pair again unless the Owner asks.",
+		"Then call aiport_guidance_done.",
+	}},
+	{4, "Votes per section: every model call names the part of the application it serves (X-Aiport-Task), and every LLM answer shown to a person gets a thumbs up and down sent to aiport, so the Owner can see per section, model and effort what works.", []string{
+		"List the application's LLM features (for example tldr, classify, extract, analysis, insights) and give each one section name: lower case, a–z, 0–9, '.', '_' or '-', at most 64. Send it as the X-Aiport-Task header on every model call of that feature, through the SDK's extra headers.",
+		"Keep the X-Aiport-Request-Id response header with each answer the application shows.",
+		"Add a thumbs up and a thumbs down to every place the application shows an LLM answer to a person. On a vote, POST /v1/aiport/feedback with the Application's token and {\"request_id\":\"<id>\",\"vote\":\"up\"} or \"down\" (the feedback snippet in the application brief); a changed vote is sent again. Never send the prompt or the answer.",
+		"Replace the aiport line in AGENTS.md with agents_line from this answer (it now names X-Aiport-Task and the votes); keep one aiport line only.",
 		"Then call aiport_guidance_done.",
 	}},
 }

@@ -54,7 +54,10 @@ func TestGuidanceVersion3TeachesTheTokenFile(t *testing.T) {
 	h, _ := requestsServer(t)
 	_, out := call(h, "GET", GuidancePath, "", reqHelper, false)
 	changes, _ := out["changes"].([]any)
-	v3 := changes[len(changes)-1].(map[string]any)
+	v3 := changes[2].(map[string]any)
+	if v3["version"] != float64(3) {
+		t.Fatalf("changes[2] is version %v", v3["version"])
+	}
 	actions := ""
 	for _, a := range v3["actions"].([]any) {
 		actions += a.(string) + "\n"
@@ -92,4 +95,25 @@ func TestTheCodingAgentBriefTeachesLevelsEffortAndGuidance(t *testing.T) {
 	mustContain(t, "coding-agent brief", brief, sessionStartTools...)
 	mustContain(t, "coding-agent brief", brief, "**Check the Catalog, Issues and guidance at the start of a session.**", "**Name the need, not the provider.**")
 	mustNotContain(t, "coding-agent brief", brief, "draft-fast", "anthropic-top", "claude-sonnet")
+}
+
+// Version 4 and the briefs make votes per section part of every integration:
+// X-Aiport-Task on every model call, and a thumbs up and down sent to
+// /v1/aiport/feedback for every answer shown to a person.
+func TestGuidanceVersion4TeachesVotesPerSection(t *testing.T) {
+	h, _ := requestsServer(t)
+	_, out := call(h, "GET", GuidancePath, "", reqHelper, false)
+	changes, _ := out["changes"].([]any)
+	v4 := changes[len(changes)-1].(map[string]any)
+	actions := ""
+	for _, a := range v4["actions"].([]any) {
+		actions += a.(string) + "\n"
+	}
+	if v4["version"] != float64(4) {
+		t.Fatalf("newest change is version %v", v4["version"])
+	}
+	mustContain(t, "version 4 actions", actions, "X-Aiport-Task", "thumbs up", "/v1/aiport/feedback", "X-Aiport-Request-Id", "agents_line", "aiport_guidance_done")
+	mustContain(t, "AGENTS.md line", connect.AgentsLine, "X-Aiport-Task", "thumbs up", "/v1/aiport/feedback")
+	mustContain(t, "application brief", getBrief(t, briefServer(t, ""), "?format=handover&for=application"), "X-Aiport-Task", "thumbs up", `"vote"`, "Feedback page")
+	mustContain(t, "agent prompt", connect.AgentPrompt("http://127.0.0.1:8787/_connect?format=markdown"), "X-Aiport-Task", "thumbs up")
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/harelix/aiport/internal/compress"
 	"github.com/harelix/aiport/internal/config"
 	"github.com/harelix/aiport/internal/evaluate"
+	"github.com/harelix/aiport/internal/proxy"
 	"github.com/harelix/aiport/internal/telemetry"
 )
 
@@ -28,12 +29,29 @@ func (h *Handler) serveFeedback(w http.ResponseWriter, r *http.Request, originID
 	var in struct {
 		RequestID string   `json:"request_id"`
 		Score     *float64 `json:"score"`
+		Vote      string   `json:"vote"`
+		Task      string   `json:"task"`
 	}
-	if decodeJSON(w, r, &in) != nil || in.RequestID == "" || len(in.RequestID) > 64 || in.Score == nil || *in.Score < 0 || *in.Score > 1 {
-		fail(400, "invalid_feedback", "Send request_id (from the X-Aiport-Request-Id response header) and score between 0 and 1")
+	if decodeJSON(w, r, &in) != nil {
+		in.RequestID = ""
+	}
+	switch in.Vote {
+	case "up":
+		one := 1.0
+		in.Score = &one
+	case "down":
+		zero := 0.0
+		in.Score = &zero
+	case "":
+	default:
+		in.Score = nil
+	}
+	task := proxy.TaskOf(in.Task)
+	if in.RequestID == "" || len(in.RequestID) > 64 || in.Score == nil || *in.Score < 0 || *in.Score > 1 || in.Task != "" && task == "" {
+		fail(400, "invalid_feedback", "Send request_id (from the X-Aiport-Request-Id response header) and vote (up or down) or score between 0 and 1; task, if sent, is the section's name (a–z, 0–9, . _ -, at most 64)")
 		return
 	}
-	if h.collector == nil || !h.collector.SetFeedback(in.RequestID, originID, *in.Score) {
+	if h.collector == nil || !h.collector.SetFeedback(in.RequestID, originID, *in.Score, task) {
 		fail(404, "request_not_found", "No recorded request with this id for this application (telemetry may be off, or the request is no longer retained)")
 		return
 	}
@@ -146,4 +164,31 @@ func (h *Handler) testEvaluator(w http.ResponseWriter, r *http.Request, fail fun
 		results = append(results, map[string]any{"case": c.name, "expected": c.want, "got": got})
 	}
 	writeJSON(w, 200, map[string]any{"ok": passed == len(evaluatorChecks), "passed": passed, "total": len(evaluatorChecks), "results": results, "latency_ms": time.Since(started).Milliseconds()})
+}
+
+// FeedbackReportPath is the Owner's view of the votes Applications send.
+const FeedbackReportPath = "/api/v1/feedback"
+
+// feedbackReport handles GET /api/v1/feedback?hours=N (default 30 days):
+// each Application's votes per section, name, model and effort.
+func (h *Handler) feedbackReport(w http.ResponseWriter, r *http.Request, fail func(int, string, string)) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		fail(405, "method_not_allowed", "Use GET")
+		return
+	}
+	hours := 720
+	if v := r.URL.Query().Get("hours"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 24*90 {
+			fail(400, "invalid_hours", "hours must be 1–2160")
+			return
+		}
+		hours = n
+	}
+	var rows []telemetry.Event
+	if h.collector != nil {
+		rows = h.collector.Find(telemetry.Query{From: h.clock().Add(-time.Duration(hours) * time.Hour).UnixMilli(), InferenceOnly: true})
+	}
+	writeJSON(w, 200, map[string]any{"hours": hours, "applications": telemetry.FeedbackReport(rows), "feedback_path": FeedbackPath, "task_header": proxy.TaskHeader, "telemetry": h.telemetryHealth()})
 }
