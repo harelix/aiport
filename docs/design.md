@@ -111,14 +111,14 @@ its effect on responses is evaluated and shown as trends.
 - Model-based pruning (LLMLingua-style) and shadow A/B comparison are not built;
   shadow testing doubles provider cost and would need explicit owner opt-in.
 
-## User scope revision — 2026-11-01
+## Provider scope revision — 2026-11-01
 
 The maintainer requested the following changes after M0. These requirements
 supersede the earlier Bedrock deferral and expand the original onboarding scope.
 They are requested capabilities, not shipped support.
 
-- Initial provider set: OpenAI (interpretation of “openapi”), Anthropic, AWS
-  Bedrock, Meta Model API, Ollama, and llama.cpp (interpretation of “llamacapp”).
+- Initial provider set: OpenAI, Anthropic, AWS Bedrock, Meta Model API, Ollama
+  and llama.cpp.
   Do not add other providers in this scope.
 - Guided first-run onboarding must configure provider connections and credential
   references, generate separate local credentials for selected coding agents,
