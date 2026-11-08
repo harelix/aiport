@@ -5,7 +5,7 @@
 <h1>aiport</h1>
 
 <p><strong>One gateway for all your coding agents and models, local and cloud.</strong><br>
-The right model for each task, smaller prompts with quality checked, every call on record, and failures sent back to the agent that can fix them.</p>
+One client instead of setup code for every provider, the right model for each task, smaller prompts with quality checked, every call on record, and failures sent back to the agent that can fix them.</p>
 
 <p>
   <a href="https://github.com/harelix/aiport/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/harelix/aiport/actions/workflows/ci.yml/badge.svg"></a>
