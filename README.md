@@ -30,13 +30,13 @@ The right model for each task, smaller prompts with quality checked, every call 
 
 You write software with coding agents, perhaps Claude Code in one repository and Codex in another. You run models locally on Ollama or llama.cpp, and you have credits with Bedrock, Anthropic, OpenAI or Meta. The applications you build call those models too.
 
-That usually means provider keys copied into every project, no clear view of which application called which model, prompts that keep growing, and failures you hear about only when something breaks. aiport puts all of it behind one gateway on your machine, where you choose the models and approve the changes.
+That usually means every project wires up the same providers again, with their keys, endpoints and model names. Then you can't easily see which application called which model, prompts keep growing, and you hear about failures only when something breaks. aiport puts all of it behind one gateway on your machine, where you choose the models and approve the changes.
 
 It is not a team or server gateway: there are no multiple users, budgets or translation between provider APIs. If you need those, a shared gateway such as LiteLLM, Portkey or Bifrost is the better fit.
 
 ## Why aiport
 
-- **Every model behind one address.** Ollama, llama.cpp, Bedrock, Anthropic, OpenAI and Meta. Your keys stay in aiport, and each app and agent gets its own token.
+- **Every model behind one address.** Ollama, llama.cpp, Bedrock, Anthropic, OpenAI and Meta. Each app needs one OpenAI-style or Anthropic-style client pointed at aiport, not setup code for every provider. Your keys stay in aiport, and each app and agent gets its own token.
 - **The right model for each task.** Apps ask for fast, balanced or best, or name a task and an effort. You choose which model answers, and thumbs up or down from your users turn into routing suggestions.
 - **Smaller prompts, quality checked.** Apps can ask aiport to compress a request, and aiport measures whether the answers get worse.
 - **Every call on record.** See which app called which model, at what effort, how long it took and why it failed. Prompts and responses are never stored.
