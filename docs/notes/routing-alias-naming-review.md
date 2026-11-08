@@ -1,6 +1,9 @@
-# aiport — Routing Alias Naming Review
+# Routing alias naming review
 
-Nov 4, 2026 · @Harel Gal
+> Design note, 4 November 2026. A review of a proposal for routing aliases,
+> written while Levels and task names were being designed. The names aiport
+> uses today (`fast`, `balanced`, `best`, task names, `X-Aiport-Effort`) are
+> in the [manual](../manual.md); where this note differs, the manual wins.
 
 ## Verdict
 

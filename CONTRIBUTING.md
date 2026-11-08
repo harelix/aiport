@@ -4,7 +4,8 @@ Thanks for helping. aiport is a small, local, single-binary AI gateway; please r
 [the design](docs/design.md) before proposing larger changes, and open an issue first for
 anything that changes the product scope. Everyone taking part follows the
 [code of conduct](CODE_OF_CONDUCT.md); report security problems as
-[SECURITY.md](SECURITY.md) says, never in a public issue.
+[SECURITY.md](SECURITY.md) says, never in a public issue. aiport is maintained by one
+person in their spare time, so replies to issues and pull requests are best effort.
 
 ## Setup
 

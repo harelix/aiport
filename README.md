@@ -97,7 +97,7 @@ aiport is experimental. No provider and coding-agent combination has passed the 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md). CI runs on every push; locally, run `make test`, `make check` and `make check-offline`, and sign off every commit (DCO). Larger changes start from [the design](docs/design.md); the vocabulary is in the [glossary](GLOSSARY.md), and dependency licenses are in [THIRD_PARTY.md](THIRD_PARTY.md).
+aiport is maintained by one person in their spare time: issues and pull requests are read, but replies are best effort and may take a while. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md). CI runs on every push; locally, run `make test`, `make check` and `make check-offline`, and sign off every commit (DCO). Larger changes start from [the design](docs/design.md); the vocabulary is in the [glossary](GLOSSARY.md), and dependency licenses are in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## License
 

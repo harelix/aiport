@@ -8,7 +8,7 @@ Positioning: **The lightweight, open-source AI gateway.** Naming does not establ
 
 ## Authentication and theme revision — 2026-11-01
 
-The user requested these changes after the dashboard preview. They supersede the
+These changes followed the dashboard preview. They supersede the
 original bearer-only browser login and the original unconditional local-auth rule:
 
 - First-run dashboard access verifies the startup management token, then lets the
@@ -152,11 +152,9 @@ and client compatibility during implementation before advertising support.
 
 Build a lightweight, open-source, local LLM gateway: connect existing API clients and coding agents, forward their calls faithfully, and show useful request metadata in a local dashboard.
 
-This document consolidates the “LLM Gateway Comparison” discussion, including its inline build draft and subsequent OSS naming requirements. The earlier conversation contained an inline draft, **not an actual saved `.md` file**. This file is the concrete handoff artifact.
+This specification was written before the implementation and is kept as the design record; the revision log above records the decisions taken since.
 
-Source discussion: `chatgpt-conversation://6ae7264f-dfcc-83eb-9b38-abd6bfa604cf`.
-
-**Nothing in this specification establishes shipped support.** No aiport repository, implementation, release, or live integration was inspected for this handoff. All requirements below are planned unless a future compatibility matrix links them to passing tests and a released version. Configuration syntax, defaults, API paths, and schema below are proposed implementation contracts, not existing commands or guarantees.
+**Nothing in this specification establishes shipped support.** Requirements below are planned unless [the compatibility matrix](compatibility.md) links them to passing tests and a released version. Configuration syntax, defaults, API paths, and schema below are proposed implementation contracts, not existing commands or guarantees.
 
 Use MUST for release requirements, SHOULD for preferred implementation choices, and MAY for explicitly optional work. Complete one milestone before expanding scope.
 

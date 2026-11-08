@@ -1,6 +1,6 @@
 # Token compression methods
 
-> Background survey. What aiport implements is in [compression.md](compression.md):
+> Background survey. What aiport implements is in [compression.md](../compression.md):
 > opt-in format methods (whitespace, JSON minify, dedupe) with per-request
 > measurement and application feedback.
 
