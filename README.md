@@ -26,6 +26,14 @@ The right model for each task, smaller prompts with quality checked, every call 
 
 </div>
 
+## Who it is for
+
+You write software with coding agents, perhaps Claude Code in one repository and Codex in another. You run models locally on Ollama or llama.cpp, and you have credits with Bedrock, Anthropic, OpenAI or Meta. The applications you build call those models too.
+
+That usually means provider keys copied into every project, no clear view of which application called which model, prompts that keep growing, and failures you hear about only when something breaks. aiport puts all of it behind one gateway on your machine, where you choose the models and approve the changes.
+
+It is not a team or server gateway: there are no multiple users, budgets or translation between provider APIs. If you need those, a shared gateway such as LiteLLM, Portkey or Bifrost is the better fit.
+
 ## Why aiport
 
 - **Every model behind one address.** Ollama, llama.cpp, Bedrock, Anthropic, OpenAI and Meta. Your keys stay in aiport, and each app and agent gets its own token.
@@ -34,12 +42,6 @@ The right model for each task, smaller prompts with quality checked, every call 
 - **Every call on record.** See which app called which model, at what effort, how long it took and why it failed. Prompts and responses are never stored.
 - **Failures reach the agent that can fix them.** When an app keeps failing, aiport proposes a fix for you to approve and sends instructions to the app's coding agent.
 - **Nothing lost in translation.** Requests pass through in each provider's own format, and aiport listens only on your machine.
-
-## Who it is for
-
-aiport fits one developer who mixes local models on Ollama or llama.cpp with paid credits on Bedrock, Anthropic, OpenAI or Meta, and builds LLM-backed applications with coding agents such as Claude Code or Codex. It is for you if you are tired of copying provider keys into every project's `.env`, want to change which model serves an application without touching its code, and want your coding agents to reach models only through a gate you control.
-
-It is not a team or server gateway. There are no multiple users, budgets, billing enforcement, translation between provider APIs or cluster deployment; if you need those, a shared gateway such as LiteLLM, Portkey or Bifrost is the better fit.
 
 ## How it works
 
