@@ -4,8 +4,8 @@
 
 <h1>aiport</h1>
 
-<p><strong>A local AI gateway for the applications and coding agents on your machine.</strong><br>
-One place for provider keys, routing and request history, that notices when an application keeps failing and offers to fix it.</p>
+<p><strong>One gateway to every model you use, local and cloud.</strong><br>
+aiport picks the model by task and effort, compresses context and measures what that costs in quality, records every call, and tells your coding agents what to fix, with you approving each change.</p>
 
 <p>
   <a href="https://github.com/harelix/aiport/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/harelix/aiport/actions/workflows/ci.yml/badge.svg"></a>
@@ -35,11 +35,12 @@ One place for provider keys, routing and request history, that notices when an a
 | **Adapts, with your approval** | When an application keeps failing, aiport opens an Issue with the evidence and a fix on each side: a Change you approve in one click, and instructions for the application's coding agent. |
 | **Applications know what they can use** | `GET /v1/models` lists each application's Levels, task names and models (its Catalog), and an `X-Aiport-Catalog` header tells it when you change them. Remove any Connection: aiport re-points what used it as one revertable Change and tells every application it affects. |
 | **Name the need, not the provider** | Applications send a Level (`fast`, `balanced`, `best`) or a task name, and say how hard a call is with `X-Aiport-Effort`; you map each to a Connection and model in the dashboard, and the Routing map shows where every name goes. |
+| **Smaller context, measured** | Applications can ask aiport to compress a request. aiport measures whether the answers get worse, so you keep the savings only where quality holds. |
 | **Local and private** | Loopback only, cross-site requests refused, and only request metadata is kept: never prompts or responses. |
 
 ## Who it is for
 
-aiport fits one developer on one machine who runs several LLM-backed projects and coding agents, such as Claude Code or Codex, across two or more providers, local ones included. It is for you if you are tired of copying provider keys into every project's `.env`, want to change which model serves an application without touching its code, and want your coding agents to reach models only through a gate you control.
+aiport fits one developer who mixes local models on Ollama or llama.cpp with paid credits on Bedrock, Anthropic, OpenAI or Meta, and builds LLM-backed applications with coding agents such as Claude Code or Codex. It is for you if you are tired of copying provider keys into every project's `.env`, want to change which model serves an application without touching its code, and want your coding agents to reach models only through a gate you control.
 
 It is not a team or server gateway. There are no multiple users, budgets, billing enforcement, translation between provider APIs or cluster deployment; if you need those, a shared gateway such as LiteLLM, Portkey or Bifrost is the better fit.
 
