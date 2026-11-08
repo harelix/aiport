@@ -4,8 +4,7 @@
 
 <h1>aiport</h1>
 
-<p><strong>One gateway for all your coding agents and models, local and cloud.</strong><br>
-One client instead of setup code for every provider, the right model for each task, smaller prompts with quality checked, every call on record, and failures sent back to the agent that can fix them.</p>
+<p><strong>A self-improving local LLM gateway for the erratic vibe coder.</strong></p>
 
 <p>
   <a href="https://github.com/harelix/aiport/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/harelix/aiport/actions/workflows/ci.yml/badge.svg"></a>
@@ -28,20 +27,30 @@ One client instead of setup code for every provider, the right model for each ta
 
 ## Who it is for
 
-You write software with coding agents, perhaps Claude Code in one repository and Codex in another. You run models locally on Ollama or llama.cpp, and you have credits with Bedrock, Anthropic, OpenAI or Meta. The applications you build call those models too.
+If you're an erratic vibe coder, you know the day: Claude Code in one repo, Codex in another, a model on Ollama or llama.cpp, and credits on Bedrock, Anthropic, OpenAI and Meta. You switch models by task, sometimes mid-task, and jump between projects several times an hour. The apps you build call those models too, so each one ends up re-wiring the same providers. You can't see which app called what, and you find out about failures when something breaks.
 
-That usually means every project wires up the same providers again, with their keys, endpoints and model names. Then you can't easily see which application called which model, prompts keep growing, and you hear about failures only when something breaks. aiport puts all of it behind one gateway on your machine, where you choose the models and approve the changes.
+aiport is a Go program that runs on your machine (loopback only) and sits between your apps, your coding agents and the providers.
 
-It is not a team or server gateway: there are no multiple users, budgets or translation between provider APIs. If you need those, a shared gateway such as LiteLLM, Portkey or Bifrost is the better fit.
+## The basics
 
-## Why aiport
+- **One client per app.** One OpenAI-style or Anthropic-style client, pointed at aiport, instead of setup code per provider.
+- **Keys stay in aiport.** Provider keys live in a private env file (mode 0600, plain text, never in the YAML config). Each app and agent gets its own revocable token. An app's coding agent connects it, and you approve a short pairing code.
+- **Agents without your keys.** `aiport agent claude` or `aiport agent codex` launches an agent with its own token, so it never sees your provider keys.
+- **Name the need.** Apps name a model, ask for `fast`, `balanced` or `best`, or name a task and an effort.
 
-- **Every model behind one address.** Ollama, llama.cpp, Bedrock, Anthropic, OpenAI and Meta. Each app needs one OpenAI-style or Anthropic-style client pointed at aiport, not setup code for every provider. Your keys stay in aiport, and each app and agent gets its own token.
-- **The right model for each task.** Apps ask for fast, balanced or best, or name a task and an effort. You choose which model answers, and thumbs up or down from your users turn into routing suggestions.
-- **Smaller prompts, quality checked.** Apps can ask aiport to compress a request, and aiport measures whether the answers get worse.
-- **Every call on record.** See which app called which model, at what effort, how long it took and why it failed. Prompts and responses are never stored.
-- **Failures reach the agent that can fix them.** When an app keeps failing, aiport proposes a fix for you to approve and sends instructions to the app's coding agent.
-- **Nothing lost in translation.** Requests pass through in each provider's own format, and aiport listens only on your machine.
+## The part that improves over time
+
+aiport watches how your apps use models and proposes changes. Nothing is applied without your approval unless you turn that on, and every change can be reverted.
+
+- **Compression with a quality check.** Apps can opt in to smaller prompts. aiport tracks answer quality per compression method and shows a verdict for each: no harm seen, possible harm, or not enough data.
+- **Routing from human feedback.** Thumbs up and down from your app's users become suggestions for which model should handle which requests.
+- **Self-healing apps.** Repeated failures are grouped into Issues, each with a fix on both sides: a change to aiport for you to approve, and instructions for the app's coding agent. **Fix it** can also run a coding agent in a separate git worktree. You review the diff, and if you keep it, aiport commits it on a new branch. aiport never commits to your branch, merges or pushes.
+- **Minimal observability, on purpose.** Every call is logged as metadata only: app, model, effort, latency, status and failure reason. Prompts and responses are never stored. That's enough to drive the loop above without keeping your data.
+
+## Design choices and limits
+
+- **Native formats.** Requests pass through in each provider's native format with no translation, to avoid lossy conversion of tool calls and streaming. The trade-off is that a client only reaches providers that speak its protocol.
+- **Single user by design.** No teams or budgets. LiteLLM, Portkey or Bifrost fit those needs better.
 
 ## How it works
 
