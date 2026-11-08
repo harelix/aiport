@@ -37,6 +37,12 @@ One place for provider keys, routing and request history, that notices when an a
 | **Name the need, not the provider** | Applications send a Level (`fast`, `balanced`, `best`) or a task name, and say how hard a call is with `X-Aiport-Effort`; you map each to a Connection and model in the dashboard, and the Routing map shows where every name goes. |
 | **Local and private** | Loopback only, cross-site requests refused, and only request metadata is kept: never prompts or responses. |
 
+## Who it is for
+
+aiport fits one developer on one machine who runs several LLM-backed projects and coding agents, such as Claude Code or Codex, across two or more providers, local ones included. It is for you if you are tired of copying provider keys into every project's `.env`, want to change which model serves an application without touching its code, and want your coding agents to reach models only through a gate you control.
+
+It is not a team or server gateway. There are no multiple users, budgets, billing enforcement, translation between provider APIs or cluster deployment; if you need those, a shared gateway such as LiteLLM, Portkey or Bifrost is the better fit.
+
 ## How it works
 
 ```mermaid
