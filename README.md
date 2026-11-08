@@ -4,8 +4,8 @@
 
 <h1>aiport</h1>
 
-<p><strong>One gateway to every model you use, local and cloud.</strong><br>
-aiport picks the model by task and effort, compresses context and measures what that costs in quality, records every call, and tells your coding agents what to fix, with you approving each change.</p>
+<p><strong>One gateway for all your coding agents and models, local and cloud.</strong><br>
+The right model for each task, smaller prompts with quality checked, every call on record, and failures sent back to the agent that can fix them.</p>
 
 <p>
   <a href="https://github.com/harelix/aiport/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/harelix/aiport/actions/workflows/ci.yml/badge.svg"></a>
@@ -28,15 +28,12 @@ aiport picks the model by task and effort, compresses context and measures what 
 
 ## Why aiport
 
-| | |
-|---|---|
-| **Keys stay in aiport** | Each application pairs for its own local token, approved by you. aiport adds the real provider key on the way out. |
-| **Native forwarding** | Chat Completions, Responses and Messages pass through byte for byte, in the provider's own format. Nothing is translated, so nothing is lost. |
-| **Adapts, with your approval** | When an application keeps failing, aiport opens an Issue with the evidence and a fix on each side: a Change you approve in one click, and instructions for the application's coding agent. |
-| **Applications know what they can use** | `GET /v1/models` lists each application's Levels, task names and models (its Catalog), and an `X-Aiport-Catalog` header tells it when you change them. Remove any Connection: aiport re-points what used it as one revertable Change and tells every application it affects. |
-| **Name the need, not the provider** | Applications send a Level (`fast`, `balanced`, `best`) or a task name, and say how hard a call is with `X-Aiport-Effort`; you map each to a Connection and model in the dashboard, and the Routing map shows where every name goes. |
-| **Smaller context, measured** | Applications can ask aiport to compress a request. aiport measures whether the answers get worse, so you keep the savings only where quality holds. |
-| **Local and private** | Loopback only, cross-site requests refused, and only request metadata is kept: never prompts or responses. |
+- **Every model behind one address.** Ollama, llama.cpp, Bedrock, Anthropic, OpenAI and Meta. Your keys stay in aiport, and each app and agent gets its own token.
+- **The right model for each task.** Apps ask for fast, balanced or best, or name a task and an effort. You choose which model answers, and thumbs up or down from your users turn into routing suggestions.
+- **Smaller prompts, quality checked.** Apps can ask aiport to compress a request, and aiport measures whether the answers get worse.
+- **Every call on record.** See which app called which model, at what effort, how long it took and why it failed. Prompts and responses are never stored.
+- **Failures reach the agent that can fix them.** When an app keeps failing, aiport proposes a fix for you to approve and sends instructions to the app's coding agent.
+- **Nothing lost in translation.** Requests pass through in each provider's own format, and aiport listens only on your machine.
 
 ## Who it is for
 
