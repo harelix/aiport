@@ -79,8 +79,9 @@ into its card, then click **Check connection**. The check makes one free `GET
 /models` call and generates nothing. Start a local provider (Ollama,
 llama.cpp) yourself; it needs no key.
 
-**Step 6: Map a Level.** On **Routing**, in the **Levels** panel, click the
-pencil for `fast` on the OpenAI protocol and choose a Connection and a model.
+**Step 6: Map a Level.** On **Routing**, in the **Levels** panel, click
+**Map** (or **Edit**, if `init` mapped it) for `fast` on the OpenAI protocol
+and choose a Connection and a model.
 
 **Step 7: Get an Application token.** On **Integrate**, click **Add with a
 token**, name it `quickstart` and copy the two `.aiport` lines it shows. Save
@@ -231,8 +232,9 @@ The standard has seven parts, each required:
    `GET /v1/models` lists the names.
 4. **Headers.** `X-Aiport-Module` on every model call (required),
    `X-Aiport-Effort` where calls differ in difficulty. Keep
-   `X-Aiport-Request-Id` with every answer, and read `/v1/models` again when
-   `X-Aiport-Catalog` changes.
+   `X-Aiport-Request-Id` with every answer (with `X-Aiport-Model` and
+   `X-Aiport-Route`, which name the model that answered and how it was
+   chosen), and read `/v1/models` again when `X-Aiport-Catalog` changes.
 5. **Rating.** A thumbs up and a thumbs down next to every LLM answer the
    application shows a person, built into its own UI by the coding agent, sent
    to `POST /v1/aiport/feedback`.
@@ -495,8 +497,9 @@ You see each Application's state in the **Guidance** column on Integrate, and
 current version. An Application that never confirmed any version counts as not
 confirmed; the line tells the two apart ("behind": confirmed an older version;
 "never confirmed": none yet), as do `behind` and `never_confirmed` in `GET
-/api/v1/guidance`. **Copy refresh instruction** in the Guidance column copies
-one paragraph to paste to a coding agent that is behind.
+/api/v1/guidance`. In the Guidance column, an Application that is behind shows
+**Behind v… → v…** (or **Unknown** when it never confirmed) and a copy button
+that copies one paragraph to paste to its coding agent.
 
 ### Levels
 
@@ -567,15 +570,16 @@ neither flag and no input, no Level is mapped and `init` says so.
 You edit Levels in the dashboard without touching the file. Every save is one
 Change: revert it in Changes to get the previous mapping back.
 
-- **Routing → Levels** shows each Level on each protocol. The pencil (or
-  **Map**) opens its mapping: a Connection of that protocol, a model (chosen
+- **Routing → Levels** shows each Level on each protocol. **Edit** (or
+  **Map**, when the Level is not mapped) opens its mapping: a Connection of that protocol, a model (chosen
   from the models the Connection lists), and optional per-effort models.
   **Clear** removes the shared mapping. A cell also says how many Applications
   have their own.
 - **Integrate → Applications → Levels** (the toggle under an Application's
   name, next to **Catalog**) shows the same grid for that Application: its own
-  mappings, marked **Own**, and the shared ones it falls back to. The pencil
-  gives it its own mapping; **Use the shared mapping** removes it again.
+  mappings, marked **Own**, and the shared ones it falls back to.
+  **Override** gives it its own mapping; **Use the shared mapping** removes it
+  again.
 
 The [Routing map](#the-routing-map) shows what each Level reaches for each
 Application, and Activity shows which name and effort each call asked for and
@@ -905,8 +909,8 @@ model shows as its own row.
 - In `aiport.yaml` module routes are `origins[].module_routes`, each `{module,
   name, target, model}`.
 - Over the API: `PUT /api/v1/module-routes/{application}/{module}/{name}` with
-  `{connection, model, why?}`, and `DELETE` on the same path. `why` (one line,
-  at most 300 characters) goes into the Change.
+  `{connection, model, why?}`, and `DELETE` on the same path. `why` goes into
+  the Change as one line, cut at 300 bytes.
 
 ### Issues
 
@@ -915,8 +919,8 @@ top of Changes with its evidence, what aiport found out and the ways to
 resolve it. There is one Issue per Application and cause: repeats update its
 counts and time window, never a second Issue.
 
-aiport opens four kinds of Issue by itself, each from its own threshold under
-`adapting:` in `aiport.yaml`, and you open the fifth from Activity:
+aiport opens four kinds of Issue by itself (the first three from thresholds
+under `adapting:` in `aiport.yaml`), and you open the fifth from Activity:
 
 | Cause | Opens when | Fix in aiport | Fix in the Application |
 | --- | --- | --- | --- |
@@ -1409,8 +1413,8 @@ agent_runs:
 ```
 
 For scripts: `POST /api/v1/issues/{id}/fix` starts it (`202` with the run;
-`409` with `fix_unavailable` and the hint, `fix_not_for_cause` for a failing
-Connection, `fix_waiting` while an earlier diff waits for you,
+`409` with `fix_unavailable` and the hint, `fix_not_for_cause` for any cause
+but an unknown model, `fix_waiting` while an earlier diff waits for you,
 `agent_run_running`, `issue_not_open` or `worktree_failed`). `GET
 /api/v1/issues/{id}/fix` gives `branch_fix` and the `diff`; `POST
 /api/v1/issues/{id}/fix/keep` and `…/fix/discard` keep or discard it. `GET
@@ -1624,7 +1628,7 @@ off unless the application asks for it, per request, with the
 
 | Method | What it does |
 | --- | --- |
-| `whitespace` | Removes trailing spaces, normalises line endings, collapses three or more blank lines to one; indentation is kept. |
+| `whitespace` | Removes trailing spaces, normalises line endings, collapses two or more blank lines in a row to one; indentation is kept. |
 | `json` | Rewrites text that is entirely JSON (typical tool results) compactly. |
 | `dedupe` | When a block of 1 KiB or more repeats, earlier copies become a short note; the latest copy stays. Lossy. |
 
@@ -1720,8 +1724,8 @@ hostnames: [aiport.localhost]
 ```
 
 The dashboard works at the name at once, and each page has its address there
-(`http://aiport.localhost:8787/integrate`). Names must be lowercase and end in
-`.localhost`. aiport still listens on `127.0.0.1` and still refuses every name
+(`http://aiport.localhost:8787/integrate`). Names must be lowercase, without a port, and
+be `localhost` or end in `.localhost`. aiport still listens on `127.0.0.1` and still refuses every name
 it was not given, with `403 invalid_host` or `invalid_origin`.
 
 Applications and coding agents are always given the numeric address
@@ -1811,9 +1815,10 @@ next call of that name and module succeeds; another failure of that kind
 reopens it.
 
 **The live gauge.** At the top of every page: **Listening** (green while the
-gateway answers the dashboard), one light per Application (green: called in
-the last two minutes; red: its last call failed; faint: called in the last
-hour) and a level meter that lights with each call as it passes, red at the
+gateway answers the dashboard; **No reply** when it does not, **Signed out**
+when your session has ended), one light per Application (green: called in
+the last two minutes; red: its call in the last two minutes failed; faint:
+called in the last hour) and a level meter that lights with each call as it passes, red at the
 top for a failure. It reads request metadata only.
 
 **Turning it on.** With `telemetry.enabled: true`, aiport records request
@@ -1875,7 +1880,8 @@ The page has these panels, top to bottom:
 - **Extensions**: the Extensions listed in `aiport.yaml`, with **Share
   upstream**. See [Add Extensions](#add-extensions).
 - **Applied changes**: every Change, newest first, with **Revert**, the
-  **Automatic fixes** switch and the sound. See [Applied changes and
+  automatic fixes switch (**Fix Issues automatically when the fix is clear**)
+  and the sound. See [Applied changes and
   Revert](#applied-changes-and-revert).
 
 The badge counts an Issue only while its fix waits for you, and also counts
@@ -1919,8 +1925,9 @@ are always at its top.
 - **Guidance** shows whether the Application's coding agent follows aiport's
   current guidance (see [Guidance versions](#guidance-versions)): **Up to
   date**, **Behind v1 → v4** (its confirmed and the current version), or
-  **Unknown** when it never confirmed one. While it is not up to date, **Copy
-  refresh instruction** copies one paragraph to paste to that coding agent.
+  **Unknown** when it never confirmed one. While it is not up to date, the
+  copy button next to it copies the refresh instruction, one paragraph to
+  paste to that coding agent.
   "Sends Levels" is only a hint that its code may already use Levels (its
   calls sent Levels in the last 6 hours); it never counts as confirming. Under
   it, the **Modules** and **Votes** chips say whether its calls in the last 7
@@ -2281,7 +2288,7 @@ Every command takes `--config PATH` (default `aiport.yaml`).
 | Command | What it does |
 | --- | --- |
 | `aiport init` | First run: choose providers, coding agents and Levels; writes `aiport.yaml` and `aiport.yaml.env` and never overwrites them. Flags: `--provider` (comma-separated: `openai`, `anthropic`, `bedrock`, `meta`, `ollama`, `llamacpp`), `--agent codex,claude` or `none`, `--listen HOST:PORT` (default `127.0.0.1:8787`), `--region`, `--base-url`, `--levels LEVEL=CONNECTION/MODEL,...` or `--no-levels`. |
-| `aiport check` | Validates the configuration, names Applications without a token, and prints one notice per Alias named like a Level. |
+| `aiport check` | Validates the configuration, names Connections without an API key and Applications without a token, and prints one notice per Alias named like a Level. |
 | `aiport serve` | Starts the gateway; prints the dashboard address and, in a terminal, the management token. |
 | `aiport auth token` | Prints the management token again. |
 | `aiport agent codex` or `aiport agent claude` | Launches that coding agent through aiport with its own token. Needs `--model MODEL`; `--dry-run` shows what would start; options after `--` go to the agent. |
@@ -2302,30 +2309,49 @@ token as `Authorization: Bearer <token>` (Anthropic SDKs may use `x-api-key`).
 | `GET /v1/models` | The Application's Catalog in the SDK's own list shape. |
 | `GET /_connect` | The protocol description as JSON; `?format=markdown` for the guide, `?format=standard` for the communication standard, `?format=handover&for=application` or `&for=agent` for a brief. No token needed. |
 | `POST /v1/aiport/pair` | Asks for pairing with `{name, description?, repository?}`; returns a `code` and a `poll` path. No token needed. |
+| `GET /v1/aiport/pair/{secret}` | The `poll` path: the pairing request's `status` (`pending`, `approved` with the `token` once, `rejected` or `expired`). No token needed. |
 | `GET /v1/aiport/capabilities` | What the Application can use and ask for right now. |
 | `GET /v1/aiport/catalog` | The Catalog and its recent changes. |
 | `POST /v1/aiport/feedback` | A vote on an answer: `{request_id, vote}` or `{request_id, score}`, optional `module`. |
 | `GET /v1/aiport/guidance`, `POST /v1/aiport/guidance/done` | The guidance changes since the confirmed version, and confirming the current one. |
 | `POST /v1/aiport/requests`, `GET /v1/aiport/requests` (or `/{id}`) | File a Change request, and read the answers. |
 | `GET /v1/aiport/issues` (or `/{id}`), `POST /v1/aiport/issues/{id}/fixed` | The Application's Issues, and saying one is fixed. |
-| `/mcp` | The MCP endpoint for the Application's coding agent (HTTP transport). |
+| `POST /mcp` | The MCP endpoint for the Application's coding agent (Streamable HTTP, JSON-RPC as `application/json`). |
 
 ### Owner API
 
 The dashboard uses the management API under `/api/v1/`, and scripts can too,
-with the management token as `Authorization: Bearer <token>`. Every request
-that changes something also sends `X-Aiport-CSRF: 1`. Application tokens never
-open these routes. Each edit below that changes the configuration is one
-revertable Change.
+with the management token as `Authorization: Bearer <token>` (the dashboard
+uses its sign-in session instead). Every request that changes something also
+sends `X-Aiport-CSRF: 1`, and so do the two that ask providers for their
+models (`.../models` and `/serving`). Application tokens never open these
+routes. Each edit below that changes the configuration is one revertable
+Change.
 
 | Endpoint | What it does |
 | --- | --- |
-| `POST /api/v1/origins` | Adds an Application with a token: `{name, target?}`. |
+| `GET /api/v1/auth/status` | Whether a password is set, authentication is on, and this browser is signed in. |
+| `POST /api/v1/auth/login`, `POST /api/v1/auth/logout` | Signs in with `{username, password}`, and signs out. |
+| `POST /api/v1/auth/recover` | Starts a session with the management token, for **Forgot username or password?**. |
+| `POST /api/v1/auth/settings` | Sets `{username, password, disabled}`. |
+| `GET /api/v1/health` | The gateway is up, and the state of request history. |
+| `GET /api/v1/config` | The configuration as the dashboard reads it, with which keys are set (never the keys). |
+| `GET /api/v1/requests` (or `/{id}`), `GET /api/v1/stats` | Request history, filtered by `hours` (1 to 168), `origin`, `target`, `provider`, `outcome`, `model`, `from_ms`/`to_ms`, `limit` (1 to 100) and `cursor`; one record; the summary Overview shows. |
+| `POST /api/v1/targets` | Adds a Connection: `{id, provider, ...}`. |
+| `PATCH /api/v1/targets/{id}`, `DELETE /api/v1/targets/{id}` | Edits a Connection's `region`, `endpoint` or `protocol`; removes one (with `{"plan": {...}}`, re-points what used it). |
+| `PUT /api/v1/targets/{id}/api-key`, `DELETE .../api-key` | Saves a provider key `{api_key}` to the private credential file, or removes it. |
+| `POST /api/v1/targets/{id}/check` | **Check connection**: one authenticated `GET /models` to the provider. |
+| `GET /api/v1/targets/{id}/models` | **Show models**: the model ids the Connection lists. |
+| `GET /api/v1/targets/{id}/dependents`, `POST .../dependents` | What uses a Connection, with the suggested replacements; `POST {plan}` previews a plan. |
+| `GET /api/v1/serving?protocol=P&model=M` | Which Connections of a protocol list a model (`&refresh=1` lists again). |
+| `PUT /api/v1/defaults` | Sets the protocol defaults: `{openai_target, anthropic_target}`. |
+| `GET /api/v1/pairings` | Pairing requests waiting; `?status=rejected` for remembered rejected ones. |
+| `POST /api/v1/pairings/{code}/approve`, `.../reject` | Approves (optionally `{id, target, may_request_changes, agent, repository, replace}`) or rejects a pairing request. |
+| `DELETE /api/v1/pairings/rejected/{id}` | **Forget** a rejected Application. |
+| `POST /api/v1/origins` | Adds an Application with a token: `{name, id?, target?, may_request_changes?, agent?, repository?}`. |
+| `PATCH /api/v1/origins/{id}` | Sets an Application's `may_request_changes`, `agent` or `repository`. |
 | `POST /api/v1/origins/{id}/token` | Issues a new token for an Application; the old one stops working. |
 | `DELETE /api/v1/origins/{id}` | Removes an Application. |
-| `GET /api/v1/pairings?status=rejected` | Remembered rejected pairing requests. |
-| `DELETE /api/v1/targets/{id}` | Removes a Connection; with `{"plan": {...}}`, re-points what used it. |
-| `GET /api/v1/targets/{id}/dependents` | What uses a Connection, with the suggested replacements. |
 | `GET /api/v1/routing` | The Routing map; `?application=<id>` for one Application, with its `changes`. |
 | `GET /api/v1/levels` | All Level mappings, shared and per Application, and the Connections. |
 | `PUT /api/v1/levels/{protocol}/{level}` | Maps a Level: `{application?, connection, model, effort?}`. |
@@ -2336,17 +2362,27 @@ revertable Change.
 | `PUT /api/v1/module-routes/{application}/{module}/{name}` | Sets a module route: `{connection, model, why?}`. |
 | `DELETE /api/v1/module-routes/{application}/{module}/{name}` | Removes a module route. |
 | `GET /api/v1/feedback?hours=N` | The votes report, Suggestions from the votes and module routes. |
+| `GET /api/v1/compression?hours=N` | The compression report (1 to 2160 hours, default 168). |
+| `PUT /api/v1/evaluation`, `POST /api/v1/evaluation/test` | Chooses the compression evaluator: `{connection, model}`; **Test evaluator**. |
 | `GET /api/v1/guidance` | Each Application's guidance state, with `behind` and `never_confirmed`. |
-| `GET /api/v1/issues` | Issues, with `fix_by` per Application. |
+| `GET /api/v1/changes`, `POST /api/v1/changes/{id}/revert` | Every Change, newest first; **Revert** one. |
+| `GET /api/v1/decisions?status=S`, `POST /api/v1/decisions/{id}` | Suggestions and Change requests (`pending`, `accepted` or `rejected`); deciding one with `{action: accept, reject or dismiss, note?, ...}`. |
+| `GET /api/v1/issues` | Issues (`?state=` and `?application=`), with `fix_by` per Application. |
+| `POST /api/v1/issues` | Reports a failed request to its Application's coding agent: `{request_id, note?}`. |
 | `POST /api/v1/issues/{id}` | Acts on an Issue, for example `{"action": "reject"}`. |
 | `POST /api/v1/issues/{id}/explain` | Streams an explanation as JSON lines. |
 | `PUT /api/v1/adapting/explainer` | Chooses who writes explanations: `{connection, model}`. |
+| `PUT /api/v1/adapting/auto-fix` | Turns automatic fixes on or off: `{enabled}`. |
 | `POST /api/v1/issues/{id}/fix`, `GET /api/v1/issues/{id}/fix` | Starts Fix it; reads its `branch_fix` and `diff`. |
 | `POST /api/v1/issues/{id}/fix/keep`, `.../fix/discard` | Keeps or discards a Fix it diff. |
 | `GET /api/v1/issues/{id}/run` | The Issue's last Agent run, its log and waiting approvals. |
 | `GET /api/v1/runs`, `POST /api/v1/runs/{id}/stop` | The Agent runs going, and stopping one. |
-| `GET /api/v1/approvals`, `POST /api/v1/approvals/{id}` | Commands waiting for you, and answering one. |
+| `GET /api/v1/approvals`, `POST /api/v1/approvals/{id}` | Commands waiting for you, and answering one: `{answer: allow_once, allow_run or deny}`. |
 | `GET /api/v1/agents`, `PUT /api/v1/agents/calls` | The coding agents found, and where Agent runs' model calls go. |
+| `PUT /api/v1/agents/default` | The default coding agent: `{agent}` (`claude`, `codex`, `gemini` or empty). |
+| `GET /api/v1/upstream`, `POST /api/v1/upstream/issues` | Drafts for **Suggest to aiport** and **Share upstream**, and filing one after you confirm. |
+| `GET /api/v1/tasks`, `POST /api/v1/tasks` | The task queue, and adding a task. |
+| `GET /api/v1/tasks/{name}`, `PATCH /api/v1/tasks/{name}` | One task, and changing it; `X-Aiport-Actor` names who made the change. |
 
 ### Headers
 
@@ -2359,12 +2395,14 @@ aiport removes every `X-Aiport-*` request header before forwarding.
 | `X-Aiport-Effort` | Request | `low`, `medium` or `high`: how hard the call is. Picks a per-effort model, and is sent to the provider as its reasoning effort when the body sets none. |
 | `X-Aiport-Compress` | Request | `whitespace`, `json`, `dedupe` or `all` (comma-separated), or `off`. |
 | `X-Aiport-CSRF: 1` | Request | Required on management API requests that change something. |
+| `X-Aiport-Actor` | Request | On the task API (`/api/v1/tasks`): a short name for who made the change (default `owner`), kept in the task's history. |
 | `X-Aiport-Request-Id` | Response | aiport's id for the call; keep it with the answer for votes and logs. |
 | `X-Aiport-Model` | Response | On every forwarded call: the model that answered, after a Level, task name, per-effort model or module route replaced the name sent. A vote for the same request id counts for this model. |
 | `X-Aiport-Route` | Response | On every forwarded call: `connection=…; name=…; effort=…; via=…`, where `via` is `level`, `task_name`, `module_route` or `model`. |
 | `X-Aiport-Catalog` | Response | The version of the Application's Catalog (12 hex characters). |
 | `X-Aiport-Compression` | Response | The methods, `status` (`applied`, `no_gain` or `failed`) and the bytes before and after. |
 | `X-Aiport-Hint` | Response | One line: the open Issue a failing call belongs to, the Change request that could fix it, or what to do about a refused token. |
+| `X-Aiport-Connect` | Response | On `/_connect`: the version of the protocol description (now `1`). |
 
 `X-Aiport-Task`, `X-Aiport-Session` and `X-Aiport-Version` (requests) and
 `X-Aiport-Source` (responses) are published in `/_connect` as planned, not
@@ -2402,19 +2440,26 @@ it reads `.aiport` only at startup.
 | --- | --- |
 | `401 unauthorized` | Missing or invalid Application token; follow `error.fix`. |
 | `403 application_token_required` | The endpoint serves one Application and no Application token was recognized (the management token is not one); follow `error.fix`. |
-| `403 invalid_host`, `403 invalid_origin` | The `Host` is not the listen address or a configured hostname; browser cross-site requests are refused. |
+| `403 invalid_host`, `403 invalid_origin`, `403 cross_site_request` | The `Host` is not the listen address or a configured hostname; browser cross-origin and cross-site requests are refused. |
+| `403 run_credential` | An Agent run's credential was used for anything but its model calls. |
 | `404 unsupported_path`, `405 method_not_allowed` | Not part of this protocol, or the wrong method. |
 | `400 incompatible_protocol` | The chosen Connection speaks the other protocol; aiport does not translate. |
 | `400 level_unmapped` | The Level is not mapped on this protocol, for this Application or shared; the message names both. |
 | `400 ambiguous_model` | The body must be one JSON object with one `model` field when a name is rewritten. |
+| `400 request_read_failed` | The request body could not be read (the Application stopped sending); retry. |
 | `400 unknown_compression` | `X-Aiport-Compress` names a method aiport does not offer. |
 | `413 request_too_large` | The body exceeds the admission limit (`proxy.max_request_bytes`). |
 | `429 concurrency_limit` | Too many requests at once; retry with backoff (`proxy.max_concurrent`). |
 | `503 target_unconfigured` | No Connection for this protocol or Application. |
 | `503 target_disabled` | The chosen Connection is disabled. |
+| `503 target_invalid` | The chosen Connection's settings (its base URL) cannot be used. |
 | `503 upstream_key_missing` | The Owner has not set the provider key yet. |
 | `502 upstream_unavailable` | Could not connect to the provider. |
+| `502 upstream_request_failed` | aiport could not build the request to the Connection's address. |
 | `504 upstream_timeout` | The provider did not answer in time. |
+| `499 client_cancelled` | The Application closed the connection first; recorded in Activity, never sent. |
+| `400 invalid_format` | `/_connect` got a `format` other than `json`, `markdown`, `handover` or `standard`, or a `for` other than `application` or `agent`. |
+| `415 unsupported_media_type`, `400 unsupported_protocol_version` | `/mcp` takes JSON-RPC as `application/json`, in an MCP protocol version aiport supports. |
 | `400 invalid_pairing`, `404 pairing_not_found`, `429 pairing_busy` | Pairing needs a name (1 to 128 characters); the request expired or never existed; too many waiting, retry after a minute. |
 | `400 invalid_feedback`, `404 request_not_found` | A malformed vote; no retained request with that id for this Application. |
 | `403 change_requests_not_allowed` | The Owner has not allowed this Application to request changes. |
@@ -2423,29 +2468,40 @@ it reads `.aiport` only at startup.
 | `429 change_requests_rate_limited` | More than 20 requests in the last hour; retry after `Retry-After`. |
 | `404 change_request_not_found`, `404 issue_not_found`, `409 issue_not_open` | Not this Application's request or Issue, or the Issue is not open. |
 | `409 adapting_off` | The adapting loop is turned off in the configuration. |
+| `500 change_request_failed`, `500 issue_update_failed`, `500 guidance_not_saved` | aiport could not save the Change request, the Issue or the guidance confirmation; retry. |
 
 The full list is at `http://127.0.0.1:8787/_connect?format=markdown#errors`.
+
+The Owner API answers with the same body. Its common codes: `401
+unauthorized` (sign in again), `403 csrf_required` (send `X-Aiport-CSRF: 1`),
+`503 config_readonly` (aiport cannot write its configuration or credential
+file), `409 revert_conflict` and `409 already_reverted` (Revert),
+`409 token_from_environment` (the token is set in the environment, so aiport
+cannot replace it), a `404` ending in `_not_found` for an unknown id, and a
+`400` starting with `invalid_` whose message says what to send.
 
 ### Configuration
 
 `aiport.yaml` is the configuration; [configuration](configuration.md)
 documents every key, and [aiport.example.yaml](../aiport.example.yaml) is a
-starting point. The keys this manual mentions:
+starting point. The top-level keys:
 
 | Key | What it sets |
 | --- | --- |
+| `version` | The configuration format version. |
 | `listen`, `hostnames` | The loopback address, and extra `*.localhost` names for the browser. |
+| `auth` | Dashboard sign-in: `username`, `password_hash` (set from Settings, never by hand), `disabled`, and `token_env`, the variable that holds the management token. |
 | `targets` | The Connections. |
 | `defaults` | The protocol defaults. |
 | `aliases` | Shared Level mappings and task names (`effort`, `everywhere`, `reasoning`). |
 | `origins` | Applications: `token_env`, `target`, `aliases`, `may_request_changes`, `agent`, `repository`, `module_routes`. |
-| `telemetry.enabled`, `telemetry.retention_days` | Request history and how long it, decided items and Catalog changes are kept (default 7 days). |
+| `telemetry.enabled`, `telemetry.retention_days` | Request history and how long it, decided items and Catalog changes are kept (default 7 days). The other `telemetry` keys (`queue_capacity`, `batch_size`, `flush_interval_ms`, `shutdown_drain_ms`, `max_event_bytes`) tune the recorder. |
 | `adapting` | `disabled`, `auto_fix`, `explain`, the thresholds `unknown_model`, `failing_connection`, `level_unmapped` and `unknown_token`, and `interval_seconds`. |
 | `agent_runs` | `default_agent`, `connection`, `model`, `explain_minutes`, `fix_minutes`. |
 | `evaluation` | The compression evaluator's Connection and model. |
 | `extensions` | Policy and guardrail programs. |
 | `upstream.repository` | Where Suggest to aiport and Share upstream open drafts. |
-| `proxy` | Limits: `max_concurrent`, `max_request_bytes`, `response_header_timeout_ms`, `stream_idle_timeout_ms`. |
+| `proxy` | Limits: `max_concurrent`, `max_request_bytes`, `connect_timeout_ms`, `request_read_timeout_ms`, `response_header_timeout_ms`, `stream_idle_timeout_ms`. |
 
 Changes made through the dashboard are written into the file in place, other
 keys and comments kept, and apply at once. Hand edits need `aiport check` and
@@ -2461,7 +2517,7 @@ stays on this machine. These files live next to the configuration:
 | `aiport.yaml` | The configuration. Never holds a key or token. |
 | `aiport.yaml.env` | Private credentials (mode 0600): provider keys you paste, Application tokens, the management token. |
 | `aiport.yaml.db` | Private SQLite database (mode 0600): request history, Changes, decisions, Issues, Catalog changes, guidance confirmations, rejected pairings. |
-| `aiport.yaml.tasks.json` | The task queue. |
+| `aiport.yaml.tasks.json` | The task queue (mode 0600). |
 | `aiport.yaml.worktrees/` | Worktrees of Agent runs while they run. |
 
 **Stored per call:** time, route, Application, the name sent, effort and its
@@ -2545,6 +2601,7 @@ and where each is fixed:
 | Refused: the request body could not be read | `400 request_read_failed` | The Application stopped sending; retry. |
 | Refused: unknown compression method | `400 unknown_compression` | Use a method from the Compression page. |
 | Refused: the model name is ambiguous | `400 ambiguous_model` | Send one JSON object with one `model` field. |
+| Gateway error: could not build the provider request | `502 upstream_request_failed` | Check the Connection's base URL on Providers. |
 | Cannot reach the provider: its host name does not resolve | `502 upstream_unavailable`, `dns_failure` | Check the base URL on Providers and the network. |
 | Cannot reach the provider: connection refused | `502 upstream_unavailable`, `connection_refused` | Start the local server (Ollama, llama.cpp) or fix the port; **Check connection**. |
 | Cannot reach the provider: the secure connection (TLS) failed | `502 upstream_unavailable`, `tls_error` | Check the scheme and host name of the base URL. |
@@ -2555,6 +2612,7 @@ and where each is fixed:
 | Provider error: rate-limited | provider `429` (`rate_limit_error`) | Wait, or ask the provider for a higher limit. |
 | Provider error: out of quota or credit | `insufficient_quota`, `billing_error` | Check the plan and billing with the provider. |
 | Provider error: the request was not accepted | provider `400` (`invalid_request_error`) | Check the model name and parameters the Application sends. |
+| Provider error: the request is too large | provider `413` (`request_too_large`) | Send a smaller request or a shorter context. |
 | Provider error: the provider failed | provider `5xx` (`overloaded_error`, `api_error`) | Retry later; check the provider's status page. |
 | The response broke off | `incomplete` | Retry; raise `proxy.stream_idle_timeout_ms` for long answers. |
 | Cancelled by the Application | `499 client_cancelled` | Nothing to fix. |
@@ -2565,6 +2623,15 @@ The most recent changes first. The commit history has every detail.
 
 **2026-11-04**
 
+- **Every forwarded call names the model that answered** with
+  `X-Aiport-Model`, and how it was chosen with `X-Aiport-Route`.
+- **Activity details open under their row**, and a failed request can be
+  reported to the Application's coding agent as an Issue.
+- **The live gauge** at the top of every page: Listening, one light per
+  Application and a level meter of the calls as they pass.
+- **The Catalog marks task names that route everywhere** (`everywhere: true`).
+- **This manual, rewritten**: quickstart, concepts, guides, a tour of the
+  dashboard, reference and troubleshooting.
 - **Votes and Suggestions per module.** Applications name the module of each
   call with `X-Aiport-Module` and send a thumbs up or down per answer to
   `/v1/aiport/feedback`. The new [Feedback](#feedback) page shows votes per

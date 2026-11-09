@@ -18,15 +18,17 @@ X-Aiport-Compress: whitespace, json
 | `json` | Rewrites text that is entirely JSON (typical tool results) compactly. | Preserved |
 | `dedupe` | When a block of 1 KiB or more repeats, earlier copies become a short note; the latest copy stays. | Lossy |
 
-`all` selects every method; `off` or no header means none. An unknown method
+`all` selects every method; `off`, `none` or no header means none. An unknown method
 returns `400 unknown_compression`.
 
 Only message text is changed (`content`, `text`, `system`, `output`, `input`).
 Tool definitions, schemas, `tool_choice`, `response_format` and metadata are never
 touched. If compression fails or saves nothing, the original bytes are sent.
 
-Every compressed response carries
-`X-Aiport-Compression: whitespace,json; status=applied; bytes_before=…; bytes_after=…`.
+Every response to a request that asked for compression carries
+`X-Aiport-Compression: whitespace,json; status=applied; bytes_before=…; bytes_after=…`,
+where `status` is `applied`, `no_gain` or `failed` (on the last two the
+original body was sent).
 
 ## Measuring whether it hurts
 
@@ -41,15 +43,17 @@ POST /v1/aiport/feedback
 {"request_id": "…", "score": 0.9}
 ```
 
-Scores run from 0 (useless) to 1 (perfect). An application can only score its own
-requests.
+Scores run from 0 (useless) to 1 (perfect). A person's thumbs can be sent as
+`{"request_id": "…", "vote": "up"}` (or `"down"`), which counts as 1 (or 0), with
+an optional `module`. An application can only score its own requests.
 
 The dashboard's **Compression** page (left menu, Configure) shows savings, a trend of
 compressed vs uncompressed traffic (feedback, error rate, size saved) and a verdict
 per method combination:
 
 - **Not enough data:** fewer than 20 requests on either side.
-- **Possible harm:** feedback is more than 0.1 lower, or the error rate is more
+- **Possible harm:** feedback is more than 0.1 lower (with at least 10 scored
+  requests on each side), or the error rate is more
   than 5 points higher, than uncompressed traffic. Errors are counted the same
   way as on Overview: upstream, gateway, incomplete and timed-out requests;
   cancellations and requests aiport refused are not errors.

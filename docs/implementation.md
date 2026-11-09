@@ -5,7 +5,8 @@ an authenticated loopback Go server. No provider/client is released as supported
 
 Implemented:
 
-- `serve`, `check`, `token`, `version`, guided `init`, and per-launch `agent` CLI.
+- `serve`, `check`, `token`, `version`, `auth` (prints the management token),
+  `task` (the task queue), guided `init`, and per-launch `agent` CLI.
 - Strict bounded YAML, environment credential references, private config files,
   distinct local credentials, fixed config snapshots and redacted UUID errors.
 - Native Chat, Responses and Messages forwarding, protocol/default/origin routing,
@@ -21,8 +22,8 @@ Implemented:
 
 Fresh upstream connections prevent Go transport replay on stale pooled connections.
 This trades connection reuse for a straightforward no-retry contract. Performance,
-resource usage, pooling and p95 overhead remain unmeasured. SQLite and its packaging
-choice remain deferred to M2; forwarding imports no persistence or UI code.
+resource usage, pooling and p95 overhead remain unmeasured. Persistence uses the
+pure-Go `modernc.org/sqlite` driver; forwarding imports no persistence or UI code.
 
 Validation: `go test ./...`, `go test -race ./...`, `go vet ./...`, and a CGO-disabled
 standalone build. A binary smoke check creates all six presets plus both origin
@@ -42,8 +43,8 @@ archive or clean-install release claim follows from the in-memory tests.
 | --- | --- |
 | M0 | Foundation implemented; license/release decisions remain open |
 | M1 | Experimental forwarding and fixtures implemented; real-client integration and full failure/load evidence pending |
-| M2 | Planned: SQLite driver/package tests, bounded metadata queue, persistence/retention/query API and fault/privacy evidence |
-| M3 | Planned: modern embedded React dashboard, web onboarding/settings, protected atomic config edits |
+| M2 | Implemented: SQLite (`<config>.db`), bounded metadata queue, persistence/retention/query API; disk-fault evidence pending |
+| M3 | Implemented: embedded React dashboard, web Connection/routing/auth settings, protected atomic config edits as revertable Changes; browser QA pending |
 | M4 | Partial native forwarding only: six-provider live compatibility, supported endpoint subsets, model/client versions and tools/usage evidence pending |
 | M5 | Planned: maintainer license decision, contribution/security/release docs, platform archives, clean install and measurements |
 
@@ -55,7 +56,7 @@ validation. See `docs/compatibility.md` for limitations and primary sources.
 
 Implemented embedded React/TypeScript assets built with Vite, token-in-memory
 login/lock, Overview, Activity with stable cursor pagination/shared filters,
-request metadata details, and read-only Settings. Includes dark/light themes,
+request metadata details, and Settings. Includes dark/light themes,
 responsive table containers and explicit disabled/session-only/error/empty states.
 All UI queries use authenticated local APIs; assets alone are public. No fake
 activity ships. Usage, TTFT and cost are unavailable rather than fabricated.
@@ -63,9 +64,9 @@ activity ships. Usage, TTFT and cost are unavailable rather than fabricated.
 Added bounded nonblocking session metadata queue plus a 500-record ring and
 visible loss/eviction counters, with no SQLite dependency on forwarding. This is
 an explicit preview deviation, not completion of M2. Dependency downloads and
-browser access failed in this environment. SQLite persistence, disk fault/migration
-and retention gates, visual/keyboard browser QA, web config writes/onboarding,
-provider probes and release packaging remain open. TypeScript, Vite builds and
+browser access failed in this environment. SQLite persistence, retention and web
+config writes have since shipped (M2, M3 above); disk-fault gates, visual/keyboard
+browser QA, provider probes and release packaging remain open. TypeScript, Vite builds and
 Go/race tests pass; rendered appearance has not been inspected.
 
 

@@ -6,6 +6,8 @@
 - Test: `make test` · Vet: `make check` · No-network build: `make check-offline`
 - Dashboard: `pnpm --dir web install`, then `make web-build`
 - Live development: `make dev`
+- Docs site: `pnpm --dir site install`, then `make docs` (-> `site/dist`) or
+  `make docs-dev`; published to GitHub Pages from `main` by `.github/workflows/docs.yml`
 
 ## Rules
 
@@ -17,7 +19,11 @@
   since `-s` there means strategy).
 - Always write "aiport" in lowercase. `X-Aiport-*` headers and `AIPORT_*`
   environment variables keep their case.
-- Update `docs/manual.md` whenever user-visible behaviour changes.
+- Update `docs/manual.md` whenever user-visible behaviour changes. The docs
+  site is generated from `docs/` and `GLOSSARY.md` (`site/scripts/sync-docs.mjs`
+  splits the manual into one page per `###` section): never edit
+  `site/src/content/docs`. A new `##` section in the manual needs a place in
+  `MANUAL.sections` there; `make docs` fails on a broken link or anchor.
 - Published specs, tickets and docs use made-up Application and model names.
 - Never commit `aiport.yaml`, `*.env`, `*.db` or `aiport.log`; they are
   local and ignored.

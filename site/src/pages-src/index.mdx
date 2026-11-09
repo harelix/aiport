@@ -1,0 +1,70 @@
+---
+title: aiport
+description: A self-improving local LLM gateway for developers who code with several agents and models.
+template: splash
+editUrl: false
+hero:
+  tagline: A self-improving local LLM gateway for the erratic vibe coder. One client per app, keys kept in one place, and a loop that turns failures and feedback into fixes you approve.
+  image:
+    html: '<img src="/aiport/images/logo-no-bg.png" alt="" width="220" height="220" />'
+  actions:
+    - text: Quickstart
+      link: /aiport/start/quickstart/
+      icon: right-arrow
+    - text: Read the manual
+      link: /aiport/start/introduction/
+      variant: minimal
+    - text: View on GitHub
+      link: https://github.com/harelix/aiport
+      icon: external
+      variant: minimal
+---
+
+{/* Hand-written landing page. Everything else on the site is generated from docs/. */}
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+![The aiport dashboard: provider Connections with their keys saved, protocol defaults and connection checks](/aiport/images/providers-sc.png)
+
+## The basics
+
+<CardGrid>
+	<Card title="One client per app" icon="puzzle">
+		Point one OpenAI-style or Anthropic-style client at aiport instead of writing setup code for every provider.
+	</Card>
+	<Card title="Keys stay in aiport" icon="seti:lock">
+		Provider keys live in a private env file. Each app and agent gets its own token, which you can revoke.
+	</Card>
+	<Card title="Agents without your keys" icon="rocket">
+		`aiport agent claude` or `aiport agent codex` starts an agent with its own token, so it never sees your provider keys.
+	</Card>
+	<Card title="Name the need" icon="approve-check">
+		Apps name a model, ask for `fast`, `balanced` or `best`, or name a task and an effort.
+	</Card>
+</CardGrid>
+
+## The part that improves over time
+
+<CardGrid>
+	<Card title="Compression with a quality check" icon="setting">
+		Apps can ask for smaller prompts. aiport checks answer quality for each compression method and shows a verdict.
+	</Card>
+	<Card title="Routing from feedback" icon="star">
+		Thumbs up and down from your users become suggestions for which model handles which requests.
+	</Card>
+	<Card title="Self-healing apps" icon="warning">
+		Repeated failures become Issues, each with a fix on both sides: a change to aiport for you to approve, and instructions for the app's coding agent.
+	</Card>
+	<Card title="Metadata only" icon="information">
+		Every call is logged as metadata: app, model, effort, latency, status. Prompts and responses are never stored.
+	</Card>
+</CardGrid>
+
+## Where to go next
+
+<CardGrid>
+	<LinkCard title="Quickstart" description="Build aiport and make your first call in about five minutes." href="/aiport/start/quickstart/" />
+	<LinkCard title="Connect an application" description="Point an application's SDK at aiport and pair it." href="/aiport/guides/connect-an-application/" />
+	<LinkCard title="Configuration" description="Every key in aiport.yaml." href="/aiport/specs/configuration/" />
+	<LinkCard title="For coding agents" description="llms.txt: the whole manual as plain text." href="/aiport/llms.txt" />
+</CardGrid>

@@ -1,0 +1,19 @@
+/* aiport colours: the Nord blues used by the logo and the README badges. */
+:root {
+	--sl-color-accent-low: #1d2a3d;
+	--sl-color-accent: #5e81ac;
+	--sl-color-accent-high: #c4d6ea;
+	--sl-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+	--sl-color-accent-low: #d6e2f0;
+	--sl-color-accent: #4c6f9a;
+	--sl-color-accent-high: #1f3350;
+}
+.hero img {
+	border-radius: 50%;
+}
+main img {
+	border-radius: 0.5rem;
+	box-shadow: 0 4px 24px rgb(0 0 0 / 0.18);
+}

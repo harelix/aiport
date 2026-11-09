@@ -14,13 +14,14 @@ supporting release yet. Configuration presets are not compatibility evidence.
 | Codex CLI | Per-launch Responses provider; separate local token, no client retry, no WebSocket | Installed version observed: 0.166.0; launch-config tests only; no live session |
 | Claude Code | Per-launch Messages base URL and bearer local token | Installed version observed: 2.1.316; launch-config tests only; no live session |
 | Local CLI/config/handler | Built/run CLI on macOS arm64 | In-memory HTTP tests; sandbox denies socket fixtures |
-| SQLite persistence | Planned | No metadata survives restart |
+| SQLite persistence | Request metadata, decisions and Catalog changes in `<config>.db` (pure-Go `modernc.org/sqlite`, WAL, 0600) | Retention pruning and migration tests; session-only fallback when the database cannot be opened |
 | Embedded dashboard/session activity | Preview implemented | Typecheck/build and API tests; browser QA unavailable |
 | Other operating systems | Planned | No runtime/platform release testing |
 
 Implemented native paths are exactly POST `/v1/chat/completions`, `/v1/responses`,
-`/v1/messages`. Files, model listing, response retrieval/compaction, batches and
-WebSockets are unavailable. Agents using additional endpoints can fail even when
+`/v1/messages`. `GET /v1/models` is answered by aiport itself from the calling
+Application's Catalog, not forwarded. Files, response retrieval/compaction,
+batches and WebSockets are unavailable. Agents using additional endpoints can fail even when
 a basic generation works. A provider may reject unsupported models/fields/routes.
 There is no protocol translation, automatic retry, fallback or usage observation.
 
@@ -46,7 +47,8 @@ benchmark has been measured.
 ## Dashboard preview update
 
 Embedded React dashboard and authenticated session Activity/Stats/config APIs now
-exist. SQLite remains planned; no history survives restart. Settings are read-only.
+exist. Request history is kept in SQLite (see above), and Connections, defaults,
+Levels and other settings are edited from the dashboard as revertable Changes.
 Frontend typecheck/build and deterministic API/queue tests are evidence only;
 browser visual/interaction checks could not run because the browser host was
 unavailable. No shipped native/live compatibility claim changes from this UI work.

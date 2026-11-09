@@ -54,7 +54,7 @@ the OpenAI protocol and `x-api-key` for the Anthropic protocol):
 ```
 
 Connections can also be added, edited, removed and made default in the dashboard
-(Settings → Providers, Settings → Routing). The change is written into this
+(the Providers and Routing pages). The change is written into this
 file in place (other keys and comments kept), the whole file is revalidated, and
 new requests use it immediately. Several Bedrock connections (different regions,
 endpoints or protocols) can coexist under different ids.
@@ -73,7 +73,11 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `hostnames` | Optional list of local names aiport also answers to on the listen port, for example `[aiport.localhost]`. Each must be lowercase, `localhost` or end in `.localhost`, valid DNS label syntax (letters, digits, inner hyphens), without a port, listed once. aiport accepts `Host`/`Origin` `<name>:<listen port>` next to the listen address and refuses every other name. The dashboard can be opened under these names, but Applications and coding agents are always given the numeric address (`/_connect`, briefs, tokens, `.aiport`): some resolvers and sandbox proxies refuse `*.localhost`. The socket stays on the `listen` IP. A change made through aiport takes effect without a restart; a hand edit needs one |
 | `auth.token_env` | Required name of the global management/local bearer token environment variable |
 | `targets` | List of `id`, `provider`, and for built-in providers optionally nothing else. `protocol`, `base_url` and `api_key_env` default from the provider preset (required for custom providers). `region` is required by regional providers (Bedrock) and fills `{region}`. `endpoint` picks a provider API surface (Bedrock: `runtime` default, or `mantle`). Optional `disabled` (false) |
-| `origins` | List of `id`, `name`, `token_env`, optional `target`, optional `aliases` (`alias`, `target`, `model`, optional `effort`): models only this client can ask for, checked before global aliases and allowed to pick another connection. An entry whose `alias` is a Level is this client's own mapping of that Level on its `target`'s protocol, at most one per Level and protocol |
+| `origins` | List of `id`, `name`, `token_env`, optional `target`, optional `aliases` (`alias`, `target`, `model`, optional `effort`): models only this client can ask for, checked before global aliases and allowed to pick another connection. An entry whose `alias` is a Level is this client's own mapping of that Level on its `target`'s protocol, at most one per Level and protocol. The id `aiport` is reserved for the built-in Application |
+| `origins[].may_request_changes` | false; `true` lets this Application file Change requests |
+| `origins[].agent` | Optional Coding agent for this Application's Agent runs: `claude`, `codex` or `gemini`; empty uses `agent_runs.default_agent` |
+| `origins[].repository` | Optional absolute, clean path of the Application's git repository; Agent runs never work outside it |
+| `origins[].module_routes` | Optional list of `module`, `name`, `target`, `model`: this Application's calls for that module (`X-Aiport-Module`, 1–64 of `a–z`, `0–9`, `.`, `_`, `-`, starting with a letter or digit) that send that name (a Level or task name) go to `model` on `target`, ahead of every other route. One per module and name; no per-effort models |
 | `defaults` | Optional `openai_target` and `anthropic_target`; matching target protocols required |
 | `aliases` | List of `target`, `alias`, `model`, optional `effort`; unique alias per target; model strings 1–256 bytes. An entry whose `alias` is a Level (`fast`, `balanced`, `best`) is the shared mapping of that Level on its `target`'s protocol, at most one per Level and protocol |
 | `aliases[].effort`, `origins[].aliases[].effort` | Optional `{low, medium, high}`, each a model on the same `target`; the model for a call of that effort (`X-Aiport-Effort`, else the provider's own effort field, else `medium`). An effort left out uses `model` |
@@ -82,7 +86,7 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `telemetry.queue_capacity` | 4096; range 1–65536 |
 | `telemetry.batch_size` | 100; range 1–queue capacity |
 | `telemetry.flush_interval_ms` | 250; range 1–60000 |
-| `telemetry.shutdown_drain_ms` | 2000; range 1–60000; reserved for M2 telemetry |
+| `telemetry.shutdown_drain_ms` | 2000; range 1–60000; how long the record queue may drain at shutdown |
 | `telemetry.max_event_bytes` | 16384; range 1024–65536 |
 | `adapting.disabled` | false; `true` turns the whole adapting loop off: no Suggestions are detected, no Issues are opened and Changes shows nothing new |
 | `adapting.interval_seconds` | 60; range 5–86400; how often a background pass looks at request history (never during a request) |
@@ -94,6 +98,14 @@ groups connections as Local (loopback endpoints) or Remote APIs.
 | `adapting.failing_connection.window_minutes` | 60; range 1–10080; how far back those failures are counted |
 | `adapting.level_unmapped.count` | 5; range 1–1000000; calls from one Application for one Level on one protocol refused with `level_unmapped` that open an Issue (mapping the Level for that Application as the aiport fix) |
 | `adapting.level_unmapped.window_minutes` | 60; range 1–10080; how far back those refusals are counted |
+| `adapting.auto_fix` | false; `true` lets aiport apply an Issue's aiport fix itself, as a revertable Change made by "aiport (automatic)", only when exactly one Connection serves the model, the error reached its threshold and the fix is an Alias for that one Application. A fix the Owner reverted (or rejected) is never applied automatically again for that Application and cause. Also switchable on the Changes page |
+| `adapting.explain` | none; `{connection, model}`: the configured Connection and a model it serves that write an Issue's explanation (Explain) from its evidence alone. Without it Explain is unavailable. Also set in Settings → Explanations |
+| `agent_runs.default_agent` | none; the Coding agent (`claude`, `codex` or `gemini`) of every Application without its own `agent` |
+| `agent_runs.connection` | none; an Anthropic-protocol Connection the model calls of Agent runs go to, through aiport under the built-in `aiport` Application (for agents aiport can point at itself: Claude Code). Empty: the Anthropic protocol default |
+| `agent_runs.model` | none; 1–256 characters; the model those calls ask for (the agent's own choice otherwise) |
+| `agent_runs.explain_minutes` | 10; range 1–1440; time limit of an Explain run |
+| `agent_runs.fix_minutes` | 30; range 1–1440; time limit of a Fix it run |
+| `evaluation` | none; `{connection, model}`: the configured Connection and model that judge compression (see [compression.md](compression.md#evaluator)). Both are required once either is set |
 
 A Levels and per-effort example (anonymous names):
 
@@ -138,8 +150,6 @@ that protocol (a plain shared Alias only renames a model on the Connection a
 call already goes to); an Application's own one applies on that protocol
 only. `aiport check` and startup print one notice per such entry; to keep a
 plain Alias, rename its `alias` to a name that is not a Level.
-| `adapting.auto_fix` | false; `true` lets aiport apply an Issue's aiport fix itself, as a revertable Change made by "aiport (automatic)", only when exactly one Connection serves the model, the error reached its threshold and the fix is an Alias for that one Application. A fix the Owner reverted (or rejected) is never applied automatically again for that Application and cause. Also switchable on the Changes page |
-| `adapting.explain` | none; `{connection, model}`: the configured Connection and a model it serves that write an Issue's explanation (Explain) from its evidence alone. Without it Explain is unavailable. Also set in Settings → Explanations |
 
 IDs and provider labels contain 1–64 ASCII alphanumerics, underscores or hyphens,
 starting with an alphanumeric. Protocol is `openai` or `anthropic`. Provider is a
@@ -157,7 +167,7 @@ cannot establish randomness: generate tokens with `aiport token`. Authentication
 uses fixed-length SHA-256 digests and constant-time comparisons. Origin tokens do
 not grant management access; arbitrary headers never grant identity.
 
-Provider keys can be entered in the dashboard (Settings → Providers).
+Provider keys can be entered in the dashboard (the Providers page).
 They are written atomically to the private credential file next to the config
 (`aiport.yaml.env`, 0600), apply to new requests immediately, and take precedence
 over the same-named environment variable on later starts. Removing a saved key
@@ -170,7 +180,7 @@ establish provider compatibility.
 
 The server limits headers to 16 KiB (subject to Go HTTP parser overhead), header
 read time to 5 seconds, idle keep-alive connections to 60 seconds, and shutdown
-grace to 5 seconds. Inference admission/body/stream limits are defined below. No data directory or SQLite files are created.
+grace to 5 seconds. Inference admission/body/stream limits are defined below.
 
 ## Experimental forwarding and onboarding update
 
@@ -191,12 +201,14 @@ Response bodies are copied in bounded chunks and flushed; they are never buffere
 in full. Healthy streams have no fixed total timeout. A stalled upstream or slow
 downstream is terminated at the idle/write deadline. After response commitment,
 transport failures abort the response; no synthetic provider events are appended.
-Clients may observe a truncated response. No outcome persistence exists yet.
+Clients may observe a truncated response.
 
-Selection: a Level (the origin's own mapping on the request's protocol, then
-the shared one; neither is 400 `level_unmapped`), then the origin's own alias,
-then the origin's target, then the protocol default; per-effort models of the
-matched Level or alias then pick the model. Missing targets
+Selection: the origin's module route for the call's `X-Aiport-Module` and
+model name, then a Level (the origin's own mapping on the request's protocol,
+then the shared one; neither is 400 `level_unmapped`), then the origin's own
+alias, then a shared task name set to `everywhere`, then the origin's target,
+then the protocol default; per-effort models of the matched Level or alias
+then pick the model. Missing targets
 return 503, disabled targets 503, protocol mismatch 400, concurrency overflow 429,
 upstream connection failure 502, and pre-commit upstream timeout 504. No fallback
 or retries. A new upstream connection is used for every request to avoid implicit
@@ -204,7 +216,7 @@ transport replay; connection pooling and performance tuning remain unmeasured.
 
 Raw query semantics are retained without logging. The base URL prefix is appended
 once (`/v1/chat/completions` appends `/chat/completions`, for example). Native
-unknown request fields and body bytes pass unchanged. A client's own alias for the requested model is applied first and may select
+unknown request fields and body bytes pass unchanged. A client's own alias for the requested model (after module routes and Levels) may select
 another connection; otherwise the client's bound connection (or the protocol
 default) and its global aliases apply. Explicit model aliases
 replace only the top-level model value while preserving other bytes; ambiguous
@@ -339,8 +351,8 @@ uses it).
 
 The public local root serves embedded login assets under a restrictive same-origin
 CSP. The UI sends its in-memory management token as bearer auth; no localStorage,
-query bootstrap token, external font, CDN or analytics is used. Config editing,
-web-first provider onboarding, and connection testing remain future work.
+query bootstrap token, external font, CDN or analytics is used. Connection
+testing remains future work.
 
 
 ## Username/password, recovery and authentication settings
@@ -378,7 +390,7 @@ required for configured enabled providers. Ensure local references are available
 again before restarting with auth enabled. Turning auth back on requires a saved
 or newly set password. All browser cross-site protections stay active.
 
-Settings auth changes apply immediately. Provider settings remain read-only.
+Settings auth changes apply immediately.
 The source references for hashing/session decisions are Go `crypto/pbkdf2`,
 OWASP Password Storage and Session Management Cheat Sheets. Nord source palette:
 https://www.nordtheme.com/docs/colors-and-palettes/. Exact checked pairs include

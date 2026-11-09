@@ -62,10 +62,15 @@ The part of an Application a call serves (`tldr`, `classify`, `insights`),
 sent with the `X-Aiport-Module` header. Votes are read per module, and a
 module route can send one module's calls for one name to another model.
 
+**Module route**
+A route for one Application's calls for one module that send one name (a
+Level or task name): they go to another Connection and model, ahead of every
+other route, while its other modules keep theirs.
+
 **Catalog**
-What one Application can use through aiport: its task names (its own Aliases
-and the shared ones) and the models listed by the Connections it reaches, with
-a version. The Application reads it at `GET /v1/models` and sees the version
+What one Application can use through aiport: the Levels mapped for it, its
+task names (its own Aliases and the shared ones) and the models listed by the
+Connections it reaches, with a version. The Application reads it at `GET /v1/models` and sees the version
 on every answer.
 _Avoid_: model list (that is one Connection's).
 
@@ -83,8 +88,9 @@ may advise which provider and model should serve it; the Owner decides,
 approves or rejects it.
 
 **Suggestion**
-aiport proposing a change itself, from patterns in its request history, with
-the evidence that led to it.
+aiport proposing a change itself, with the evidence that led to it: from
+patterns in its request history (on the Changes page), or from the votes
+people give answers (on the Feedback page, applied as module routes).
 
 **Issue**
 A problem aiport keeps seeing for one Application, with its evidence and the
@@ -99,8 +105,9 @@ own worktree on a new branch, ending in a diff the Owner keeps or discards),
 with its log, approvals and result.
 
 **Change**
-An approved Change request or Suggestion once it is applied to aiport's
-configuration. Every Change can be reverted. aiport applies a Change on its
+One configuration change made through aiport: by the Owner in the dashboard
+or the Owner API, or an approved Change request or Suggestion once it is
+applied. Every Change can be reverted. aiport applies a Change on its
 own only when the Owner allowed automatic fixes, and a reverted automatic
 fix is never applied automatically again.
 
@@ -118,3 +125,8 @@ The number of the guidance aiport gives coding agents (briefs, the AGENTS.md
 line, MCP instructions), raised when agents must act on a change, with a
 short change log. aiport keeps the version each Application's coding agent
 last confirmed; an Application is behind while that is older (or unknown).
+
+**Communication standard**
+One document, at `/_connect?format=standard` (MCP tool `aiport_standard`),
+with every rule an integration follows and a checklist, written for an
+Application's Coding agent.

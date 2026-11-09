@@ -28,9 +28,10 @@ the listen port, and refuses everything else with `403 invalid_host` /
 
 Each feature and header has a status. Only `available` items are implemented;
 `planned` items (model allowlists, the `X-Aiport-Task`, `X-Aiport-Session`
-and `X-Aiport-Version` request headers, and the `X-Aiport-Model`,
-`X-Aiport-Route` and `X-Aiport-Source` response headers) are published early
-so integrators can prepare.
+and `X-Aiport-Version` request headers, and the `X-Aiport-Source` response
+header) are published early so integrators can prepare. Every forwarded call
+carries `X-Aiport-Model` (the model that answered) and `X-Aiport-Route`
+(`connection=…; name=…; effort=…; via=level|task_name|module_route|model`).
 
 ## The communication standard
 
@@ -48,7 +49,9 @@ to a coding agent as `standard_prompt`; Integrate shows both. The source is
 ## Pairing
 
 An application without a token asks for one: `POST /v1/aiport/pair`
-`{"name": "...", "description": "..."}` (public on loopback, rate-limited) returns
+`{"name": "...", "description": "...", "repository": "..."}` (`description`
+and `repository`, the absolute path of its git repository, are optional;
+public on loopback, rate-limited) returns
 a short `code` and a secret `poll` path. The owner approves the code in the
 dashboard's Integrate page (or the Applications table on Routing), optionally binding a connection; aiport adds
 the application as a client, with its own token, without a restart. `GET` on the
@@ -187,7 +190,9 @@ configured) and `code`. The dashboard's Integrate page renders the same data.
   OpenAI and Anthropic SDKs in Python and TypeScript plus curl, removing
   provider keys, model names (a Level or a task name, never a provider's
   model id; read `GET /v1/models`, the `models` snippet; `level_unmapped`),
-  effort (`X-Aiport-Effort`, the `level` snippet), watching
+  effort (`X-Aiport-Effort`, the `level` snippet), naming each call's module
+  (`X-Aiport-Module`) and sending a person's thumbs up or down to
+  `/v1/aiport/feedback` (the `feedback` snippet), watching
   `X-Aiport-Catalog`, errors and retries,
   `X-Aiport-Request-Id`, Issues (including `catalog_changed`), and
   verification.
