@@ -6,7 +6,7 @@ Change requests. aiport ships none. There are two hook points:
 | Hook | Runs | A deny… |
 | --- | --- | --- |
 | `policy` | when a Change request arrives, after aiport's own checks (permission, rate limit, complete fields) | refuses the request; the requesting Application gets the reason |
-| `guardrail` | when the Owner approves a Suggestion or Change request, before the Change is applied | blocks Approve; nothing changes, the item still waits, and the dashboard shows the reason |
+| `guardrail` | when a Suggestion or Change request is approved (by the Owner, through an Issue's aiport fix, or automatically with `adapting.auto_fix`), before the Change is applied | blocks Approve; nothing changes, the item still waits, and the dashboard shows the reason |
 
 Reject and Dismiss are not Changes and run no Extension.
 
@@ -108,7 +108,8 @@ it will be applied:
 }
 ```
 
-`source` is `request` (a Change request) or `suggestion`. For
+`source` is `request` (a Change request) or `suggestion`. `by` is `Owner`,
+or `aiport (automatic)` for an automatic fix. For
 `bind_application`, `target` is the Connection; `alias` and `model` are empty.
 
 ## Output
@@ -126,10 +127,11 @@ without a reason reads `no reason given`.
 A policy refusal of `POST /v1/aiport/requests` (and the MCP tool
 `aiport_request_change`) is `403` with code `change_request_refused`; the
 error has the `extension` name and its `reason`, and the message reads
-`refused by policy ticket-policy: …`. The request is not kept, and it still
-counts against the hourly rate limit.
+`refused by policy ticket-policy: …`. The request is not kept and does not
+count against the hourly rate limit.
 
-A guardrail block of `POST /api/v1/decisions/{id}` is `409` with code
+A guardrail block of `POST /api/v1/decisions/{id}` (or `POST
+/api/v1/issues/{id}` for an Issue's aiport fix) is `409` with code
 `guardrail_blocked`, with `extension` and `reason`. The configuration is not
 touched, no Change is recorded, and the item stays pending.
 
