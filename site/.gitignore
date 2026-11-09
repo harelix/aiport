@@ -1,0 +1,6 @@
+# Generated from ../docs by scripts/sync-docs.mjs: edit the files in docs/ instead.
+/src/content/docs/
+/public/images/
+/dist/
+/.astro/
+node_modules

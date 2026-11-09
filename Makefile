@@ -1,4 +1,4 @@
-.PHONY: build web-build test check release check-offline dev leaks hooks
+.PHONY: build web-build test check release check-offline dev leaks hooks docs docs-dev
 
 VERSION ?= 0.0.0-dev
 # Pure-Go build: no C toolchain or system libraries needed, on any platform.
@@ -17,6 +17,14 @@ dev:
 
 web-build:
 	pnpm --dir web build
+
+# Documentation site (site/, Astro Starlight), built from docs/ into site/dist.
+# Needs `pnpm --dir site install` once. CI publishes it to GitHub Pages from main.
+docs:
+	pnpm --dir site build
+
+docs-dev:
+	pnpm --dir site dev
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/aiport ./cmd/aiport

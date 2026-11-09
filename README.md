@@ -14,6 +14,7 @@
 </p>
 
 <p>
+  <a href="https://harelix.github.io/aiport/">Documentation</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="docs/manual.md">Manual</a> ·
   <a href="docs/connect.md">Connect an application</a> ·
@@ -85,7 +86,7 @@ Open the dashboard address `serve` prints (**http://127.0.0.1:8787/** by default
 - **Launch a coding agent through aiport.** `./bin/aiport agent claude --model MODEL` or `./bin/aiport agent codex --model MODEL` (add `--dry-run` to inspect). The agent gets its own token, never your provider keys.
 - **Decide on Changes.** Issues, Suggestions and Change requests wait on **Changes**, with a badge only when one needs you. Every Change can be reverted.
 
-The [manual](docs/manual.md) covers every page. It is also built into the dashboard: press the help button, or the ⓘ next to any section.
+The [manual](docs/manual.md) covers every page. Read it on the [documentation site](https://harelix.github.io/aiport/), or in the dashboard: press the help button, or the ⓘ next to any section.
 
 ## Configuration
 
