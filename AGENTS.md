@@ -17,6 +17,8 @@
   `internal/dashboard/dist` (it is embedded and committed on purpose).
 - Sign off every commit (`git commit -s`; for merges `git merge --signoff`,
   since `-s` there means strategy).
+- Icons come only from Lucide (`lucide-react`), and colours only from the
+  windsock logo: orange `#FE5234` (`#C93A1F` for readable text) and white.
 - Always write "aiport" in lowercase. `X-Aiport-*` headers and `AIPORT_*`
   environment variables keep their case.
 - Update `docs/manual.md` whenever user-visible behaviour changes. The docs

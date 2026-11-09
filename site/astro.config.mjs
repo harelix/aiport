@@ -4,6 +4,8 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightLinksValidator from 'starlight-links-validator';
 import starlightLlmsTxt from 'starlight-llms-txt';
+import { lucideIcons, lucideLinkDataUri } from './lucide-icons.mjs';
+import aiportCodeTheme from './src/code-theme.mjs';
 
 const base = process.env.DOCS_BASE ?? '/aiport';
 
@@ -11,6 +13,8 @@ export default defineConfig({
 	site: process.env.DOCS_SITE ?? 'https://harelix.github.io',
 	base,
 	trailingSlash: 'always',
+	// Every icon is Lucide: see lucide-icons.mjs.
+	vite: { plugins: [lucideIcons()] },
 	integrations: [
 		starlight({
 			title: 'aiport',
@@ -20,7 +24,14 @@ export default defineConfig({
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/harelix/aiport' }],
 			editLink: { baseUrl: 'https://github.com/harelix/aiport/edit/main/docs/' },
 			customCss: ['./src/styles/custom.css'],
+			// One theme, in the logo's colours: no light/dark switch.
+			components: {
+				ThemeProvider: './src/components/ThemeProvider.astro',
+				ThemeSelect: './src/components/ThemeSelect.astro',
+			},
+			expressiveCode: { themes: [aiportCodeTheme], useStarlightUiThemeColors: false },
 			head: [
+				{ tag: 'style', content: `:root { --aiport-lucide-link: ${lucideLinkDataUri()}; }` },
 				{ tag: 'meta', attrs: { property: 'og:image', content: `https://harelix.github.io${base}/images/social-preview.png` } },
 			],
 			sidebar: [

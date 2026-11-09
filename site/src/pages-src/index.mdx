@@ -29,16 +29,16 @@ import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 ## The basics
 
 <CardGrid>
-	<Card title="One client per app" icon="puzzle">
+	<Card title="One client per app" icon="plug">
 		Point one OpenAI-style or Anthropic-style client at aiport instead of writing setup code for every provider.
 	</Card>
-	<Card title="Keys stay in aiport" icon="seti:lock">
+	<Card title="Keys stay in aiport" icon="key-round">
 		Provider keys live in a private env file. Each app and agent gets its own token, which you can revoke.
 	</Card>
-	<Card title="Agents without your keys" icon="rocket">
+	<Card title="Agents without your keys" icon="bot">
 		`aiport agent claude` or `aiport agent codex` starts an agent with its own token, so it never sees your provider keys.
 	</Card>
-	<Card title="Name the need" icon="approve-check">
+	<Card title="Name the need" icon="gauge">
 		Apps name a model, ask for `fast`, `balanced` or `best`, or name a task and an effort.
 	</Card>
 </CardGrid>
@@ -46,16 +46,16 @@ import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 ## The part that improves over time
 
 <CardGrid>
-	<Card title="Compression with a quality check" icon="setting">
+	<Card title="Compression with a quality check" icon="shrink">
 		Apps can ask for smaller prompts. aiport checks answer quality for each compression method and shows a verdict.
 	</Card>
-	<Card title="Routing from feedback" icon="star">
+	<Card title="Routing from feedback" icon="thumbs-up">
 		Thumbs up and down from your users become suggestions for which model handles which requests.
 	</Card>
-	<Card title="Self-healing apps" icon="warning">
+	<Card title="Self-healing apps" icon="wrench">
 		Repeated failures become Issues, each with a fix on both sides: a change to aiport for you to approve, and instructions for the app's coding agent.
 	</Card>
-	<Card title="Metadata only" icon="information">
+	<Card title="Metadata only" icon="eye-off">
 		Every call is logged as metadata: app, model, effort, latency, status. Prompts and responses are never stored.
 	</Card>
 </CardGrid>

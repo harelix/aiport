@@ -1,19 +1,84 @@
-/* aiport colours: the Nord blues used by the logo and the README badges. */
-:root {
-	--sl-color-accent-low: #1d2a3d;
-	--sl-color-accent: #5e81ac;
-	--sl-color-accent-high: #c4d6ea;
-	--sl-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
+/* aiport colours: the windsock in the logo. Orange (#FE5234) and white, with
+   the logo's cream for soft backgrounds and its near-black outline for text.
+   Links and buttons use a deeper shade of the same orange so text stays
+   readable (5.1:1 on white). One theme only: no dark mode. */
+:root,
 :root[data-theme='light'] {
-	--sl-color-accent-low: #d6e2f0;
-	--sl-color-accent: #4c6f9a;
-	--sl-color-accent-high: #1f3350;
+	--aiport-orange: #fe5234;
+	--aiport-orange-text: #c93a1f;
+	--aiport-cream: #fef2e5;
+	--aiport-ink: #0f1116;
+
+	--sl-color-accent-low: var(--aiport-cream);
+	--sl-color-accent: var(--aiport-orange-text);
+	--sl-color-accent-high: #b8341c;
+
+	--sl-color-white: var(--aiport-ink);
+	--sl-color-gray-1: #1b1e24;
+	--sl-color-gray-2: #2d3036;
+	--sl-color-gray-3: #4a4d53;
+	--sl-color-gray-4: #5c5f66;
+	--sl-color-gray-5: #c9cacc;
+	--sl-color-gray-6: #f6dccb;
+	--sl-color-gray-7: var(--aiport-cream);
+	--sl-color-black: #ffffff;
+
+	/* Starlight's other hues (cards, badges, asides) all become the orange. */
+	--sl-color-orange-low: var(--aiport-cream);
+	--sl-color-orange: var(--aiport-orange);
+	--sl-color-orange-high: var(--aiport-orange-text);
+	--sl-color-green-low: var(--aiport-cream);
+	--sl-color-green: var(--aiport-orange);
+	--sl-color-green-high: var(--aiport-orange-text);
+	--sl-color-blue-low: var(--aiport-cream);
+	--sl-color-blue: var(--aiport-orange);
+	--sl-color-blue-high: var(--aiport-orange-text);
+	--sl-color-purple-low: var(--aiport-cream);
+	--sl-color-purple: var(--aiport-orange);
+	--sl-color-purple-high: var(--aiport-orange-text);
+	--sl-color-red-low: var(--aiport-cream);
+	--sl-color-red: var(--aiport-orange);
+	--sl-color-red-high: var(--aiport-orange-text);
+
+	--sl-color-bg-nav: #ffffff;
+	--sl-color-bg-sidebar: #ffffff;
+	--sl-color-hairline-light: #f6dccb;
+	--sl-color-hairline: #f6dccb;
+	--sl-color-text-accent: var(--aiport-orange-text);
+	color-scheme: light;
 }
+
+body {
+	background: #ffffff;
+}
+
+/* Icons (all Lucide) take the windsock orange. */
+.sidebar-content svg,
+.card .icon,
+.hero .action svg,
+.social-icons svg,
+starlight-menu-button svg {
+	color: var(--aiport-orange);
+}
+
+/* Heading anchor links: Lucide's link icon instead of Starlight's own drawing. */
+.sl-anchor-link svg {
+	display: none;
+}
+.sl-anchor-icon::before {
+	content: '';
+	display: inline-block;
+	width: 0.9em;
+	height: 0.9em;
+	background-color: var(--aiport-orange);
+	-webkit-mask: var(--aiport-lucide-link) center / contain no-repeat;
+	mask: var(--aiport-lucide-link) center / contain no-repeat;
+}
+
 .hero img {
 	border-radius: 50%;
 }
-main img {
+.sl-markdown-content img {
 	border-radius: 0.5rem;
-	box-shadow: 0 4px 24px rgb(0 0 0 / 0.18);
+	border: 1px solid #f6dccb;
 }
