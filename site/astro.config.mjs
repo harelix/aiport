@@ -29,7 +29,13 @@ export default defineConfig({
 				ThemeProvider: './src/components/ThemeProvider.astro',
 				ThemeSelect: './src/components/ThemeSelect.astro',
 			},
-			expressiveCode: { themes: [aiportCodeTheme], useStarlightUiThemeColors: false },
+			expressiveCode: {
+				themes: [aiportCodeTheme],
+				useStarlightUiThemeColors: false,
+				// Plain code blocks: no fake terminal window around them.
+				defaultProps: { frame: 'none' },
+				styleOverrides: { borderColor: '#e8e8e8', borderRadius: '4px' },
+			},
 			head: [
 				{ tag: 'style', content: `:root { --aiport-lucide-link: ${lucideLinkDataUri()}; }` },
 				{ tag: 'meta', attrs: { property: 'og:image', content: `https://harelix.github.io${base}/images/social-preview.png` } },

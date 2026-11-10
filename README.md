@@ -34,24 +34,25 @@ aiport is a Go program that runs on your machine (loopback only) and sits betwee
 
 ## The basics
 
-- **One client per app.** One OpenAI-style or Anthropic-style client, pointed at aiport, instead of setup code per provider.
-- **Keys stay in aiport.** Provider keys live in a private env file (mode 0600, plain text, never in the YAML config). Each app and agent gets its own revocable token. An app's coding agent connects it, and you approve a short pairing code.
-- **Agents without your keys.** `aiport agent claude` or `aiport agent codex` launches an agent with its own token, so it never sees your provider keys.
-- **Name the need.** Apps name a model, ask for `fast`, `balanced` or `best`, or name a task and an effort.
+Each app gets one OpenAI-style or Anthropic-style client pointed at aiport, instead of setup code for every provider. It can name a model, or ask for `fast`, `balanced` or `best` and let you decide what those mean, optionally with a task name and an effort.
+
+Provider keys stay with aiport, in a private env file (mode 0600, plain text, never in the YAML config). Apps and agents get their own tokens, which you can revoke one at a time. To connect an app you hand its coding agent one instruction and approve the short pairing code it shows you. Coding agents can go through aiport too: `aiport agent claude` or `aiport agent codex` starts one with its own token, so it never sees your keys.
 
 ## The part that improves over time
 
 aiport watches how your apps use models and proposes changes. Nothing is applied without your approval unless you turn that on, and every change can be reverted.
 
-- **Compression with a quality check.** Apps can opt in to smaller prompts. aiport tracks answer quality per compression method and shows a verdict for each: no harm seen, possible harm, or not enough data.
-- **Routing from human feedback.** Thumbs up and down from your app's users become suggestions for which model should handle which requests.
-- **Self-healing apps.** Repeated failures are grouped into Issues, each with a fix on both sides: a change to aiport for you to approve, and instructions for the app's coding agent. **Fix it** can also run a coding agent in a separate git worktree. You review the diff, and if you keep it, aiport commits it on a new branch. aiport never commits to your branch, merges or pushes.
-- **Minimal observability, on purpose.** Every call is logged as metadata only: app, model, effort, latency, status and failure reason. Prompts and responses are never stored. That's enough to drive the loop above without keeping your data.
+When the same failure keeps happening, aiport groups it into an Issue with a fix on both sides: a change to aiport for you to approve, and instructions for the app's coding agent. **Fix it** goes a step further and runs a coding agent in a separate git worktree. You review the diff, and if you keep it, aiport commits it on a new branch (it never commits to your branch, merges or pushes).
+
+If your app shows thumbs up and down next to its answers, those votes turn into suggestions about which model should handle which requests. Apps can also opt in to smaller prompts, and aiport tracks answer quality for each compression method, so you can see whether it does harm, looks fine, or hasn't seen enough data yet.
+
+All of this runs on metadata. Each call is logged with the app, model, effort, latency, status and failure reason, and that's it: prompts and responses are never stored.
 
 ## Design choices and limits
 
-- **Native formats.** Requests pass through in each provider's native format with no translation, to avoid lossy conversion of tool calls and streaming. The trade-off is that a client only reaches providers that speak its protocol.
-- **Single user by design.** No teams or budgets. LiteLLM, Portkey or Bifrost fit those needs better.
+Requests pass through in each provider's own format, with no translation, because converting tool calls and streaming between formats loses things. The trade-off is that a client only reaches providers that speak its protocol.
+
+aiport is single-user by design. There are no teams or budgets, and LiteLLM, Portkey or Bifrost fit those needs better.
 
 ## How it works
 

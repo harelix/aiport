@@ -1,70 +1,66 @@
 ---
 title: aiport
-description: A self-improving local LLM gateway for developers who code with several agents and models.
+description: A small LLM gateway that runs on your machine, between your apps, your coding agents and the model providers.
 template: splash
 editUrl: false
 hero:
-  tagline: A self-improving local LLM gateway for the erratic vibe coder. One client per app, keys kept in one place, and a loop that turns failures and feedback into fixes you approve.
+  tagline: A small LLM gateway that runs on your machine, between your apps, your coding agents and the model providers.
   image:
     html: '<img class="hero-logo" src="/aiport/images/logo-wide.png" alt="" width="384" height="216" />'
   actions:
     - text: Get started
       link: /aiport/start/getting-started/
-      icon: right-arrow
     - text: Read the manual
       link: /aiport/start/introduction/
       variant: minimal
-    - text: View on GitHub
+    - text: Source on GitHub
       link: https://github.com/harelix/aiport
-      icon: external
       variant: minimal
 ---
 
 {/* Hand-written landing page. Everything else on the site is generated from docs/. */}
 
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+![The aiport dashboard, showing two provider Connections with their keys saved](/aiport/images/providers-sc.png)
 
-![The aiport dashboard: provider Connections with their keys saved, protocol defaults and connection checks](/aiport/images/providers-sc.png)
+## Why it exists
 
-## The basics
+If you build with LLMs, the day probably looks like this: Claude Code in one
+repo, Codex in another, a model running in Ollama, and credits with two or
+three providers. Every app you write ends up with its own copy of the provider
+setup and its own keys, and when a call starts failing you find out from a user.
 
-<CardGrid>
-	<Card title="One client per app" icon="plug">
-		Point one OpenAI-style or Anthropic-style client at aiport instead of writing setup code for every provider.
-	</Card>
-	<Card title="Keys stay in aiport" icon="key-round">
-		Provider keys live in a private env file. Each app and agent gets its own token, which you can revoke.
-	</Card>
-	<Card title="Agents without your keys" icon="bot">
-		`aiport agent claude` or `aiport agent codex` starts an agent with its own token, so it never sees your provider keys.
-	</Card>
-	<Card title="Name the need" icon="gauge">
-		Apps name a model, ask for `fast`, `balanced` or `best`, or name a task and an effort.
-	</Card>
-</CardGrid>
+aiport sits in the middle. Your apps point one OpenAI-style or Anthropic-style
+client at it, and it passes each call to the provider you picked. The keys stay
+with aiport, and each app gets a token of its own that you can revoke.
 
-## The part that improves over time
+## What it does over time
 
-<CardGrid>
-	<Card title="Compression with a quality check" icon="shrink">
-		Apps can ask for smaller prompts. aiport checks answer quality for each compression method and shows a verdict.
-	</Card>
-	<Card title="Routing from feedback" icon="thumbs-up">
-		Thumbs up and down from your users become suggestions for which model handles which requests.
-	</Card>
-	<Card title="Self-healing apps" icon="wrench">
-		Repeated failures become Issues, each with a fix on both sides: a change to aiport for you to approve, and instructions for the app's coding agent.
-	</Card>
-	<Card title="Metadata only" icon="eye-off">
-		Every call is logged as metadata: app, model, effort, latency, status. Prompts and responses are never stored.
-	</Card>
-</CardGrid>
+Apps don't have to name a model. They can ask for `fast`, `balanced` or `best`
+and leave the choice to you, so moving an app to a cheaper or newer model is a
+change in the dashboard, not in its code.
+
+aiport also keeps a record of every call (which app, which model, how long it
+took, whether it worked). It never stores prompts or answers. When the same
+failure keeps coming back, it opens an Issue with the evidence and two ways to
+fix it: a change on aiport's side that you approve, and an instruction you can
+paste to the app's coding agent. If your app shows a thumbs up and down next to
+its answers, those votes turn into suggestions about which model should handle
+what.
+
+You approve changes yourself (unless you turn on automatic fixes), and any of
+them can be undone.
+
+## What it doesn't do
+
+It is a single-user tool. There are no teams, budgets or shared dashboards. If
+you need those, LiteLLM, Portkey or Bifrost are a better fit. It also never
+translates between protocols, so an OpenAI client can only reach providers that
+speak the OpenAI protocol. And it is still experimental: no provider and agent
+combination has passed the full compatibility check yet.
 
 ## Where to go next
 
-<CardGrid>
-	<LinkCard title="Getting started" description="From nothing to your first connected app in about ten minutes." href="/aiport/start/getting-started/" />
-	<LinkCard title="Connect an application" description="Point an application's SDK at aiport and pair it." href="/aiport/guides/connect-an-application/" />
-	<LinkCard title="Configuration" description="Every key in aiport.yaml." href="/aiport/specs/configuration/" />
-	<LinkCard title="For coding agents" description="llms.txt: the whole manual as plain text." href="/aiport/llms.txt" />
-</CardGrid>
+- [Getting started](/aiport/start/getting-started/) takes about ten minutes, from install to your first connected app.
+- [Core concepts](/aiport/start/concepts/) explains the handful of words the rest of the docs use.
+- [Configuration](/aiport/specs/configuration/) lists every key in `aiport.yaml`.
+- Coding agents can read [llms.txt](/aiport/llms.txt), the whole manual as plain text.
