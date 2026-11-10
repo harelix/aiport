@@ -19,7 +19,7 @@ export default defineConfig({
 		starlight({
 			title: 'aiport',
 			description: 'A self-improving local LLM gateway for developers who code with several agents and models.',
-			logo: { src: '../docs/images/logo-no-bg.png', alt: 'aiport' },
+			logo: { src: '../docs/images/logo-wide.png', alt: 'aiport' },
 			favicon: '/images/logo-64.png',
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/harelix/aiport' }],
 			editLink: { baseUrl: 'https://github.com/harelix/aiport/edit/main/docs/' },

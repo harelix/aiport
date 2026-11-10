@@ -75,8 +75,11 @@ starlight-menu-button svg {
 	mask: var(--aiport-lucide-link) center / contain no-repeat;
 }
 
-.hero img {
-	border-radius: 50%;
+.hero .hero-logo {
+	width: min(100%, 22rem);
+	height: auto;
+	aspect-ratio: auto;
+	object-fit: contain;
 }
 .sl-markdown-content img {
 	border-radius: 0.5rem;
