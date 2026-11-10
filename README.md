@@ -15,7 +15,7 @@
 
 <p>
   <a href="https://harelix.github.io/aiport/">Documentation</a> ·
-  <a href="#quickstart">Quickstart</a> ·
+  <a href="docs/getting-started.md">Getting started</a> ·
   <a href="docs/manual.md">Manual</a> ·
   <a href="docs/connect.md">Connect an application</a> ·
   <a href="docs/configuration.md">Configuration</a> ·
@@ -66,6 +66,8 @@ flowchart LR
 Applications call aiport with their own token. aiport routes each call to the provider you chose, keeps the metadata, and turns repeated failures into Issues you can fix from the dashboard, or hand to the application's coding agent.
 
 ## Quickstart
+
+New to aiport? [Getting started](docs/getting-started.md) walks you through it in about ten minutes.
 
 You need **Go 1.27+** (`brew install go`, or [go.dev/dl](https://go.dev/dl)). Dependencies are vendored and the dashboard is pre-built, so nothing else is downloaded.
 

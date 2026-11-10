@@ -33,6 +33,7 @@ const MANUAL = {
 	},
 };
 const FILES = [
+	{ src: 'docs/getting-started.md', route: 'start/getting-started', order: 0 },
 	{ src: 'docs/connect.md', route: 'specs/connect', order: 1 },
 	{ src: 'docs/configuration.md', route: 'specs/configuration', order: 2 },
 	{ src: 'docs/extensions.md', route: 'specs/extensions', order: 3 },
