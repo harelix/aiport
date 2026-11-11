@@ -15,16 +15,16 @@ func TestGuidanceOfAnApplicationThatNeverConfirmed(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("guidance: %d %s", w.Code, w.Body)
 	}
-	if out["current"] != float64(4) || out["confirmed"] != nil || out["behind"] != true {
+	if out["current"] != float64(5) || out["confirmed"] != nil || out["behind"] != true {
 		t.Fatalf("an Application integrated before guidance versions must be unknown and behind: %s", w.Body)
 	}
 	changes, _ := out["changes"].([]any)
-	if len(changes) != 4 {
+	if len(changes) != 5 {
 		t.Fatalf("unknown should list every version's changes: %s", w.Body)
 	}
 	newest := changes[len(changes)-1].(map[string]any)
-	if newest["version"] != float64(4) || !strings.Contains(newest["summary"].(string), "X-Aiport-Module") {
-		t.Fatalf("version 4 should be the votes per module guidance: %v", newest)
+	if newest["version"] != float64(5) || !strings.Contains(newest["summary"].(string), "X-Aiport-Module") {
+		t.Fatalf("version 5 should be the Application action guidance: %v", newest)
 	}
 	if line, _ := out["agents_line"].(string); !strings.Contains(line, "aiport") {
 		t.Fatalf("agents_line missing: %s", w.Body)
@@ -38,11 +38,11 @@ func TestGuidanceOfAnApplicationThatNeverConfirmed(t *testing.T) {
 func TestConfirmingGuidanceRecordsTheCurrentVersion(t *testing.T) {
 	h, _ := requestsServer(t)
 	w, out := call(h, "POST", GuidancePath+"/done", "", reqHelper, false)
-	if w.Code != 200 || out["confirmed"] != float64(4) || out["current"] != float64(4) || out["behind"] != false {
+	if w.Code != 200 || out["confirmed"] != float64(5) || out["current"] != float64(5) || out["behind"] != false {
 		t.Fatalf("done: %d %s", w.Code, w.Body)
 	}
 	w, out = call(h, "GET", GuidancePath, "", reqHelper, false)
-	if out["confirmed"] != float64(4) || out["behind"] != false || len(out["changes"].([]any)) != 0 {
+	if out["confirmed"] != float64(5) || out["behind"] != false || len(out["changes"].([]any)) != 0 {
 		t.Fatalf("after done nothing should be left to do: %s", w.Body)
 	}
 	// Own state only: another Application is still unknown.
@@ -58,7 +58,7 @@ func TestGuidanceConfirmationSurvivesARestart(t *testing.T) {
 	h.Close()
 	again := reopen(t, path, time.UnixMilli(1_800_000_060_000))
 	_, out := call(again, "GET", GuidancePath, "", reqHelper, false)
-	if out["confirmed"] != float64(4) {
+	if out["confirmed"] != float64(5) {
 		t.Fatalf("confirmation lost on restart: %v", out)
 	}
 }
@@ -83,12 +83,12 @@ func TestCapabilitiesShowGuidance(t *testing.T) {
 	h, _ := requestsServer(t)
 	_, out := call(h, "GET", CapabilitiesPath, "", reqHelper, false)
 	g, _ := out["guidance"].(map[string]any)
-	if g == nil || g["current"] != float64(4) || g["confirmed"] != nil {
+	if g == nil || g["current"] != float64(5) || g["confirmed"] != nil {
 		t.Fatalf("capabilities guidance before confirming: %v", out["guidance"])
 	}
 	call(h, "POST", GuidancePath+"/done", "", reqHelper, false)
 	_, out = call(h, "GET", CapabilitiesPath, "", reqHelper, false)
-	if g, _ := out["guidance"].(map[string]any); g["confirmed"] != float64(4) {
+	if g, _ := out["guidance"].(map[string]any); g["confirmed"] != float64(5) {
 		t.Fatalf("capabilities guidance after confirming: %v", out["guidance"])
 	}
 }
@@ -113,7 +113,7 @@ func texts(res map[string]any) []string {
 func TestMCPRemindsOnlyWhileBehind(t *testing.T) {
 	h, _ := requestsServer(t)
 	first := strings.SplitN(initialize(t, h, reqHelper), "\n", 2)[0]
-	if !strings.Contains(first, "aiport_guidance") || !strings.Contains(first, "version 4") {
+	if !strings.Contains(first, "aiport_guidance") || !strings.Contains(first, "version 5") {
 		t.Fatalf("initialize instructions should start with the reminder: %q", first)
 	}
 	for _, name := range []string{"aiport_capabilities", "aiport_catalog", "aiport_my_requests"} {
@@ -160,7 +160,7 @@ func TestOwnerSeesWhoIsBehind(t *testing.T) {
 	h, _ := requestsServer(t)
 	call(h, "POST", GuidancePath+"/done", "", reqHelper, false)
 	w, out := call(h, "GET", "/api/v1/guidance", "", reqManagement, false)
-	if w.Code != 200 || out["current"] != float64(4) {
+	if w.Code != 200 || out["current"] != float64(5) {
 		t.Fatalf("management guidance: %d %s", w.Code, w.Body)
 	}
 	if s, _ := out["instruction"].(string); !strings.Contains(s, "aiport_guidance") || !strings.Contains(s, "aiport_guidance_done") || !strings.Contains(s, GuidancePath) {
@@ -169,7 +169,7 @@ func TestOwnerSeesWhoIsBehind(t *testing.T) {
 	apps, _ := out["applications"].(map[string]any)
 	helper, _ := apps["helper"].(map[string]any)
 	writer, _ := apps["writer"].(map[string]any)
-	if helper["confirmed"] != float64(4) || helper["confirmed_at_ms"] != float64(1_800_000_000_000) || writer == nil || writer["confirmed"] != nil {
+	if helper["confirmed"] != float64(5) || helper["confirmed_at_ms"] != float64(1_800_000_000_000) || writer == nil || writer["confirmed"] != nil {
 		t.Fatalf("applications: %v", apps)
 	}
 	if out["behind"] != float64(2) { // nightly and writer have not confirmed

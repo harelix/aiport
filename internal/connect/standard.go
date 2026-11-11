@@ -17,7 +17,7 @@ const StandardFormat = "standard"
 func StandardPrompt(url string) string {
 	return "Read " + url + " (aiport's communication standard for this machine) and bring this application in line with every rule in it: " +
 		"the token in .aiport, the SDK pointed at aiport, Levels or task names instead of provider model ids, X-Aiport-Effort, " +
-		"X-Aiport-Module naming the application module of every model call, a thumbs up and down that you add to the application's UI next to every LLM answer it shows (sent to aiport's feedback endpoint; if there is no UI, follow what the standard says), " +
+		"an action inventory and X-Aiport-Module naming the Application's action on every model request, including retries and streaming, a thumbs up and down that you add to the application's UI next to every LLM answer it shows (sent to aiport's feedback endpoint; if there is no UI, follow what the standard says), " +
 		"and the error fixes. Work through its checklist, tell me what you changed, and ask me before anything it says needs the Owner (a token, a pairing approval, a mapping)."
 }
 
@@ -47,6 +47,12 @@ func Standard(d Document) string {
 	w("## 2. Transport: the provider's own API, through aiport\n\n")
 	w("- Configured protocols here: **%s**. OpenAI SDK: `base_url = AIPORT_BASE_URL + \"/v1\"`; Anthropic SDK: `base_url = AIPORT_BASE_URL`; both with `api_key = AIPORT_APP_TOKEN`. Requests and responses are the provider's native format, streaming included; aiport does not translate between protocols.\n", protocols)
 	w("- The application keeps no provider keys: aiport adds them.\n\n")
+	w("### Actions within this Application\n\n")
+	w("- Keep an **action inventory** in the Application's repository and link it from `AGENTS.md`: for every LLM action, list its stable module id, purpose, call sites, protocol, and the Level or task name it sends. For example, `article.summarize` summarizes an article, while `voice.profile` analyzes reference writing. Preserve existing ids when they already distinguish the actions.\n")
+	w("- Send that action id as `X-Aiport-Module` on **every model request**, including retries, streaming and background calls. Use request-specific SDK headers when one SDK client serves several actions. Distinct actions get distinct ids even when they use the same Level or task name.\n")
+	w("- Action ids are scoped to the **Application** identified by its token. Two Applications may use the same id and still have separate routes. aiport learns the action from incoming calls; there is no separate action-registration endpoint.\n")
+	w("- The action header and the `model` field serve different purposes. A generic model name such as `tldr` alone does not identify the use case: send both the action header and a Level or task name from this Application's Catalog. The Owner chooses its Connection and model; keep those choices in aiport.\n")
+	w("- Verify every call site sends the right header. Check a representative call for each action in **Activity**, using its `X-Aiport-Request-Id`: the Application, module and served model must match. Tell the Owner which actions remain unverified. Maintain the inventory whenever adding or changing an LLM action, and confirm guidance only after the update is verified.\n\n")
 
 	w("## 3. Model names: say what you need, never which provider\n\n")
 	w("- Send a **Level** (`fast`, `balanced`, `best`) or a **task name** the Owner set up (`classify`, `tldr`...) as the model. Never a provider's model id: the Owner decides what serves each name and changes it without a code change.\n")
@@ -55,7 +61,7 @@ func Standard(d Document) string {
 	w("## 4. Headers on every model call\n\n")
 	w("| Header | Required | Value |\n|---|---|---|\n")
 	w("| `Authorization: Bearer <AIPORT_APP_TOKEN>` (Anthropic: `x-api-key`) | yes | the application's token |\n")
-	w("| `X-Aiport-Module` | **yes** | the **module** of the application the call serves: one stable name per feature, such as `tldr`, `classify`, `extract`, `analysis`, `insights`; lower case, `a`–`z`, `0`–`9`, `.`, `_`, `-`, at most 64. It is what lets the Owner see which part of the application does well and which does not. |\n")
+	w("| `X-Aiport-Module` | **yes** | the Application's **action**, recorded as its module: one stable id per use case, such as `article.summarize` or `voice.profile`; lower case, `a`–`z`, `0`–`9`, `.`, `_`, `-`, at most 64. It lets the Owner distinguish and route actions within this Application, as well as compare their feedback. |\n")
 	w("| `X-Aiport-Effort` | where calls differ | `low`, `medium` or `high`: how hard the call is. aiport may pick another model for it and passes it to the provider as its reasoning effort when the body sets none. |\n\n")
 	w("Read from every response: `X-Aiport-Request-Id` (keep it with the answer: votes and logs refer to it), `X-Aiport-Model` (the model that actually answered, after aiport replaced the name you sent) and `X-Aiport-Route` (its Connection, the name sent, the effort and what chose the model), and `X-Aiport-Catalog` (when it changes, read `/v1/models` again). A vote is counted for the model in `X-Aiport-Model` of the same request id, so log the two together if you want to show or audit which variant answered.\n\n")
 
@@ -80,12 +86,14 @@ func Standard(d Document) string {
 		"`.aiport` holds `AIPORT_BASE_URL` and `AIPORT_APP_TOKEN`, is in `.gitignore`, and the application loads it at startup.",
 		"The SDK's base URL and key come from `.aiport`; no provider key is left in the application.",
 		"Every model call sends a Level or task name, never a provider model id.",
-		"Every model call sends `X-Aiport-Module` with the name of its module, the same name for the same feature everywhere.",
+		"An action inventory documents every LLM action, its id, purpose, call sites, protocol and model name sent; AGENTS.md links to it.",
+		"Every model request sends `X-Aiport-Module` with its action id, including retries, streaming and background calls; shared SDK clients keep the header specific to the request.",
 		"Calls that differ in difficulty send `X-Aiport-Effort`.",
 		"`X-Aiport-Request-Id` is kept with every answer shown.",
 		"If the application has a UI, you added a thumbs up and down next to every LLM answer it shows, sending `{request_id, vote}` to `/v1/aiport/feedback` (no UI: the vote is offered where a person sees the answer, or the Owner knows there is none).",
 		"401/403 follow `error.fix`; `AGENTS.md` has aiport's line; the MCP entry is in place.",
 		"One real call made, and one vote sent; the Owner sees both (Activity and Feedback pages).",
+		"Each action's representative call was verified in Activity with the right Application, module and served model before confirming guidance; any unverified actions were reported.",
 	} {
 		w("- [ ] %s\n", item)
 	}

@@ -472,7 +472,7 @@ export default function IntegratePage({origins, targets, providers = [], tick, o
       <article className="standard-card" aria-labelledby="standard-heading">
         <div className="standard-head"><FileCheck2 size={17} strokeWidth={1.75} aria-hidden/><div>
           <h3 id="standard-heading">Communication standard</h3>
-          <p className="muted-small">Every rule an integration follows, with a checklist: the token in <code>.aiport</code>, Levels and task names, <code>X-Aiport-Effort</code>, <code>X-Aiport-Module</code> naming the module of every call, a thumbs up and down on every answer sent to aiport, and the error fixes. Paste it to the coding agent of a new application, or of one already connected, to bring it in line.</p>
+          <p className="muted-small">Every rule an integration follows, with a checklist: the token in <code>.aiport</code>, Levels and task names, an action inventory, <code>X-Aiport-Module</code> identifying the Application's action on every request (including retries and streaming), <code>X-Aiport-Effort</code>, answer feedback, and error fixes. Action ids belong to each Application and let aiport distinguish its use cases for routing. Paste it to the coding agent of a new application, or of one already connected, to bring it in line.</p>
         </div></div>
         <blockquote className="agent-prompt">{doc.standard_prompt}</blockquote>
         <div className="button-row"><CopyButton text={doc.standard_prompt} label="Copy instruction"/><CopyButton text={doc.standard} label="Copy URL only"/><a className="text-button" href={'/_connect?format=standard'} target="_blank" rel="noreferrer">Read the standard <ExternalLink size={12} aria-hidden/></a></div>

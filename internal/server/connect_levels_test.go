@@ -106,13 +106,13 @@ func TestGuidanceVersion4TeachesVotesPerModule(t *testing.T) {
 	h, _ := requestsServer(t)
 	_, out := call(h, "GET", GuidancePath, "", reqHelper, false)
 	changes, _ := out["changes"].([]any)
-	v4 := changes[len(changes)-1].(map[string]any)
+	v4 := changes[3].(map[string]any)
 	actions := ""
 	for _, a := range v4["actions"].([]any) {
 		actions += a.(string) + "\n"
 	}
 	if v4["version"] != float64(4) {
-		t.Fatalf("newest change is version %v", v4["version"])
+		t.Fatalf("fourth change is version %v", v4["version"])
 	}
 	mustContain(t, "version 4 actions", actions, "X-Aiport-Module", "thumbs up", "/v1/aiport/feedback", "X-Aiport-Request-Id", "agents_line", "aiport_guidance_done")
 	mustContain(t, "AGENTS.md line", connect.AgentsLine, "X-Aiport-Module", "thumbs up", "/v1/aiport/feedback")

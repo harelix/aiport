@@ -1,3 +1,4 @@
+import {ConnectionModelPicker} from './ModelPicker';
 import React, {useEffect, useState} from 'react';
 import {HelpLink} from './help';
 import {ArrowUpRight, ChevronRight, CircleAlert, History, Lightbulb, Puzzle, Sparkles, Undo2} from 'lucide-react';
@@ -426,17 +427,17 @@ function IssueCard({issue, targets, explain, onDecided, onExplained}: {issue: Is
     {blocked && <div className="notice error" role="alert"><strong>Blocked by the guardrail {blocked.extension}:</strong> {blocked.reason} Nothing was changed; this Issue stays open.</div>}
     {fix?.state === 'proposed' && <form className="decision-form" onSubmit={e => { e.preventDefault(); decide('accept'); }}>
       {binds
-        ? <label>Fix in aiport: bind only {issue.application} to<select value={target} onChange={e => setTarget(e.target.value)}>
+        ? <label>Fix in aiport: bind only {issue.application} to<select value={target} onChange={e => { setTarget(e.target.value); setModel(''); }}>
             {!target && <option value="">Choose a working Connection</option>}
             {targets.filter(t => t !== issue.subject).map(t => <option key={t}>{t}</option>)}
           </select></label>
         : <>
           <label>{level ? 'Fix in aiport: map the Level (' + (issue.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI') + ' protocol) for only ' + issue.application : 'Fix in aiport: alias for only ' + issue.application}<input value={issue.subject} readOnly spellCheck={false}/></label>
-          <label>Connection<select value={target} onChange={e => setTarget(e.target.value)}>
+          <label>Connection<select value={target} onChange={e => { setTarget(e.target.value); setModel(''); }}>
             {!target && <option value="">Choose a Connection</option>}
             {targets.map(t => <option key={t}>{t}</option>)}
           </select></label>
-          <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} spellCheck={false} autoComplete="off" placeholder={level ? 'A model the Connection serves' : undefined}/></label>
+          <ConnectionModelPicker connection={target} label="Model to use" value={model} onChange={setModel}/>
         </>}
       <div className="actions">
         <button className="primary" disabled={!!busy || !target || (!binds && !model.trim())}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>
@@ -504,6 +505,9 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
   const choices = targets.filter(t => t !== failing);
   // The Application's preferred Connection is advice: pre-selected only when it is one of the choices.
   const [target, setTarget] = useState(item.proposal.target && choices.includes(item.proposal.target) ? item.proposal.target : choices[0] || ''), [model, setModel] = useState(item.proposal.model || '');
+  const preferred = item.proposal.target && choices.includes(item.proposal.target) ? item.proposal.target : choices[0] || '';
+  // Configuration can arrive after the pending decisions on the first load.
+  useEffect(() => { if (!target && preferred) setTarget(preferred); }, [target, preferred]);
   const [name, setName] = useState(item.proposal.alias || ''), [scope, setScope] = useState(item.scope || 'application');
   const [note, setNote] = useState(''), [busy, setBusy] = useState(''), [error, setError] = useState('');
   const [blocked, setBlocked] = useState<Blocked | null>(null);
@@ -566,8 +570,8 @@ function Pending({item, targets, onDecided, onOpenApplications}: {item: Decision
         <option value="every_application">Every Application</option>
       </select></label>
       {alias && <label>Alias<input value={name} onChange={e => setName(e.target.value)} readOnly={!request} required maxLength={256} spellCheck={false} autoComplete="off"/></label>}
-      <label>{alias ? 'Connection' : scope === 'every_application' ? 'Default Connection' : 'Bind to Connection'}<select value={target} onChange={e => setTarget(e.target.value)}>{choices.map(t => <option key={t}>{t}</option>)}</select></label>
-      {alias && <label>Model to use<input value={model} onChange={e => setModel(e.target.value)} required maxLength={256} placeholder="model name on that connection" spellCheck={false} autoComplete="off"/></label>}
+      <label>{alias ? 'Connection' : scope === 'every_application' ? 'Default Connection' : 'Bind to Connection'}<select value={target} onChange={e => { setTarget(e.target.value); setModel(''); }}>{choices.map(t => <option key={t}>{t}</option>)}</select></label>
+      {alias && <ConnectionModelPicker connection={target} label="Model to use" value={model} onChange={setModel}/>}
       <label>Note {request ? 'for ' + item.application : '(optional)'}<input value={note} onChange={e => setNote(e.target.value)} maxLength={2000}/></label>
       <div className="actions">
         <button className="primary" disabled={!!busy || !ready}>{busy === 'accept' ? 'Approving…' : 'Approve'}</button>

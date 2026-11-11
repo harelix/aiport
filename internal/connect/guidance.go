@@ -10,7 +10,7 @@ import "fmt"
 // confirmed an older version learns exactly what to do.
 
 // GuidanceVersion is the version of the guidance this build of aiport gives.
-const GuidanceVersion = 4
+const GuidanceVersion = 5
 
 // GuidanceChange is what one guidance version changed: a one-line summary
 // and what an agent in an Application's repository does about it.
@@ -51,6 +51,13 @@ var guidanceLog = []GuidanceChange{
 		"If the application has a user interface, build a thumbs up and a thumbs down into it, next to every LLM answer it shows a person, in its own style; if it has none (a service, batch job or CLI), offer the vote where a person sees the answer, or tell the Owner that no person does and skip votes. On a vote, POST /v1/aiport/feedback with the Application's token and {\"request_id\":\"<id>\",\"vote\":\"up\"} or \"down\" (the feedback snippet in the application brief); a changed vote is sent again. Never send the prompt or the answer.",
 		"Replace the aiport line in AGENTS.md with agents_line from this answer (it now names X-Aiport-Module and the votes); keep one aiport line only.",
 		"Then call aiport_guidance_done.",
+	}},
+	{5, "Application actions: X-Aiport-Module identifies the action behind every request, so the Owner can route each Application's use cases independently.", []string{
+		"Read the communication standard (/_connect?format=standard) and make an action inventory in the Application's repository: every LLM action, its stable module id, what it does, its call sites, protocol, and the Level or task name it sends. Link the inventory from AGENTS.md so later coding agents maintain it.",
+		"Send X-Aiport-Module on every model request using the inventory's action id, including retries, streaming and background calls. Use meaningful names such as article.summarize or voice.profile; give distinct actions distinct ids even when they send the same model name. Use lower case a-z, 0-9, '.', '_' or '-', at most 64 characters. The token identifies the Application, so the id is scoped to that Application.",
+		"Keep action identity separate from the model field: send a Level or task name from this Application's Catalog. A name such as tldr does not identify the action by itself. aiport records the action from X-Aiport-Module when calls arrive; no separate action-registration endpoint is needed. The Owner chooses Connections and models; preserve existing action ids and routes when updating an integration.",
+		"Verify the header at every call site, including retries and streaming. For each action, check a representative call's X-Aiport-Request-Id in Activity with the Owner: it must show the right Application, module and model. Report unverified actions instead of calling the integration complete.",
+		"Replace the aiport line in AGENTS.md with agents_line, keep the action inventory current when adding call sites, and call aiport_guidance_done only after the update and verification are complete.",
 	}},
 }
 
@@ -95,6 +102,7 @@ func GuidanceReminder(confirmed int) string {
 // Application that is behind (the dashboard's Copy refresh instruction).
 func RefreshInstruction(root string) string {
 	return "aiport's guidance for coding agents has changed. Call the aiport MCP tool aiport_guidance, follow its steps, then call aiport_guidance_done. " +
+		"The action update requires an action inventory and X-Aiport-Module on every model request, including retries and streaming; read aiport_standard for the checklist. " +
 		"Without MCP, use GET " + root + "/v1/aiport/guidance and POST " + root + "/v1/aiport/guidance/done with the bearer token in AIPORT_APP_TOKEN. " +
 		"If aiport answers 401 or 403, the token is missing or revoked: it belongs in .aiport at the repository root (or AIPORT_APP_TOKEN); if it is not there or is still refused, ask the Owner for a New token from the Integrate page into .aiport, and do not look for a token anywhere else."
 }

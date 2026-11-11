@@ -64,13 +64,16 @@ func briefs(base string) []Brief {
 // AGENTS.md, so future sessions name models the aiport way, check their
 // Catalog, Issues and guidance, and ask aiport instead of working around it.
 // Changing it in a way agents must act on means a new guidance version.
-const AgentsLine = "This app's LLM calls go through aiport; its token is in `.aiport` at the repository root (gitignored; never commit it, and if aiport answers 401 ask the Owner for a New token from the Integrate page into `.aiport`). As the model, send a Level (`fast`, `balanced` or `best`) or a task name from `aiport_catalog`, never a provider's model id, and say how hard a call is with the `X-Aiport-Effort` header (`low`, `medium` or `high`). Name the app module of every call with `X-Aiport-Module` (`tldr`, `classify`, `insights`...) and, where the app has a UI, add a thumbs up and down next to every LLM answer it shows, sent with `POST /v1/aiport/feedback` `{request_id, vote}`. At the start of a session, check `aiport_catalog` for the names it can use and what changed, `aiport_my_issues` for open Issues and `aiport_guidance` for new aiport guidance (after updating to it, call `aiport_guidance_done`); if aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it."
+const AgentsLine = "This app's LLM calls go through aiport; its token is in `.aiport` at the repository root (gitignored; never commit it, and if aiport answers 401 ask the Owner for a New token from the Integrate page into `.aiport`). As the model, send a Level (`fast`, `balanced` or `best`) or a task name from `aiport_catalog`, never a provider's model id, and say how hard a call is with the `X-Aiport-Effort` header (`low`, `medium` or `high`). Maintain an action inventory linked from AGENTS.md; send its stable action id in `X-Aiport-Module` on every model request, including retries and streaming (for example `article.summarize`); action ids are scoped to this Application and separate from the model name. Where the app has a UI, add a thumbs up and down next to every LLM answer it shows, sent with `POST /v1/aiport/feedback` `{request_id, vote}`. At the start of a session, check `aiport_catalog` for the names it can use and what changed, `aiport_my_issues` for open Issues and `aiport_guidance` for new aiport guidance (after updating to it, call `aiport_guidance_done`); if aiport lacks something it needs, ask with `aiport_request_change` (see /_connect); don't work around it."
 
 // TokenFile is where an Application keeps its aiport settings: a file at the
 // root of its repository, never committed (it is in .gitignore), holding
 // AIPORT_BASE_URL and AIPORT_APP_TOKEN lines. The application and its coding
 // agents read it; environment variables of the same name win over it.
 const TokenFile = ".aiport"
+
+// ActionInstructions is shared by onboarding and the later coding-agent brief.
+const ActionInstructions = "**Identify every Application action (required).** Keep an action inventory in the repository, linked from AGENTS.md: each LLM action's stable id, purpose, call sites, protocol, and Level or task name sent. Use ids such as `article.summarize` and `voice.profile`; preserve existing ids that already distinguish actions. Send the id as `X-Aiport-Module` on every model request, including retries, streaming and background calls, using request-specific headers for shared SDK clients. Replace the example ids in the snippets with the actual action id. The token identifies the Application, so action ids are scoped to it. A model name such as `tldr` alone does not identify an action: keep the action header separate from the Level or task name in `model`. aiport records actions from calls; no separate action-registration endpoint is needed. The Owner chooses Connections and models in aiport. Verify every call site, then check a representative call per action in Activity by its `X-Aiport-Request-Id` for the right Application, module and served model. Report unverified actions; call `aiport_guidance_done` only after updating and verifying. Maintain the inventory when adding or changing an action."
 
 // headersHelper is the command Claude Code runs for the MCP entry's headers:
 // the token from AIPORT_APP_TOKEN when it is set, else from .aiport at the
@@ -127,11 +130,12 @@ func applicationBrief(d Document, root string) Integration {
 			"**Watch `X-Aiport-Catalog`.** Every answer aiport gives this Application, forwarded calls and errors included, carries `X-Aiport-Catalog: <version>`, the version of its Catalog. It changes only when the Owner changes what the Application can use (a Level mapping or task name removed, added or moved, its per-effort models, its binding or a protocol default). When it differs from the last one seen, read `/v1/models` again; `GET " + root + "/v1/aiport/catalog` says what changed and when. The provider's answer is otherwise unchanged.",
 			"**Errors and retries.** A body of `{\"error\":{\"code\":...}}` with a code listed at `" + root + Path + "?format=markdown` came from aiport; anything else is the provider's own error, passed through. Retry only `429 concurrency_limit`, `502` and `504`, with backoff. On `401` or `403 application_token_required` the token is missing or no longer valid: follow the error's `fix` (the token goes in `.aiport`; a lost one is replaced with **New token**), do not pair again, and retry only once `.aiport` has the new token.",
 			"**Log `X-Aiport-Request-Id`** from responses next to your own request logs (the snippets read it); the Owner finds the call in aiport's Activity page with it.",
-			"**Let users rate answers, and name each call's module (required).** If the application has a user interface, you add a thumbs up and a thumbs down next to every LLM answer it shows a person, in its own UI and style (no UI, such as a service, batch job or CLI: offer the vote where a person sees the answer, or tell the Owner none does and skip votes). Send `X-Aiport-Module: <module>` on every model call, naming the part of the application it serves (for example `tldr`, `classify`, `extract`, `analysis`, `insights`; lower case, `a`–`z`, `0`–`9`, `.`, `_` or `-`, at most 64), the same name for the same feature everywhere. Keep the response's `X-Aiport-Request-Id` with the answer, and when the person votes, `POST " + root + "/v1/aiport/feedback` with `{\"request_id\":\"<id>\",\"vote\":\"up\"}` or `\"down\"` (see the `feedback` snippet; add `\"module\"` if the call did not send the header). A changed vote is sent again and the last one counts. Never send the prompt or the answer. The Owner reads the votes per module, model and effort on aiport's Feedback page and changes the model or effort of a module that does badly, without a code change.",
+			ActionInstructions,
+			"**Let users rate answers (required).** If the application has a user interface, you add a thumbs up and a thumbs down next to every LLM answer it shows a person, in its own UI and style (no UI, such as a service, batch job or CLI: offer the vote where a person sees the answer, or tell the Owner none does and skip votes). Keep the response's `X-Aiport-Request-Id` with the answer, and when the person votes, `POST " + root + "/v1/aiport/feedback` with `{\"request_id\":\"<id>\",\"vote\":\"up\"}` or `\"down\"` (see the `feedback` snippet; add `\"module\"` if the call did not send the header). A changed vote is sent again and the last one counts. Never send the prompt or the answer. The Owner reads the votes per module, model and effort on aiport's Feedback page and changes the model or effort of a module that does badly, without a code change.",
 			"**Optional:** send `X-Aiport-Compress` to shrink large prompts; the same votes show whether compression hurts answers. Do not rely on features marked `planned`.",
 			issuesStep(d, root),
 			"**Prepare later sessions.** Follow the coding-agent brief (`" + root + Path + "?format=handover&for=" + ForAgent + "`): it adds a project MCP entry and one line to `AGENTS.md`, so coding agents in this repository ask aiport for changes instead of working around it.",
-			"**Verify.** Make one real call, check it succeeds, and ask the Owner to confirm it appears under the application's name in aiport's Activity page (the Integrate page shows \"first call seen\"). If it shows as `unknown`, the token is not the application's own.",
+			"**Verify.** Make a representative call for each action, check it succeeds, and ask the Owner to confirm it appears under the right Application and module in aiport's Activity page (the Integrate page shows \"first call seen\"). If it shows as `unknown`, the token is not the application's own.",
 		},
 		Snippets: applicationSnippets(root, on),
 		Note:     "aiport stores no prompts or responses, only request metadata, and listens on this machine only. Full protocol reference: " + root + Path + "?format=markdown",
@@ -152,9 +156,9 @@ func issuesStep(d Document, root string) string {
 func levelSnippet(root string, on map[string]bool) Snippet {
 	s := Snippet{ID: "level", Title: "A Level, with how hard the call is", Language: "curl", Available: true}
 	if on["anthropic"] && !on["openai"] {
-		s.Code = "curl -si " + root + "/v1/messages \\\n  -H \"x-api-key: $AIPORT_APP_TOKEN\" -H \"anthropic-version: 2023-06-01\" \\\n  -H \"X-Aiport-Effort: low\" -H \"content-type: application/json\" \\\n  -d '{\"model\":\"balanced\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}'\n"
+		s.Code = "curl -si " + root + "/v1/messages \\\n  -H \"x-api-key: $AIPORT_APP_TOKEN\" -H \"anthropic-version: 2023-06-01\" \\\n  -H \"X-Aiport-Module: article.summarize\" -H \"X-Aiport-Effort: low\" -H \"content-type: application/json\" \\\n  -d '{\"model\":\"balanced\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}'\n"
 	} else {
-		s.Code = "curl -si " + root + "/v1/chat/completions \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\" \\\n  -H \"X-Aiport-Effort: low\" -H \"content-type: application/json\" \\\n  -d '{\"model\":\"balanced\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}'\n"
+		s.Code = "curl -si " + root + "/v1/chat/completions \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\" \\\n  -H \"X-Aiport-Module: article.summarize\" -H \"X-Aiport-Effort: low\" -H \"content-type: application/json\" \\\n  -d '{\"model\":\"balanced\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}'\n"
 	}
 	s.Code += "# balanced is a Level: the Owner maps it to a model (400 level_unmapped when it is not mapped here).\n"
 	return s
@@ -169,7 +173,7 @@ func applicationSnippets(root string, on map[string]bool) []Snippet {
 		{ID: "load", Title: "Load .aiport at startup", Language: "python", Available: true, Code: "import os, pathlib\n\n# Fill AIPORT_BASE_URL and AIPORT_APP_TOKEN from .aiport; the environment wins.\nfor line in pathlib.Path(\".aiport\").read_text().splitlines():\n    key, _, value = line.partition(\"=\")\n    if key.startswith(\"AIPORT_\") and value:\n        os.environ.setdefault(key.strip(), value.strip())\n"},
 		{ID: "load-node", Title: "Load .aiport at startup (Node 20.12+)", Language: "typescript", Available: true, Code: "// Fills AIPORT_BASE_URL and AIPORT_APP_TOKEN from .aiport; variables already set win.\nprocess.loadEnvFile(\".aiport\");\n"},
 		{ID: "pair", Title: "Pair (once per application)", Language: "curl", Available: true, Code: "curl -s -X POST " + root + "/v1/aiport/pair \\\n  -H 'content-type: application/json' \\\n  -d '{\"name\":\"<application name>\",\"description\":\"<what it uses LLMs for>\",\"repository\":\"<absolute path of the repository's top directory>\"}'\n# Show the returned code to the Owner, then poll until approved:\ncurl -s " + root + "<poll path from the reply>\n"},
-		{ID: "feedback", Title: "Name the module, then send the person's vote", Language: "curl", Available: true, Code: "# On every model call: -H \"X-Aiport-Module: tldr\"; keep the X-Aiport-Request-Id of the answer.\ncurl -s " + root + "/v1/aiport/feedback \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\" -H \"content-type: application/json\" \\\n  -d '{\"request_id\":\"<X-Aiport-Request-Id>\",\"vote\":\"up\"}'   # or \"down\"\n"},
+		{ID: "feedback", Title: "Name the module, then send the person's vote", Language: "curl", Available: true, Code: "# On every model call: -H \"X-Aiport-Module: article.summarize\"; keep the X-Aiport-Request-Id of the answer.\ncurl -s " + root + "/v1/aiport/feedback \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\" -H \"content-type: application/json\" \\\n  -d '{\"request_id\":\"<X-Aiport-Request-Id>\",\"vote\":\"up\"}'   # or \"down\"\n"},
 		{ID: "models", Title: "Model names this Application can use", Language: "curl", Available: true, Code: "curl -si " + root + "/v1/models \\\n  -H \"Authorization: Bearer $AIPORT_APP_TOKEN\"\n# Add -H 'anthropic-version: 2023-06-01' for the Anthropic list shape.\n# The X-Aiport-Catalog response header is this Application's Catalog version.\n"},
 		levelSnippet(root, on),
 		sdk("python-openai", "Python · OpenAI SDK", "python", "openai", "openai", `import os
@@ -180,6 +184,7 @@ client = OpenAI(
     api_key=os.environ["AIPORT_APP_TOKEN"],
 )
 raw = client.chat.completions.with_raw_response.create(
+    extra_headers={"X-Aiport-Module": "article.summarize"},
     model="MODEL",
     messages=[{"role": "user", "content": "ping"}],
 )
@@ -194,6 +199,7 @@ client = Anthropic(
     api_key=os.environ["AIPORT_APP_TOKEN"],
 )
 raw = client.messages.with_raw_response.create(
+    extra_headers={"X-Aiport-Module": "article.summarize"},
     model="MODEL",
     max_tokens=256,
     messages=[{"role": "user", "content": "ping"}],
@@ -208,7 +214,8 @@ const client = new OpenAI({
   apiKey: process.env.AIPORT_APP_TOKEN,
 });
 const { data, response } = await client.chat.completions
-  .create({ model: "MODEL", messages: [{ role: "user", content: "ping" }] })
+  .create({ model: "MODEL", messages: [{ role: "user", content: "ping" }] },
+    { headers: { "X-Aiport-Module": "article.summarize" } })
   .withResponse();
 console.log(response.headers.get("x-aiport-request-id"));
 `),
@@ -219,18 +226,21 @@ const client = new Anthropic({
   apiKey: process.env.AIPORT_APP_TOKEN,
 });
 const { data, response } = await client.messages
-  .create({ model: "MODEL", max_tokens: 256, messages: [{ role: "user", content: "ping" }] })
+  .create({ model: "MODEL", max_tokens: 256, messages: [{ role: "user", content: "ping" }] },
+    { headers: { "X-Aiport-Module": "article.summarize" } })
   .withResponse();
 console.log(response.headers.get("x-aiport-request-id"));
 `),
 		sdk("curl-openai", "curl · OpenAI protocol", "curl", "openai", "openai", `curl -si "$AIPORT_BASE_URL/v1/chat/completions" \
   -H "Authorization: Bearer $AIPORT_APP_TOKEN" \
+  -H "X-Aiport-Module: article.summarize" \
   -H "content-type: application/json" \
   -d '{"model":"MODEL","messages":[{"role":"user","content":"ping"}]}'
 # The X-Aiport-Request-Id response header identifies the call.
 `),
 		sdk("curl-anthropic", "curl · Anthropic protocol", "curl", "anthropic", "anthropic", `curl -si "$AIPORT_BASE_URL/v1/messages" \
   -H "x-api-key: $AIPORT_APP_TOKEN" -H "anthropic-version: 2023-06-01" \
+  -H "X-Aiport-Module: article.summarize" \
   -H "content-type: application/json" \
   -d '{"model":"MODEL","max_tokens":64,"messages":[{"role":"user","content":"ping"}]}'
 # The X-Aiport-Request-Id response header identifies the call.
@@ -248,8 +258,9 @@ func agentBrief(d Document, root string) Integration {
 		"**Where you are.** This repository's Application sends its LLM calls through aiport at `"+root+"`, with its own Application token in `.aiport` at the repository root (in `.gitignore`, never committed; `AIPORT_APP_TOKEN` in the environment wins over it). If aiport lacks something the Application needs (a model name, another Connection), ask the Owner through aiport. Do not work around it: no provider API keys, no direct provider URLs, never a provider's model id where a Level or task name will do.",
 		"**Add the project MCP entry** so coding agents here can reach aiport (Claude Code: `.mcp.json` at the repository root; other agents: their project MCP config; see the `mcp` snippet): `"+mcpEntry(root)+"`. Its `headersHelper` reads the token from `AIPORT_APP_TOKEN` or else from `.aiport` at the repository root, so the agent needs nothing exported; never write the token's value into the MCP file. Agents whose MCP config has no headers helper: start them with `set -a; . ./.aiport; set +a` and use `\"headers\":{\"Authorization\":\"Bearer ${AIPORT_APP_TOKEN}\"}`.",
 		lostToken,
+		ActionInstructions,
 		"**Add this line to the repository's `AGENTS.md`** (see the `agents-line` snippet): \""+AgentsLine+"\"",
-		"**Keep this guidance current.** aiport numbers this guidance (now version "+fmt.Sprint(GuidanceVersion)+") and remembers the version this repository last confirmed. After adding the MCP entry and the AGENTS.md line, call `aiport_guidance_done` (`POST "+root+"/v1/aiport/guidance/done`). When aiport's guidance changes later, the MCP instructions start with a one-line reminder and every aiport tool answer ends with it, and `aiport_capabilities` shows `guidance: {current, confirmed}`: then call `aiport_guidance` (`GET "+root+"/v1/aiport/guidance`) for what changed, the current AGENTS.md line and the steps, do them, and call `aiport_guidance_done` again.",
+		"**Keep this guidance current.** aiport numbers this guidance (now version "+fmt.Sprint(GuidanceVersion)+") and remembers the version this repository last confirmed. After completing the action inventory, call-site updates and verification, adding the MCP entry and replacing the AGENTS.md line, call `aiport_guidance_done` (`POST "+root+"/v1/aiport/guidance/done`). When aiport's guidance changes later, the MCP instructions start with a one-line reminder and every aiport tool answer ends with it, and `aiport_capabilities` shows `guidance: {current, confirmed}`: then call `aiport_guidance` (`GET "+root+"/v1/aiport/guidance`) for what changed, the current AGENTS.md line and the steps, do them, and call `aiport_guidance_done` again.",
 		"**The tools and their HTTP equivalents.** Each MCP tool answers exactly as its HTTP endpoint does; both use "+auth+". `aiport_capabilities` = `GET "+root+"/v1/aiport/capabilities`: the protocols this Application can reach and their Connection, its own aliases, its binding, `may_request_changes` and the `change_kinds` it may request. `aiport_catalog` = `GET "+root+"/v1/aiport/catalog`: this Application's Catalog (its task names and where each goes, its binding or the protocol defaults it follows, the models of the Connections it reaches, the version) and its recent Catalog changes, newest first. `aiport_guidance` = `GET "+root+"/v1/aiport/guidance`: what changed in aiport's guidance since this repository last confirmed it, the current AGENTS.md line and the steps. `aiport_guidance_done` = `POST "+root+"/v1/aiport/guidance/done`: confirm the current version. `aiport_request_change` = `POST "+root+"/v1/aiport/requests`: file a Change request. `aiport_my_requests` = `GET "+root+"/v1/aiport/requests` (all of this Application's own requests) or `GET "+root+"/v1/aiport/requests/{id}` (one). `aiport_my_issues` = `GET "+root+"/v1/aiport/issues` (this Application's Issues) or `GET "+root+"/v1/aiport/issues/{id}` (one). `aiport_issue_fixed` = `POST "+root+"/v1/aiport/issues/{id}/fixed`.",
 		"**Check the Catalog, Issues and guidance at the start of a session.** Call `aiport_catalog` first: `catalog.task_names` are the names to send, the mapped Levels (`level: true`, with their `protocol`) and the task names, each with its per-effort models (`effort`) when the Owner set any, `catalog.models` the models the reached Connections list (`GET "+root+"/v1/models` lists the same names in the SDK's own shape), and `changes` what the Owner changed since (task names `removed`, `added` or `moved` with `from` and `to`, `routing` that changed, each with `change_id` and `at_ms`). If the code sends a name that is gone, change it. Every answer aiport gives this Application carries `X-Aiport-Catalog: <version>`; when it differs from the version in `aiport_catalog`, read it again. Then call `aiport_my_issues`: an Issue is a problem aiport keeps seeing with this Application's calls (for example a model no Connection it reaches serves), with `summary`, `evidence` (counts, time window, request ids), `application_fix` (what to change in this Application's code, with the models this gateway serves) and `aiport_fix` (a fix in aiport's configuration: `proposed` waits for the Owner, `applied`, `rejected` or `reverted`). `aiport_capabilities` shows `open_issues`, and a failing call that is one of an open Issue's failures (the same model answered `404`, or the same failing Connection) carries an `X-Aiport-Hint` naming that Issue, whether or not this Application may request changes. An Issue of cause `catalog_changed` is a notice: a Change took away something this Application used (a task name, its binding or a protocol default); `catalog_change` says what changed and what is still `available`, there is no aiport fix, and the Application fix is to send a name that still exists. Either make the Application fix, or leave it to the Owner when an aiport fix is proposed; do not do both. An Issue of cause `level_unmapped` means the code sends a Level the Owner has not mapped on its protocol: the Owner maps it, or the code sends a name the Catalog lists. Last, call `aiport_guidance`: when `behind` is true, do each action in `changes`, replace the aiport line in AGENTS.md with `agents_line`, and call `aiport_guidance_done`.",
 		"**Say when you fixed it.** After changing the Application's code, call `aiport_issue_fixed` with the Issue's `id`: it becomes `resolving`, so the Owner sees it is being handled (an aiport fix waiting for the Owner keeps waiting; the Owner may still approve it). A `catalog_changed` Issue is resolved at once; any other is marked `resolved` with `resolution.how` = `application_fix` only once the Application's calls succeed again; if the error goes on, the Issue opens again. Only `open` Issues can be marked (`409 issue_not_open`); another Application's Issue is `404 issue_not_found`.",

@@ -1,3 +1,4 @@
+import {ConnectionModelPicker} from './ModelPicker';
 import React, {FormEvent, useEffect, useRef, useState} from 'react';
 import {HelpLink} from './help';
 import {Activity, Check, ChevronRight, Cloud, Copy, HardDrive, Plus, Trash2, Users, X} from 'lucide-react';
@@ -545,11 +546,11 @@ function ExplainerPanel({config, providers, onChange}: {config: SettingsConfig |
     <div className="panel-heading"><h2>Explanations<HelpLink section="Explain"/></h2><span>The model that explains an Issue when no Coding agent does</span></div>
     <form className="conn-form settings-body" onSubmit={save}>
       <div className="form-row">
-        <label>Connection<select value={connection} onChange={e => setConnection(e.target.value)}>
+        <label>Connection<select value={connection} onChange={e => { setConnection(e.target.value); setModel(''); }}>
           <option value="">None (Explain is unavailable)</option>
           {targets.map(t => <option key={t.id} value={t.id}>{name(t.provider)} · {t.id}</option>)}
         </select></label>
-        <label>Model<input value={model} onChange={e => setModel(e.target.value)} disabled={!connection} required={!!connection} maxLength={256} placeholder={chosen?.location === 'local' ? 'llama3:8b' : 'model id'} spellCheck={false} autoComplete="off"/></label>
+        <ConnectionModelPicker connection={connection} value={model} onChange={setModel}/>
       </div>
       <small>Any model this Connection serves. Explain sends only the Issue’s evidence: error codes, counts, the time window, request ids, the model name, Connection ids and aiport’s diagnosis. Never keys, tokens or anything an Application wrote. The call shows in Activity under the Application <code>aiport</code>.</small>
       {chosen?.location === 'remote' && <p className="conn-note notice-inline">Explanations are billed to the {name(chosen.provider)} key. Choose a local Connection to keep them on this machine.</p>}

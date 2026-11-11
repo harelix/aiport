@@ -565,6 +565,28 @@ confirmed, so an agent that is behind learns exactly what to do.
 | 2 | Levels and effort: send a Level or task name instead of a provider's model id, add `X-Aiport-Effort` where calls differ in difficulty, replace the `AGENTS.md` line, and check `aiport_guidance` at the start of each session. |
 | 3 | The token lives in `.aiport`: add it to `.gitignore`, move the token there, load it at startup, replace the MCP entry with the one whose `headersHelper` reads `.aiport`, replace the `AGENTS.md` line, and ask for a **New token** on `401` instead of pairing again. |
 | 4 | Votes per module: read the communication standard, give each LLM feature a module name sent as `X-Aiport-Module`, keep `X-Aiport-Request-Id` with each answer, build a thumbs up and down into the UI, and replace the `AGENTS.md` line. |
+| 5 | Application actions: keep an action inventory linked from `AGENTS.md`, send the action's stable id in `X-Aiport-Module` on every request including retries and streaming, and verify each action before confirming the update. |
+
+During onboarding, the coding agent inventories every LLM action in the
+Application's repository: its id, purpose, call sites, protocol, and the Level
+or task name it sends. An action such as `article.summarize` is sent as
+`X-Aiport-Module: article.summarize`, separately from `model: balanced`.
+Distinct actions keep distinct ids even when they request the same model name.
+The Application's token scopes those ids: `tldr` in one Application is not
+the same action as `tldr` in another. Keep existing ids when they already
+identify the actions clearly, so their routes and feedback stay together.
+
+aiport learns actions from incoming calls, with no separate registration
+endpoint. The coding agent verifies each call site, including retries,
+streaming and background work, and checks a representative call per action
+in Activity with the Owner by its request id. It confirms guidance after the
+update is verified. Provider and model choices stay in aiport; agents maintain
+the inventory and action headers as the Application grows.
+
+Already connected Applications receive the same instructions through the
+guidance update below. Applications confirmed at version 4 become behind
+version 5; the copy button on Integrate gives their coding agent the update
+instruction without pairing again.
 
 Every version ends with the agent calling `aiport_guidance_done`. The confirmed
 version is kept in the database next to the configuration. Applications
@@ -2439,6 +2461,17 @@ The page has five panels, from top to bottom:
   automatic fixes switch (**Fix Issues automatically when the fix is clear**)
   and the sound. See [Applied changes and
   Revert](#applied-changes-and-revert).
+
+When a form asks for a Connection and model (Changes, Levels, Explanations
+or the compression Evaluator), choosing a Connection loads its available
+models into the model dropdown. Switching Connections clears the previous
+model choice. Choose **Other model id…** to enter an unlisted id. If the
+Connection cannot list its models, enter the id manually. Listing models
+generates no answers and makes no billable model calls.
+
+The Routing map's task-name editor also lists the Connection's available
+models for low, medium and high effort. **Same as the model** leaves that
+effort on the task name's base model.
 
 The badge counts an Issue only while its fix waits for you. It also counts
 the commands a Fix it run is waiting for you to approve.

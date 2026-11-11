@@ -2,6 +2,7 @@ import React, {FormEvent, useEffect, useState} from 'react';
 import {Layers, Pencil, Plus, X} from 'lucide-react';
 import {HelpLink} from './help';
 import {ProviderLogo} from './ProviderLogo';
+import {ModelPicker, useConnectionModels} from './ModelPicker';
 
 /* Levels in the dashboard (harelix/aiport#38). The Levels panel on Routing
    edits the shared mapping of each Level per protocol; AppLevels, on an
@@ -19,40 +20,6 @@ const PROTOCOL: Record<string, string> = {openai: 'OpenAI', anthropic: 'Anthropi
 const LEVEL_HINT: Record<string, string> = {fast: 'Quick, low-cost calls', balanced: 'Everyday work', best: 'The hardest work'};
 /** Protocol default Connections (defaults.openai_target / anthropic_target), so the editor starts on the one calls already reach. */
 export type ProtocolDefaults = {openai_target?: string; anthropic_target?: string};
-const OTHER = '\u0000other';
-
-/** The models a Connection lists (GET /api/v1/targets/{id}/models), loaded when the Connection is chosen. */
-function useConnectionModels(connection: string): {models: string[]; state: 'loading' | 'ok' | 'unlisted'} {
-  const [result, setResult] = useState<{models: string[]; state: 'loading' | 'ok' | 'unlisted'}>({models: [], state: 'loading'});
-  useEffect(() => {
-    if (!connection) { setResult({models: [], state: 'unlisted'}); return; }
-    const controller = new AbortController();
-    setResult({models: [], state: 'loading'});
-    fetch('/api/v1/targets/' + encodeURIComponent(connection) + '/models', {credentials: 'same-origin', headers: {'X-Aiport-CSRF': '1'}, signal: controller.signal})
-      .then(r => r.ok ? r.json() : {}).then((d: {models?: string[]}) => setResult(d.models?.length ? {models: [...d.models].sort(), state: 'ok'} : {models: [], state: 'unlisted'}))
-      .catch(() => { if (!controller.signal.aborted) setResult({models: [], state: 'unlisted'}); });
-    return () => controller.abort();
-  }, [connection]);
-  return result;
-}
-
-/* A model choice: the Connection's listed models, or Other for an id it does
-   not list. empty, when set, is the first option's label (an empty value). */
-function ModelPicker({id, label, value, onChange, models, state, empty, required}: {id: string; label: string; value: string; onChange: (v: string) => void; models: string[]; state: string; empty?: string; required?: boolean}) {
-  const listed = models.includes(value);
-  const [other, setOther] = useState(!!value && !listed && state === 'ok');
-  useEffect(() => { if (state === 'ok' && value && !models.includes(value)) setOther(true); }, [state]);
-  const typing = state !== 'ok' || other;
-  return <label className="model-picker" htmlFor={id}>{label}
-    {state === 'ok' && <select id={typing ? undefined : id} value={typing ? OTHER : value} onChange={e => { if (e.target.value === OTHER) { setOther(true); onChange(listed ? '' : value); } else { setOther(false); onChange(e.target.value); } }}>
-      {empty !== undefined ? <option value="">{empty}</option> : !value && <option value="" disabled>Choose a model</option>}
-      {models.map(m => <option key={m} value={m}>{m}</option>)}
-      <option value={OTHER}>Other model id…</option>
-    </select>}
-    {typing && <input id={id} value={value} onChange={e => onChange(e.target.value)} required={required} maxLength={256} spellCheck={false} autoComplete="off"
-      placeholder={state === 'loading' ? 'Loading the models…' : empty !== undefined ? empty : 'The model id the provider expects'}/>}
-  </label>;
-}
 const EFFORTS: (keyof EffortModels)[] = ['low', 'medium', 'high'];
 
 /** GET /api/v1/levels, again whenever refresh changes and after reload. */

@@ -1,7 +1,8 @@
-import React, {FormEvent, useEffect, useState} from 'react';
+import React, {FormEvent, useEffect, useId, useState} from 'react';
 import {ArrowRight, ChevronRight, Pencil, Route as RouteIcon, X} from 'lucide-react';
 import {HelpLink} from './help';
 import {ProviderLogo} from './ProviderLogo';
+import {ModelPicker, useConnectionModels} from './ModelPicker';
 import {catalogChangeText, type CatalogRecord, type TaskName} from './Changes';
 import type {ProviderSpec} from './Settings';
 
@@ -49,6 +50,8 @@ function effortOf(r: Route): [string, string][] {
    empty one uses the task name's model. Each save is one revertable Change.
    A shared task name's models apply to every Application. */
 function EffortEditor({application, r, onDone, onCancel}: {application: string; r: Route; onDone: (message: string) => void; onCancel: () => void}) {
+  const id = useId();
+  const listed = useConnectionModels(r.connection);
   const [effort, setEffort] = useState<Efforts>(r.effort || {});
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   async function put(value: Efforts) {
@@ -65,7 +68,9 @@ function EffortEditor({application, r, onDone, onCancel}: {application: string; 
   const save = (e: FormEvent) => { e.preventDefault(); void put(effort); };
   return <form className="conn-form effort-editor" onSubmit={save} aria-label={'Per-effort models of ' + r.name}>
     <p className="muted">{r.shared ? 'Shared task name: these apply to every Application that sends ' : 'Own task name of ' + application + ': '}<code>{r.name}</code>. Models of {r.connection}; an empty one uses <code>{r.model}</code>.</p>
-    <div className="level-efforts">{EFFORTS.map(k => <label key={k}>{k[0].toUpperCase() + k.slice(1)}<input value={effort[k] || ''} onChange={x => setEffort(v => ({...v, [k]: x.target.value}))} maxLength={256} placeholder={r.model} spellCheck={false} autoComplete="off"/></label>)}</div>
+    <div className="level-efforts">{EFFORTS.map(k => <ModelPicker key={k + r.connection} id={id + '-' + k} label={k[0].toUpperCase() + k.slice(1)} value={effort[k] || ''}
+      onChange={value => setEffort(v => ({...v, [k]: value}))} models={listed.models} state={listed.state} empty={'Same as the model (' + r.model + ')'}/>)}</div>
+    {listed.state === 'unlisted' && <small role="status">The model list is unavailable or empty. Enter the model id this Connection serves.</small>}
     {error && <p className="auth-error" role="alert">{error}</p>}
     <div className="form-actions">
       <button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>

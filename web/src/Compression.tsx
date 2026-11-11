@@ -1,3 +1,4 @@
+import {ConnectionModelPicker} from './ModelPicker';
 import React, {FormEvent, useEffect, useState} from 'react';
 import {Shrink} from 'lucide-react';
 import type {ProviderSpec, SettingsConfig} from './Settings';
@@ -77,11 +78,11 @@ function EvaluatorPanel({config, providers, onChange}: {config: SettingsConfig |
     <div className="panel-heading"><h2>Evaluator</h2><span>The model that judges whether compression changed an answer</span></div>
     <form className="conn-form defaults-form" onSubmit={save}>
       <div className="form-row">
-        <label>Connection<select value={connection} onChange={e => setConnection(e.target.value)}>
+        <label>Connection<select value={connection} onChange={e => { setConnection(e.target.value); setModel(''); }}>
           <option value="">Off (no model-based evaluation)</option>
           {group('local', 'Local')}{group('remote', 'Remote APIs')}
         </select></label>
-        <label>Model <small>Any model this connection serves</small><input value={model} onChange={e => setModel(e.target.value)} disabled={!connection} required={!!connection} maxLength={256} placeholder={chosen?.location === 'local' ? 'llama3.1' : 'model id'} spellCheck={false}/></label>
+        <ConnectionModelPicker connection={connection} value={model} onChange={setModel}/>
       </div>
       {chosen?.location === 'remote' && <p className="conn-note notice-inline">Evaluation sends question and answer text to {name(chosen.provider)} and is billed to that key. Choose a local connection to keep it on this machine.</p>}
       {chosen?.location === 'local' && <small>Evaluation stays on this machine.</small>}
